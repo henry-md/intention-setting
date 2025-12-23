@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:old": "tsc -b && vite build",
-    "build": "tsc -b && vite build && esbuild src/scripts/content.ts --bundle --outfile=build/content.js --format=iife --platform=browser --jsx=automatic",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "zip": "cd build && zip -r ../extension.zip . -x '*.map'"
@@ -19,6 +18,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.3.0",
     "@eslint/js": "^9.25.0",
     "@types/chrome": "^0.0.326",
     "@types/react": "^19.1.2",
