@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+
+<!-- 
+See chrome extension at url like the following:
+chrome-extension://mpogjlmfglgmddglidjmhkdgcdaplicd/cancel.html
+-->
+
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Payment Cancelled</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background-color: #fef2f2;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .cancel-icon {
+            font-size: 48px;
+            color: #ef4444;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #991b1b;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #374151;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: #6b7280;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #4b5563;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="cancel-icon">❌</div>
+        <h1>Payment Cancelled</h1>
+        <p>No worries! You can upgrade to premium anytime from the extension.</p>
+        <button id="close-window-button">Close Window</button>
+    </div>
+    <script src="cancel.js"></script>
+</body>
+
+</html>
