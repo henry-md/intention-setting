@@ -4,12 +4,12 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 
-interface SettingsProps {
-  onBack: () => void;
+interface HomeProps {
+  onShowAccount: () => void;
   user: User | null;
 }
 
-const Settings: React.FC<SettingsProps> = ({ onBack, user }) => {
+const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
   const [urlInput, setUrlInput] = useState('');
   const [urls, setUrls] = useState<string[]>([]);
   const [urlError, setUrlError] = useState('');
@@ -148,15 +148,15 @@ const Settings: React.FC<SettingsProps> = ({ onBack, user }) => {
 
   return (
     <div className="h-screen w-full flex flex-col space-y-4 p-4 overflow-y-auto">
-      {/* Header with back button and title */}
+      {/* Header with title and profile icon */}
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="purple-button">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" className="h-4 w-4" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        <h3 className="text-lg font-semibold">Intention Setting</h3>
+        <button onClick={onShowAccount} className="purple-button" aria-label="Account">
+          {/* Profile Icon SVG */}
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
         </button>
-        <h3 className="text-lg font-semibold absolute left-1/2 -translate-x-1/2">Manage URLs</h3>
-        <div className="w-[40px]"></div>
       </div>
 
       <div className="flex flex-col space-y-4 w-full">
@@ -222,4 +222,4 @@ const Settings: React.FC<SettingsProps> = ({ onBack, user }) => {
   );
 };
 
-export default Settings;
+export default Home;
