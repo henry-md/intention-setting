@@ -2,13 +2,7 @@ import './App.css'
 import Popup from './pages/Popup'
 
 function App() {
-  return (
-    <>
-      <Popup />
-    </>
-  )
-
-  
+  return <Popup />
 }
 
 export default App

@@ -140,14 +140,14 @@ const Settings: React.FC<SettingsProps> = ({ onBack, user }) => {
 
   if (loading) {
     return (
-      <div className="w-80 flex flex-col space-y-4 items-center p-4">
+      <div className="h-screen w-full flex items-center justify-center">
         <div className="text-center">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="w-80 flex flex-col space-y-4">
+    <div className="h-screen w-full flex flex-col space-y-4 p-4 overflow-y-auto">
       {/* Header with back button and title */}
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="purple-button">

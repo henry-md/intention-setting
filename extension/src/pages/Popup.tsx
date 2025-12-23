@@ -9,7 +9,7 @@ const Popup: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
 
   if (authLoading) {
-    return <div className="p-4 text-center">Loading ...</div>;
+    return <div className="h-screen w-full flex items-center justify-center">Loading...</div>;
   }
 
   if (showSettings) {
@@ -19,7 +19,7 @@ const Popup: React.FC = () => {
   // Handle the case where the user is not signed in
   if (!user) {
     return (
-      <div className="p-6 w-80">
+      <div className="h-screen w-full p-6 flex flex-col">
         <div className="text-center">
           <h2 className="text-xl font-bold mb-4">Boilerplate Chrome Extension</h2>
           <button onClick={handleSignIn} className="purple-button">
@@ -32,7 +32,7 @@ const Popup: React.FC = () => {
 
   // Main view for signed-in users
   return (
-    <div className="p-4 w-80">
+    <div className="h-screen w-full p-4 flex flex-col">
       <button
         onClick={() => setShowSettings(true)}
         aria-label="Settings"

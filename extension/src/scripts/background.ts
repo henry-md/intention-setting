@@ -12,6 +12,13 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
 });
 
+// Open side panel when extension icon is clicked
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id) {
+    chrome.sidePanel.open({ tabId: tab.id });
+  }
+});
+
 // Handle requests to close a success or cancel tab (tab created after Stripe payment)
 chrome.runtime.onMessage.addListener((message, sender) => {
   console.log('Background message received:', message);
