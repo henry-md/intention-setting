@@ -11,6 +11,12 @@ export default defineConfig({
     crx({ manifest }),
     tailwindcss(),
   ],
+  server: {
+    hmr: {
+      host: 'localhost',
+      port: 24678,
+    },
+  },
   build: {
     outDir: 'build',
     emptyOutDir: false,   // Don't empty during watch builds

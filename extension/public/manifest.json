@@ -54,5 +54,8 @@
       "profile"
     ]
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:24678 http://localhost:* https://*.firebaseapp.com https://*.googleapis.com https://*.gstatic.com;"
+  },
   "key": "-----BEGIN PUBLIC KEY-----\nfnemliooiheogciefhmbiknheoeflaal\n-----END PUBLIC KEY-----"
 }
