@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
+import { ReorderList } from '../components/ui/reorder-list';
 
 interface HomeProps {
   onShowAccount: () => void;
@@ -126,6 +127,14 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
     await saveUrlsToFirestore(newUrls);
   };
 
+  // Handle URL reordering
+  const handleReorderUrls = async (reorderedElements: React.ReactElement[]) => {
+    // Extract URLs from the reordered React elements using data-url attribute
+    const newUrls = reorderedElements.map(element => element.props['data-url'] as string);
+    setUrls(newUrls);
+    await saveUrlsToFirestore(newUrls);
+  };
+
   // Handle Enter key press
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -195,25 +204,32 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
           {/* URL List */}
           {urls.length > 0 && (
             <div className="flex flex-col space-y-2">
-              <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto">
-                {urls.map((url, index) => (
+              <ReorderList
+                withDragHandle={true}
+                className="gap-2 max-h-60 overflow-y-auto"
+                itemClassName="bg-slate-700 hover:bg-slate-600 rounded-lg"
+                onReorderFinish={handleReorderUrls}
+              >
+                {urls.map((url) => (
                   <div
-                    key={index}
-                    className="bg-gray-800 rounded-full border border-gray-700 hover:bg-gray-700 transition-colors flex flex-row items-center"
+                    key={url}
+                    data-url={url}
+                    className="px-4 py-2 text-white text-sm flex items-center justify-between w-full"
                   >
-                    <span className="text-xs pl-2 pr-0 py-0" title={url}>
-                      {displayUrl(url)}
-                    </span>
+                    <span className="flex-1 truncate">{displayUrl(url)}</span>
                     <button
-                      onClick={() => handleDeleteUrl(url)}
-                      className="text-white hover:opacity-100 opacity-70 transition-opacity no-focus !p-[5px]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteUrl(url);
+                      }}
+                      className="text-white hover:opacity-70 transition-opacity ml-2 flex-shrink-0"
                       title="Delete URL"
                     >
-                      <X size={10} strokeWidth={2.5} />
+                      <X size={14} strokeWidth={2.5} />
                     </button>
                   </div>
                 ))}
-              </div>
+              </ReorderList>
             </div>
           )}
         </div>
