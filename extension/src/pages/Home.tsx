@@ -4,6 +4,14 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import { ReorderList } from '../components/ui/reorder-list';
+import { normalizeUrl, getNormalizedHostname } from '../utils/urlNormalization';
+
+interface Intention {
+  intention: string;
+  url: string;
+  timestamp: string;
+  timeLimit: number;
+}
 
 interface HomeProps {
   onShowAccount: () => void;
@@ -15,7 +23,8 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
   const [urls, setUrls] = useState<string[]>([]);
   const [urlError, setUrlError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [intentions, setIntentions] = useState<any[]>([]);
+  const [intentions, setIntentions] = useState<Intention[]>([]);
+  const [isYouTube, setIsYouTube] = useState(false);
 
   // Log intentions whenever they change
   useEffect(() => {
@@ -60,6 +69,17 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
 
     fetchData();
   }, [user?.uid]);
+
+  // Detect if current tab is YouTube
+  useEffect(() => {
+    const checkIfYouTube = async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.url) {
+        setIsYouTube(tab.url.includes('youtube.com'));
+      }
+    };
+    checkIfYouTube();
+  }, []);
 
   // Save URLs to Firestore and Chrome storage
   const saveUrlsToFirestore = async (newUrls: string[]) => {
@@ -108,12 +128,15 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
       return;
     }
 
-    if (urls.includes(trimmedUrl)) {
+    // Normalize URL to strip common prefixes (www., m., mobile.)
+    const normalizedUrl = normalizeUrl(trimmedUrl);
+
+    if (urls.includes(normalizedUrl)) {
       setUrlError('This URL is already in the list');
       return;
     }
 
-    const newUrls = [...urls, trimmedUrl];
+    const newUrls = [...urls, normalizedUrl];
     setUrls(newUrls);
     setUrlInput('');
     setUrlError('');
@@ -136,6 +159,33 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
     });
     setUrls(newUrls);
     await saveUrlsToFirestore(newUrls);
+  };
+
+  // Handle YouTube "stop after this video" button
+  const handleStopAfterVideo = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log('Current tab:', tab?.url, 'Tab ID:', tab?.id);
+
+      if (tab?.id) {
+        // Inject CSS from file
+        await chrome.scripting.insertCSS({
+          target: { tabId: tab.id },
+          files: ['/youtube/youtube.css']
+        });
+
+        // Inject JS from file
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['/youtube/youtube.js']
+        });
+      } else {
+        console.error('No tab ID found');
+      }
+    } catch (error) {
+      console.error('Error injecting YouTube scripts:', error);
+      console.error('Error details:', error);
+    }
   };
 
   // Handle Enter key press
@@ -172,6 +222,16 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
       </div>
 
       <div className="flex flex-col space-y-4 w-full">
+        {/* YouTube Stop After Video Button */}
+        {isYouTube && (
+          <button
+            onClick={handleStopAfterVideo}
+            className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+          >
+            I'll stop after this video!
+          </button>
+        )}
+
         {/* URL Management Section */}
         <div className="flex flex-col space-y-3">
 
@@ -197,6 +257,30 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
                 <Plus size={20} />
               </button>
             </div>
+
+            {/* Normalized URL Preview */}
+            {urlInput && !urlError && (() => {
+              try {
+                let previewUrl = urlInput.trim();
+                if (!previewUrl.startsWith('http://') && !previewUrl.startsWith('https://')) {
+                  previewUrl = 'https://' + previewUrl;
+                }
+                if (isValidUrl(previewUrl)) {
+                  const normalized = getNormalizedHostname(previewUrl);
+                  const original = new URL(previewUrl).hostname;
+                  if (normalized !== original) {
+                    return (
+                      <p className="text-blue-400 text-xs">
+                        Will be tracked as: {normalized}
+                      </p>
+                    );
+                  }
+                }
+              } catch (error) {
+                console.error('Error parsing URL:', error);
+              }
+              return null;
+            })()}
 
             {/* Error Message */}
             {urlError && (
