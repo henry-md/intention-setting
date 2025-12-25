@@ -81,7 +81,7 @@ const ReorderListItem: React.FC<{
             dragControls={withDragHandle ? dragControls : undefined}
         >
             {withDragHandle ? (
-                <div className="relative flex items-center gap-2">
+                <div className="ml-3 relative flex items-center gap-2">
                     <Grip
                         className="size-6 cursor-grab text-muted-foreground flex-shrink-0"
                         onPointerDown={(e) => dragControls.start(e)}

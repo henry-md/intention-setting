@@ -154,5 +154,11 @@ a:hover {
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
-/* Removed @layer base - shadcn variables are available but don't apply globally */
-/* Components that use shadcn classes (like bg-background) will still work */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

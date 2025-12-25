@@ -130,7 +130,10 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
   // Handle URL reordering
   const handleReorderUrls = async (reorderedElements: React.ReactElement[]) => {
     // Extract URLs from the reordered React elements using data-url attribute
-    const newUrls = reorderedElements.map(element => element.props['data-url'] as string);
+    const newUrls = reorderedElements.map(element => {
+      const props = element.props as { 'data-url'?: string };
+      return props['data-url'] as string;
+    });
     setUrls(newUrls);
     await saveUrlsToFirestore(newUrls);
   };
@@ -214,7 +217,7 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
                   <div
                     key={url}
                     data-url={url}
-                    className="px-4 py-2 text-white text-sm flex items-center justify-between w-full"
+                    className="pr-4 py-2 text-white text-sm flex items-center justify-between w-full"
                   >
                     <span className="flex-1 truncate">{displayUrl(url)}</span>
                     <button
