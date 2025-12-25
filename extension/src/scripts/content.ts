@@ -3,6 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import IntentionPopup from '../components/IntentionPopup';
 import TimerBadge from '../components/TimerBadge';
+import { normalizeHostname } from '../utils/urlNormalization';
 
 console.log('Intention Setting content script loaded');
 
@@ -16,9 +17,9 @@ let secondsCounter = 0; // Track seconds since last sync
 // Check if current URL matches user's saved URLs
 const checkAndShowIntentionPopup = async () => {
   try {
-    // Get current URL's base domain
+    // Get current URL's normalized domain
     const currentUrl = new URL(window.location.href);
-    const currentDomain = currentUrl.hostname;
+    const currentDomain = normalizeHostname(currentUrl.hostname);
 
     // Get user data from chrome storage
     const result = await chrome.storage.local.get(['user']);
@@ -31,10 +32,10 @@ const checkAndShowIntentionPopup = async () => {
     const urlsResult = await chrome.storage.local.get(['userUrls']);
     const savedUrls: string[] = urlsResult.userUrls || [];
 
-    // Check if current domain matches any saved URL
+    // Check if current domain matches any saved URL (both normalized)
     const matchedUrl = savedUrls.find(url => {
       try {
-        const savedDomain = new URL(url).hostname;
+        const savedDomain = normalizeHostname(new URL(url).hostname);
         return currentDomain === savedDomain || currentDomain.endsWith('.' + savedDomain);
       } catch {
         return false;
@@ -83,9 +84,10 @@ const resumeAllVideos = () => {
   });
 };
 
-// Get the current site key (hostname)
+// Get the current site key (normalized hostname)
 const getCurrentSiteKey = (): string => {
-  return new URL(window.location.href).hostname;
+  const hostname = new URL(window.location.href).hostname;
+  return normalizeHostname(hostname);
 };
 
 // Get the start of the current "day" (4am today or 4am yesterday if before 4am)
@@ -305,7 +307,7 @@ const checkAndShowTimer = async () => {
 
     const matchedUrl = savedUrls.find(url => {
       try {
-        const savedDomain = new URL(url).hostname;
+        const savedDomain = normalizeHostname(new URL(url).hostname);
         return currentDomain === savedDomain || currentDomain.endsWith('.' + savedDomain);
       } catch {
         return false;
