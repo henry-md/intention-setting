@@ -79,7 +79,11 @@ const POPULAR_DOMAINS = [
   'imgur', 'giphy', 'deviantart', 'artstation', 'flickr', 'smugmug',
 
   // Adult (for legitimate blocking/tracking)
-  'pornhub', 'xvideos', 'xnxx', 'redtube', 'onlyfans',
+  'pornhub', 'brazzers', 'xvideos', 'xnxx', 'redtube', 'onlyfans', 'xhamster', 'youporn',
+  'spankwire', 'tube8', 'keezmovies', 'tnaflix', 'sunporno', 'tubev', '4tube',
+  'beeg', 'drtuber', 'thumbzilla', 'spankbang', 'xhamsterlive', 'livejasmin',
+  'chaturbate', 'stripchat', 'myfreecams', 'camsoda', 'bongacams', 'manyvids',
+  'pornmd', 'porn300', 'anyporn', 'watchmygf', '4porn', 'fapdu', 'tubegalore',
 
   // Business & Professional
   'salesforce', 'hubspot', 'zendesk', 'intercom', 'freshdesk', 'jira',

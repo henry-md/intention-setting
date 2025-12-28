@@ -1,0 +1,18 @@
+/**
+ * Type definition used by Limits.tsx to manage time limits on URLs and groups.
+ * Stored in Firestore under users/{uid}/limits as an array.
+ */
+export interface Limit {
+  id: string;
+  type: 'hard' | 'soft' | 'session';
+  // What the limit applies to
+  targetType: 'url' | 'group';
+  targetId: string; // URL or group ID
+  // Time limit in minutes
+  timeLimit: number;
+  // For soft limits - how many plus ones remaining
+  plusOnes?: number;
+  // For soft limits - duration of each plus one in seconds
+  plusOneDuration?: number;
+  createdAt: string;
+}
