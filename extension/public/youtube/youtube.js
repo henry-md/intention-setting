@@ -1,5 +1,7 @@
-console.log('loaded youtube.js');
+console.log("yo");
 
-setInterval(() => {
-  console.log('loaded youtube.js');
-}, 1000);
+// Wait for CSS to be applied, then shake tree
+requestAnimationFrame(() => {
+  window.dispatchEvent(new Event('resize'));
+  console.log('Layout recalculated');
+});

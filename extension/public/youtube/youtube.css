@@ -1,1 +1,23 @@
 /* Injected CSS */
+
+/* m.youtube.com (mobile) */
+ytm-app {
+  display: none !important;
+}
+
+/* DESKTOP */
+
+/* Sidebar */
+#secondary {
+  display: none !important;
+}
+
+/* Thumbnails */
+.ytp-ce-element .ytp-ce-video {
+  display: none !important;
+}
+
+/* "Hide" button, to hide thumbnails — we're doing this already */
+[class*="hide-button-container"] {
+  display: none !important;
+}
