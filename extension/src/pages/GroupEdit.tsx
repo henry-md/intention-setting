@@ -4,7 +4,10 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
-import { getNormalizedHostname } from '../utils/urlNormalization';
+import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
+import { checkTyposquatting } from '../utils/typosquatting';
+import { prepareUrl } from '../utils/urlValidation';
+import { ReorderList } from '../components/ui/reorder-list';
 
 interface GroupEditProps {
   user: User | null;
@@ -26,6 +29,10 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [newItemInput, setNewItemInput] = useState('');
   const [inputError, setInputError] = useState('');
+  const [typosquattingWarning, setTyposquattingWarning] = useState<{
+    url: string;
+    suggestion: string;
+  } | null>(null);
 
   // Fetch group and all groups
   useEffect(() => {
@@ -121,6 +128,24 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     await saveGroupsToFirestore(updatedGroups);
   };
 
+  // Handle reordering items
+  const handleReorderItems = async (reorderedElements: React.ReactElement[]) => {
+    if (!group) return;
+
+    // Extract item IDs from the reordered React elements using data-item attribute
+    const newItems = reorderedElements.map(element => {
+      const props = element.props as { 'data-item'?: string };
+      return props['data-item'] as string;
+    });
+
+    const updatedGroup = { ...group, items: newItems };
+    const updatedGroups = allGroups.map(g => g.id === groupId ? updatedGroup : g);
+
+    setGroup(updatedGroup);
+    setAllGroups(updatedGroups);
+    await saveGroupsToFirestore(updatedGroups);
+  };
+
   // Check if adding a group would create circular dependency
   const wouldCreateCircularDependency = (itemToAdd: string): boolean => {
     if (!itemToAdd.startsWith('group:')) return false;
@@ -149,41 +174,63 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     return false;
   };
 
-  // Validate URL
-  const isValidUrl = (url: string): boolean => {
-    try {
-      const urlObj = new URL(url);
-      return urlObj.hostname.includes('.');
-    } catch {
-      return false;
+  // Helper: Add a URL that's already been validated and typosquatting-checked
+  // Normalizes, checks for duplicates, and adds to group
+  const addNormalizedUrl = async (url: string) => {
+    if (!group) return;
+
+    // Normalize the URL
+    const normalizedUrl = normalizeUrl(url);
+
+    // Check if URL is already in another group
+    const isInAnotherGroup = allGroups.some(
+      g => g.id !== groupId && g.items.includes(normalizedUrl)
+    );
+    if (isInAnotherGroup) {
+      setInputError('This URL is already in another group');
+      setTyposquattingWarning(null);
+      return;
     }
+
+    // Check if already in this group
+    if (group.items.includes(normalizedUrl)) {
+      setInputError('This URL is already in the current group');
+      setTyposquattingWarning(null);
+      return;
+    }
+
+    // Add the item
+    await handleAddItem(normalizedUrl);
+    setNewItemInput('');
+    setInputError('');
+    setTyposquattingWarning(null);
   };
 
   // Handle adding item from text input
   const handleAddItemFromInput = async () => {
     if (!group || !newItemInput.trim()) return;
 
-    let itemToAdd = newItemInput.trim();
+    const input = newItemInput.trim();
     setInputError('');
 
     // Check if it's a reference to another group by name
     const matchingGroup = allGroups.find(
-      g => g.name.toLowerCase() === itemToAdd.toLowerCase() && g.id !== groupId
+      g => g.name.toLowerCase() === input.toLowerCase() && g.id !== groupId
     );
 
     if (matchingGroup) {
-      // It's a group name
-      itemToAdd = matchingGroup.id;
+      // It's a group name - add the group ID
+      const matchingGroupId = matchingGroup.id;
 
       // Check for circular dependency
-      if (wouldCreateCircularDependency(itemToAdd)) {
+      if (wouldCreateCircularDependency(matchingGroupId)) {
         setInputError('Cannot add this group: it would create a circular dependency');
         return;
       }
 
       // Check if already in another group
       const isInAnotherGroup = allGroups.some(
-        g => g.id !== groupId && g.items.includes(itemToAdd)
+        g => g.id !== groupId && g.items.includes(matchingGroupId)
       );
       if (isInAnotherGroup) {
         setInputError('This group is already in another group');
@@ -191,50 +238,37 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
       }
 
       // Check if already in this group
-      if (group.items.includes(itemToAdd)) {
+      if (group.items.includes(matchingGroupId)) {
         setInputError('This group is already in the current group');
         return;
       }
+
+      // Add the group
+      await handleAddItem(matchingGroupId);
+      setNewItemInput('');
+      setInputError('');
     } else {
-      // It's a URL - normalize it
-      // If no domain extension is provided, add .com
-      if (!itemToAdd.includes('.')) {
-        itemToAdd = itemToAdd + '.com';
-      }
+      // It's a URL
+      try {
+        // Prepare and validate URL
+        const preparedUrl = prepareUrl(input);
 
-      if (!itemToAdd.startsWith('http://') && !itemToAdd.startsWith('https://')) {
-        itemToAdd = 'https://' + itemToAdd;
-      }
+        // Check for typosquatting
+        const typoCheck = checkTyposquatting(preparedUrl);
+        if (typoCheck.isSuspicious && typoCheck.suggestion) {
+          setTyposquattingWarning({
+            url: preparedUrl,
+            suggestion: typoCheck.suggestion + '.com',
+          });
+          return;
+        }
 
-      if (!isValidUrl(itemToAdd)) {
-        setInputError('Please enter a valid URL (e.g., youtube.com)');
-        return;
-      }
-
-      // Normalize the URL
-      const { normalizeUrl } = await import('../utils/urlNormalization');
-      itemToAdd = normalizeUrl(itemToAdd);
-
-      // Check if URL is already in another group
-      const isInAnotherGroup = allGroups.some(
-        g => g.id !== groupId && g.items.includes(itemToAdd)
-      );
-      if (isInAnotherGroup) {
-        setInputError('This URL is already in another group');
-        return;
-      }
-
-      // Check if already in this group
-      if (group.items.includes(itemToAdd)) {
-        setInputError('This URL is already in the current group');
-        return;
+        // Add the URL (normalize, check duplicates, add)
+        await addNormalizedUrl(preparedUrl);
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : 'Invalid URL');
       }
     }
-
-    // Add the item
-    await handleAddItem(itemToAdd);
-    setNewItemInput('');
-    setInputError('');
   };
 
   // Get available groups (not in any group, not this group, no circular dependency)
@@ -283,8 +317,8 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
       if (!nestedGroup) return null;
 
       return (
-        <div key={item} style={{ marginLeft: `${depth * 16}px` }}>
-          <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg mb-2">
+        <div key={item} data-item={depth === 0 ? item : undefined} style={{ marginLeft: `${depth * 16}px` }}>
+          <div className={`flex items-center gap-2 py-2 px-3 ${depth > 0 ? 'bg-slate-600 rounded-lg mb-2' : ''}`}>
             <button
               onClick={() => toggleExpanded(item)}
               className="text-gray-300 hover:text-white"
@@ -314,7 +348,8 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
       return (
         <div
           key={item}
-          className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg mb-2"
+          data-item={depth === 0 ? item : undefined}
+          className={`flex items-center gap-2 py-2 px-3 ${depth > 0 ? 'bg-slate-600 rounded-lg mb-2' : ''}`}
           style={{ marginLeft: `${depth * 16}px` }}
         >
           <img
@@ -394,6 +429,56 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
           <p className="text-red-400 text-sm">{inputError}</p>
         )}
 
+        {/* Typosquatting Warning Dialog */}
+        {typosquattingWarning && (
+          <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3">
+            <div className="flex items-start gap-2">
+              <span className="text-yellow-500 text-xl">⚠️</span>
+              <div className="flex-1">
+                <p className="text-yellow-100 text-sm font-medium mb-1">
+                  Possible typo detected
+                </p>
+                <p className="text-yellow-200 text-xs">
+                  Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
+                </p>
+                <p className="text-yellow-300 text-xs mt-1">
+                  You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  // Use the suggested correct domain
+                  const correctedUrl = 'https://' + typosquattingWarning.suggestion;
+                  await addNormalizedUrl(correctedUrl);
+                }}
+                className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+              >
+                Use {typosquattingWarning.suggestion}
+              </button>
+              <button
+                onClick={async () => {
+                  // User confirms they want to use the original (potentially misspelled) URL
+                  await addNormalizedUrl(typosquattingWarning.url);
+                }}
+                className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
+              >
+                Keep original
+              </button>
+              <button
+                onClick={() => {
+                  // Cancel and go back to editing
+                  setTyposquattingWarning(null);
+                }}
+                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Available Groups Dropdown */}
         {availGroups.length > 0 && (
           <div className="relative">
@@ -424,15 +509,20 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
       </div>
 
       {/* Items List */}
-      <div className="flex flex-col space-y-2">
-        {group.items.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">
-            No items in this group yet. Add some URLs or groups!
-          </p>
-        ) : (
-          group.items.map(item => renderItem(item))
-        )}
-      </div>
+      {group.items.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-8">
+          No items in this group yet. Add some URLs or groups!
+        </p>
+      ) : (
+        <ReorderList
+          withDragHandle={false}
+          className="gap-2"
+          itemClassName="bg-slate-600 rounded-lg"
+          onReorderFinish={handleReorderItems}
+        >
+          {group.items.map(item => renderItem(item))}
+        </ReorderList>
+      )}
     </div>
   );
 };

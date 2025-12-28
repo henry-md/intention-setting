@@ -5,6 +5,8 @@ import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import { ReorderList } from '../components/ui/reorder-list';
 import { normalizeUrl, getNormalizedHostname } from '../utils/urlNormalization';
+import { checkTyposquatting } from '../utils/typosquatting';
+import { prepareUrl, isValidUrl } from '../utils/urlValidation';
 
 interface Intention {
   intention: string;
@@ -30,6 +32,10 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
   const [loading, setLoading] = useState(true);
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [isYouTube, setIsYouTube] = useState(false);
+  const [typosquattingWarning, setTyposquattingWarning] = useState<{
+    url: string;
+    suggestion: string;
+  } | null>(null);
 
   // Log intentions whenever they change
   useEffect(() => {
@@ -103,41 +109,32 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
     }
   };
 
-  // URL validation function
-  const isValidUrl = (url: string): boolean => {
+  // Add URL handler
+  const handleAddUrl = async () => {
     try {
-      const urlObj = new URL(url);
-      // Check that the hostname contains at least one dot (e.g., youtube.com, not just youtube)
-      return urlObj.hostname.includes('.');
-    } catch {
-      return false;
+      // Prepare and validate URL
+      const preparedUrl = prepareUrl(urlInput);
+
+      // Check for typosquatting
+      const typoCheck = checkTyposquatting(preparedUrl);
+      if (typoCheck.isSuspicious && typoCheck.suggestion) {
+        // Show warning dialog
+        setTyposquattingWarning({
+          url: preparedUrl,
+          suggestion: typoCheck.suggestion + '.com',
+        });
+        return;
+      }
+
+      // Proceed with adding the URL
+      await addUrlToList(preparedUrl);
+    } catch (error) {
+      setUrlError(error instanceof Error ? error.message : 'Invalid URL');
     }
   };
 
-  // Add URL handler
-  const handleAddUrl = async () => {
-    let trimmedUrl = urlInput.trim();
-
-    if (!trimmedUrl) {
-      setUrlError('Please enter a URL');
-      return;
-    }
-
-    // If no domain extension is provided, add .com
-    if (!trimmedUrl.includes('.')) {
-      trimmedUrl = trimmedUrl + '.com';
-    }
-
-    // Automatically prepend https:// if no protocol is specified
-    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-      trimmedUrl = 'https://' + trimmedUrl;
-    }
-
-    if (!isValidUrl(trimmedUrl)) {
-      setUrlError('Please enter a valid URL (e.g., youtube.com)');
-      return;
-    }
-
+  // Actually add URL to list (called after typosquatting check passes or user confirms)
+  const addUrlToList = async (trimmedUrl: string) => {
     // Normalize URL to strip common prefixes (www., m., mobile.)
     const normalizedUrl = normalizeUrl(trimmedUrl);
 
@@ -150,6 +147,7 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
     setUrls(newUrls);
     setUrlInput('');
     setUrlError('');
+    setTyposquattingWarning(null);
     await saveUrlsToFirestore(newUrls);
   };
 
@@ -295,6 +293,56 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
             {/* Error Message */}
             {urlError && (
               <p className="text-red-400 text-sm">{urlError}</p>
+            )}
+
+            {/* Typosquatting Warning Dialog */}
+            {typosquattingWarning && (
+              <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-500 text-xl">⚠️</span>
+                  <div className="flex-1">
+                    <p className="text-yellow-100 text-sm font-medium mb-1">
+                      Possible typo detected
+                    </p>
+                    <p className="text-yellow-200 text-xs">
+                      Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
+                    </p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      // Use the suggested correct domain
+                      const correctedUrl = 'https://' + typosquattingWarning.suggestion;
+                      await addUrlToList(correctedUrl);
+                    }}
+                    className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+                  >
+                    Use {typosquattingWarning.suggestion}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // User confirms they want to use the original (potentially misspelled) URL
+                      await addUrlToList(typosquattingWarning.url);
+                    }}
+                    className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
+                  >
+                    Keep original
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Cancel and go back to editing
+                      setTyposquattingWarning(null);
+                    }}
+                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
