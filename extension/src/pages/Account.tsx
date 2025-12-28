@@ -6,6 +6,11 @@ interface AccountProps {
   onBack: () => void;
 }
 
+/**
+ * Full-page account settings view. Child of Popup.tsx, accessed from profile button in Home tab.
+ * NOT a tab - replaces entire view with back button. Sibling to GroupEdit.tsx (another full-page view).
+ * Handles authentication and Stripe subscription management.
+ */
 const Account: React.FC<AccountProps> = ({ onBack }) => {
   const { user, loading: authLoading, handleSignIn, handleSignOut } = useAuth();
   const { paymentStatus, isProcessing, handleUpgrade } = useStripe(user, authLoading);

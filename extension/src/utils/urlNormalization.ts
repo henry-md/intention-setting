@@ -24,7 +24,14 @@ export function normalizeUrl(url: string): string {
 
     // Reconstruct the URL with normalized hostname
     urlObj.hostname = hostname;
-    return urlObj.href;
+    let normalizedUrl = urlObj.href;
+
+    // Remove trailing slash if it's just the root domain (no path)
+    if (urlObj.pathname === '/' && normalizedUrl.endsWith('/')) {
+      normalizedUrl = normalizedUrl.slice(0, -1);
+    }
+
+    return normalizedUrl;
   } catch {
     // If URL parsing fails, return original
     return url;

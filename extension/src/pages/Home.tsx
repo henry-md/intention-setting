@@ -18,6 +18,11 @@ interface HomeProps {
   user: User | null;
 }
 
+/**
+ * Home tab showing individual URL management. Child of Popup.tsx, renders inside the Home tab.
+ * Sibling to Groups.tsx and Limits.tsx (other tabs). NOT the main router - that's Popup.tsx.
+ * Manages standalone URLs (separate from groups), YouTube button, and intentions list.
+ */
 const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
   const [urlInput, setUrlInput] = useState('');
   const [urls, setUrls] = useState<string[]>([]);
@@ -116,6 +121,11 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
     if (!trimmedUrl) {
       setUrlError('Please enter a URL');
       return;
+    }
+
+    // If no domain extension is provided, add .com
+    if (!trimmedUrl.includes('.')) {
+      trimmedUrl = trimmedUrl + '.com';
     }
 
     // Automatically prepend https:// if no protocol is specified
