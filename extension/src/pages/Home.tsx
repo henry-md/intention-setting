@@ -303,7 +303,18 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
                     data-url={url}
                     className="pr-4 py-2 text-white text-sm flex items-center justify-between w-full"
                   >
-                    <span className="flex-1 truncate">{displayUrl(url)}</span>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <img
+                        src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(url)}&sz=32`}
+                        alt=""
+                        className="w-4 h-4 flex-shrink-0"
+                        onError={(e) => {
+                          // Fallback to a default icon if favicon fails to load
+                          e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                        }}
+                      />
+                      <span className="flex-1 truncate">{displayUrl(url)}</span>
+                    </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
