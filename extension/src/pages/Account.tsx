@@ -1,6 +1,7 @@
 import React from 'react';
 import useAuth from '../hooks/useAuth';
 import { useStripe } from '../hooks/useStripe';
+import Spinner from '../components/Spinner';
 
 interface AccountProps {
   onBack: () => void;
@@ -16,7 +17,11 @@ const Account: React.FC<AccountProps> = ({ onBack }) => {
   const { paymentStatus, isProcessing, handleUpgrade } = useStripe(user, authLoading);
 
   if (authLoading) {
-    return <div className="h-screen w-full flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="h-screen w-full flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
   }
 
   // Handle the case where the user is not signed in

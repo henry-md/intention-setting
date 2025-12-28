@@ -5,6 +5,7 @@ import Account from './Account';
 import Groups from './Groups';
 import Limits from './Limits';
 import GroupEdit from './GroupEdit';
+import Spinner from '../components/Spinner';
 
 type TabType = 'home' | 'groups' | 'limits';
 type ViewType = 'main' | 'account' | 'groupEdit';
@@ -21,7 +22,11 @@ const Popup: React.FC = () => {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
   if (authLoading) {
-    return <div className="h-screen w-full flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="h-screen w-full flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
   }
 
   // Account view

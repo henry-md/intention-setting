@@ -8,6 +8,7 @@ import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import { ReorderList } from '../components/ui/reorder-list';
+import Spinner from '../components/Spinner';
 
 interface GroupEditProps {
   user: User | null;
@@ -377,7 +378,7 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
   if (loading || !group) {
     return (
       <div className="h-screen w-full flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+        <Spinner />
       </div>
     );
   }

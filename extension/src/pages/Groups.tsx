@@ -5,6 +5,7 @@ import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname } from '../utils/urlNormalization';
+import Spinner from '../components/Spinner';
 
 interface GroupsProps {
   user: User | null;
@@ -113,7 +114,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+        <Spinner />
       </div>
     );
   }

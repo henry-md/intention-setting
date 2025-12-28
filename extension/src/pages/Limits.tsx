@@ -7,6 +7,7 @@ import type { Limit } from '../types/Limit';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
+import Spinner from '../components/Spinner';
 
 interface LimitsProps {
   user: User | null;
@@ -307,7 +308,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+        <Spinner />
       </div>
     );
   }
