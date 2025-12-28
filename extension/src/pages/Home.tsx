@@ -292,7 +292,7 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
           {urls.length > 0 && (
             <div className="flex flex-col space-y-2">
               <ReorderList
-                withDragHandle={true}
+                withDragHandle={false}
                 className="gap-2 max-h-60 overflow-y-auto"
                 itemClassName="bg-slate-700 hover:bg-slate-600 rounded-lg"
                 onReorderFinish={handleReorderUrls}
@@ -303,7 +303,7 @@ const Home: React.FC<HomeProps> = ({ onShowAccount, user }) => {
                     data-url={url}
                     className="pr-4 py-2 text-white text-sm flex items-center justify-between w-full"
                   >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-1 min-w-0 pl-4">
                       <img
                         src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(url)}&sz=32`}
                         alt=""
