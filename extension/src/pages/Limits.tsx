@@ -10,6 +10,7 @@ import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import Spinner from '../components/Spinner';
 import { ItemListInput } from '../components/ItemListInput';
+import { GroupIcons } from '../components/GroupIcons';
 import {
   Dialog,
   DialogContent,
@@ -475,9 +476,12 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                 renderItem={(itemId) => {
                   const item = targetItems.find(t => t.id === itemId);
                   if (!item) return null;
+
+                  const group = item.type === 'group' ? groups.find(g => g.id === item.id) : null;
+
                   return (
                     <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
-                      {item.type === 'url' && (
+                      {item.type === 'url' ? (
                         <img
                           src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item.id)}&sz=32`}
                           alt=""
@@ -486,7 +490,9 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                             e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
                           }}
                         />
-                      )}
+                      ) : group ? (
+                        <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={3} />
+                      ) : null}
                       <span className="flex-1 text-white text-sm">
                         {getTargetDisplayName(item.id, item.type)}
                       </span>
@@ -807,7 +813,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  {limit.targetType === 'url' && (
+                  {limit.targetType === 'url' ? (
                     <img
                       src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(limit.targetId)}&sz=32`}
                       alt=""
@@ -816,6 +822,11 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                         e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
                       }}
                     />
+                  ) : (
+                    (() => {
+                      const group = groups.find(g => g.id === limit.targetId);
+                      return group ? <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={3} /> : null;
+                    })()
                   )}
                   <span className="text-white text-sm font-medium truncate">
                     {getTargetDisplayName(limit.targetId, limit.targetType)}

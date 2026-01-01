@@ -5,11 +5,12 @@ import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import type { Limit } from '../types/Limit';
-import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
+import { normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import Spinner from '../components/Spinner';
 import { ItemListInput } from '../components/ItemListInput';
+import { GroupIcons } from '../components/GroupIcons';
 import {
   Dialog,
   DialogContent,
@@ -215,26 +216,6 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     }
   };
 
-  // Get URLs from a group (recursively if it contains other groups)
-  const getGroupUrls = (group: Group): string[] => {
-    const urls: string[] = [];
-
-    for (const item of group.items) {
-      if (item.startsWith('group:')) {
-        // It's a nested group, find it and get its URLs
-        const nestedGroup = groups.find(g => g.id === item);
-        if (nestedGroup) {
-          urls.push(...getGroupUrls(nestedGroup));
-        }
-      } else {
-        // It's a URL
-        urls.push(item);
-      }
-    }
-
-    return urls;
-  };
-
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center">
@@ -366,9 +347,6 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
           </p>
         ) : (
           groups.map((group) => {
-            const urls = getGroupUrls(group);
-            const displayUrls = urls.slice(0, 5); // Show max 5 icons
-
             return (
               <div
                 key={group.id}
@@ -376,30 +354,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
                 className="bg-slate-700 hover:bg-slate-600 rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-colors"
               >
                 {/* Site Icons */}
-                <div className="flex items-center gap-1">
-                  {displayUrls.length > 0 ? (
-                    <>
-                      {displayUrls.map((url, idx) => (
-                        <img
-                          key={idx}
-                          src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(url)}&sz=32`}
-                          alt=""
-                          className="w-5 h-5"
-                          onError={(e) => {
-                            e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
-                          }}
-                        />
-                      ))}
-                      {urls.length > 5 && (
-                        <span className="text-xs text-gray-400 ml-1">
-                          +{urls.length - 5}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <div className="w-5 h-5 rounded bg-gray-600" />
-                  )}
-                </div>
+                <GroupIcons group={group} allGroups={groups} />
 
                 {/* Group Name */}
                 <span className="flex-1 text-white font-medium">
