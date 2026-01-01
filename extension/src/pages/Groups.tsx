@@ -218,7 +218,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
             type="text"
             value={newGroupName}
             onChange={(e) => setNewGroupName(e.target.value)}
-            placeholder="Group name..."
+            placeholder="Group name"
             className="w-full px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             autoFocus
           />
@@ -234,7 +234,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
                   setInputError('');
                 }}
                 onKeyPress={(e) => e.key === 'Enter' && handleAddItemFromInput()}
-                placeholder="Enter URL (e.g., youtube.com)"
+                placeholder="e.g. youtube.com"
                 className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <button

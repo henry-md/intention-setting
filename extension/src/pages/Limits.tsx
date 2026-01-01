@@ -357,7 +357,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                 // Delay to allow clicking on suggestions
                 setTimeout(() => setShowSuggestions(false), 200);
               }}
-              placeholder="e.g., youtube.com or Social Media"
+              placeholder={`e.g. youtube.com or ${groups.length > 0 ? groups[groups.length - 1].name : '[custom group]'}`}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
 
