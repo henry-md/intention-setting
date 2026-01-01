@@ -5,18 +5,18 @@ import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Limit } from '../types/Limit';
 import type { Group } from '../types/Group';
-import { getNormalizedHostname } from '../utils/urlNormalization';
+import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
+import { prepareUrl } from '../utils/urlValidation';
 import Spinner from '../components/Spinner';
+import { ItemListInput } from '../components/ItemListInput';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '../components/ui/dialog';
 
 interface LimitsProps {
@@ -31,13 +31,13 @@ interface LimitsProps {
 const Limits: React.FC<LimitsProps> = ({ user }) => {
   const [limits, setLimits] = useState<Limit[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [urls, setUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingLimitId, setEditingLimitId] = useState<string | null>(null);
 
   // Create/Edit form state
   const [targetInput, setTargetInput] = useState('');
+  const [targetItems, setTargetItems] = useState<Array<{ type: 'url' | 'group'; id: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [limitType, setLimitType] = useState<'hard' | 'soft' | 'session'>('hard');
   const [timeLimit, setTimeLimit] = useState('60');
@@ -71,7 +71,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
           const fetchedLimits = data.limits || [];
           setLimits(fetchedLimits);
           setGroups(data.groups || []);
-          setUrls(data.urls || []);
 
           // Auto-open create form if no limits exist
           if (fetchedLimits.length === 0) {
@@ -111,19 +110,106 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     );
   };
 
-  // Determine if input is a group name or URL
-  const parseTargetInput = (): { targetType: 'url' | 'group'; targetId: string } | null => {
-    const trimmed = targetInput.trim();
-    if (!trimmed) return null;
+  // Add normalized URL to target items list
+  const addNormalizedUrlToList = async (url: string) => {
+    const normalizedUrl = normalizeUrl(url);
 
-    // Check if it matches a group name (case-insensitive)
-    const matchingGroup = groups.find(g => g.name.toLowerCase() === trimmed.toLowerCase());
-    if (matchingGroup) {
-      return { targetType: 'group', targetId: matchingGroup.id };
+    // Check if URL is already in target items
+    if (targetItems.some(item => item.id === normalizedUrl)) {
+      setFormError('This URL is already in the list');
+      return;
     }
 
-    // Otherwise treat as URL
-    return { targetType: 'url', targetId: trimmed };
+    // Check if URL already has a limit
+    if (limits.some(l => l.targetId === normalizedUrl)) {
+      setFormError('This URL already has a limit');
+      return;
+    }
+
+    // Add to list
+    setTargetItems([...targetItems, { type: 'url', id: normalizedUrl }]);
+    setTargetInput('');
+    setFormError('');
+    setTyposquattingWarning(null);
+  };
+
+  // Add target from input to the list
+  const handleAddTargetToList = async () => {
+    if (!targetInput.trim()) return;
+
+    const input = targetInput.trim();
+    setFormError('');
+
+    // Check if it's a group name
+    const matchingGroup = groups.find(
+      g => g.name.toLowerCase() === input.toLowerCase()
+    );
+
+    if (matchingGroup) {
+      // Check if already in list
+      if (targetItems.some(item => item.id === matchingGroup.id)) {
+        setFormError('This group is already in the list');
+        return;
+      }
+
+      // Check if already has a limit
+      if (limits.some(l => l.targetId === matchingGroup.id)) {
+        setFormError('This group already has a limit');
+        return;
+      }
+
+      // Add to list
+      setTargetItems([...targetItems, { type: 'group', id: matchingGroup.id }]);
+      setTargetInput('');
+      setFormError('');
+    } else {
+      // It's a URL
+      try {
+        const preparedUrl = prepareUrl(input);
+
+        // Check for typosquatting
+        const typoCheck = checkTyposquatting(preparedUrl);
+        if (typoCheck.isSuspicious && typoCheck.suggestion) {
+          setTyposquattingWarning({
+            url: preparedUrl,
+            suggestion: typoCheck.suggestion + '.com',
+            targetType: 'url',
+            targetId: preparedUrl,
+          });
+          return;
+        }
+
+        // Add the URL
+        await addNormalizedUrlToList(preparedUrl);
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Invalid URL');
+      }
+    }
+  };
+
+  // Remove target from list
+  const handleRemoveTargetFromList = (targetId: string) => {
+    setTargetItems(targetItems.filter(item => item.id !== targetId));
+  };
+
+  // Get display name for a target
+  const getTargetDisplayName = (targetId: string, targetType: 'url' | 'group'): string => {
+    if (targetType === 'url') {
+      return targetId.replace(/^https?:\/\//, '');
+    } else {
+      const group = groups.find(g => g.id === targetId);
+      return group?.name || 'Unknown group';
+    }
+  };
+
+  // Handle Tab key to auto-fill top suggestion
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab' && groupSuggestions.length > 0) {
+      e.preventDefault();
+      setTargetInput(groupSuggestions[0].name);
+      setShowSuggestions(false);
+      setFormError('');
+    }
   };
 
   // Actually save the limit (called after typosquatting check or directly)
@@ -195,34 +281,54 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
   // Create or update limit
   const handleCreateLimit = async () => {
-    const target = parseTargetInput();
-    if (!target) {
-      setFormError('Please enter a URL or group name');
+    if (targetItems.length === 0) {
+      setFormError('Please add at least one URL or group');
       return;
     }
 
-    // Check for typosquatting if target is a URL
-    if (target.targetType === 'url') {
-      const typoCheck = checkTyposquatting(target.targetId);
-      if (typoCheck.isSuspicious && typoCheck.suggestion) {
-        setTyposquattingWarning({
-          url: target.targetId,
-          suggestion: typoCheck.suggestion + '.com',
-          targetType: target.targetType,
-          targetId: target.targetId,
-        });
+    // For session limits, time limit is set when visiting the site
+    // For hard/soft limits, validate time limit
+    let timeLimitNum = 0;
+    if (limitType !== 'session') {
+      timeLimitNum = parseInt(timeLimit);
+      if (isNaN(timeLimitNum) || timeLimitNum <= 0) {
+        setFormError('Please enter a valid time limit');
         return;
       }
     }
 
-    // Check if target already has a limit (only when creating, not editing)
-    if (!editingLimitId && limits.some(l => l.targetId === target.targetId)) {
-      setFormError('This target already has a limit');
-      return;
+    // Calculate plus-one duration in seconds for soft limits
+    let plusOneDurationSeconds: number | undefined;
+    if (limitType === 'soft') {
+      const minutes = parseInt(plusOneMinutes) || 0;
+      const seconds = parseInt(plusOneSeconds) || 0;
+      plusOneDurationSeconds = minutes * 60 + seconds;
+
+      if (plusOneDurationSeconds <= 0) {
+        setFormError('Plus-one duration must be greater than 0');
+        return;
+      }
     }
 
-    // Save the limit with the validated target
-    await saveLimitWithTarget(target.targetType, target.targetId);
+    // Create a limit for each target
+    const newLimits: Limit[] = targetItems.map((target, index) => ({
+      id: `limit:${Date.now() + index}`,
+      type: limitType,
+      targetType: target.type,
+      targetId: target.id,
+      timeLimit: timeLimitNum,
+      plusOnes: limitType === 'soft' ? parseInt(plusOnes) : undefined,
+      plusOneDuration: plusOneDurationSeconds,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const updatedLimits = [...limits, ...newLimits];
+    setLimits(updatedLimits);
+    await saveLimitsToFirestore(updatedLimits);
+
+    // Reset form
+    setTyposquattingWarning(null);
+    resetForm();
   };
 
   // Delete limit
@@ -236,15 +342,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     setLimitToDelete(null);
   };
 
-  // Get display name for a target
-  const getTargetDisplayName = (limit: Limit): string => {
-    if (limit.targetType === 'url') {
-      return limit.targetId.replace(/^https?:\/\//, '');
-    } else {
-      const group = groups.find(g => g.id === limit.targetId);
-      return group?.name || 'Unknown group';
-    }
-  };
 
   // Format plus-one duration from seconds to human-readable string
   const formatPlusOneDuration = (seconds: number): string => {
@@ -311,6 +408,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     setShowCreateForm(false);
     setEditingLimitId(null);
     setTargetInput('');
+    setTargetItems([]);
     setShowSuggestions(false);
     setLimitType('hard');
     setTimeLimit('60');
@@ -357,48 +455,122 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
         <div className="bg-gray-800 border border-gray-600 rounded-lg p-4 space-y-3">
           <h4 className="text-white font-medium">{editingLimitId ? 'Edit Limit' : 'Create New Limit'}</h4>
 
-          {/* Target Input with Autocomplete */}
-          <div className="relative">
-            <label className="block text-gray-400 text-xs mb-1">URL or Group Name</label>
-            <input
-              type="text"
-              value={targetInput}
-              onChange={(e) => {
-                setTargetInput(e.target.value);
-                setShowSuggestions(true);
-                setFormError('');
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => {
-                // Delay to allow clicking on suggestions
-                setTimeout(() => setShowSuggestions(false), 200);
-              }}
-              placeholder={`e.g. youtube.com or ${groups.length > 0 ? groups[groups.length - 1].name : '[custom group]'}`}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          {/* Target Input with List */}
+          <div>
+            <label className="block text-gray-400 text-xs mb-1">URLs or Group Names</label>
+            <div className="relative">
+              <ItemListInput
+                items={targetItems.map(t => t.id)}
+                inputValue={targetInput}
+                onInputChange={(value) => {
+                  setTargetInput(value);
+                  setShowSuggestions(true);
+                  setFormError('');
+                }}
+                onAddItem={handleAddTargetToList}
+                onRemoveItem={handleRemoveTargetFromList}
+                onKeyDown={handleInputKeyDown}
+                placeholder={`e.g. youtube.com or ${groups.length > 0 ? groups[groups.length - 1].name : '[custom group]'}`}
+                error={formError}
+                renderItem={(itemId) => {
+                  const item = targetItems.find(t => t.id === itemId);
+                  if (!item) return null;
+                  return (
+                    <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
+                      {item.type === 'url' && (
+                        <img
+                          src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item.id)}&sz=32`}
+                          alt=""
+                          className="w-4 h-4"
+                          onError={(e) => {
+                            e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                          }}
+                        />
+                      )}
+                      <span className="flex-1 text-white text-sm">
+                        {getTargetDisplayName(item.id, item.type)}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveTargetFromList(item.id)}
+                        className="text-gray-400 hover:text-white transition-colors"
+                      >
+                        <span className="text-xs">✕</span>
+                      </button>
+                    </div>
+                  );
+                }}
+              />
 
-            {/* Group Suggestions */}
-            {showSuggestions && groupSuggestions.length > 0 && (
-              <div className="absolute top-full mt-1 w-full bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-600">
-                  Matching Groups
+              {/* Group Suggestions */}
+              {showSuggestions && groupSuggestions.length > 0 && (
+                <div className="absolute top-12 left-0 right-0 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                  <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-600">
+                    Matching Groups
+                  </div>
+                  {groupSuggestions.map(group => (
+                    <button
+                      key={group.id}
+                      onClick={() => {
+                        setTargetInput(group.name);
+                        setShowSuggestions(false);
+                        setFormError('');
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2"
+                    >
+                      <span className="font-medium">{group.name}</span>
+                      <span className="text-xs text-gray-400">({group.items.length} items)</span>
+                    </button>
+                  ))}
                 </div>
-                {groupSuggestions.map(group => (
-                  <button
-                    key={group.id}
-                    onClick={() => {
-                      setTargetInput(group.name);
-                      setShowSuggestions(false);
-                      setFormError('');
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2"
-                  >
-                    <span className="font-medium">{group.name}</span>
-                    <span className="text-xs text-gray-400">({group.items.length} items)</span>
-                  </button>
-                ))}
-              </div>
-            )}
+              )}
+
+              {/* Typosquatting Warning */}
+              {typosquattingWarning && (
+                <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3 mt-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-yellow-500 text-xl">⚠️</span>
+                    <div className="flex-1">
+                      <p className="text-yellow-100 text-sm font-medium mb-1">
+                        Possible typo detected
+                      </p>
+                      <p className="text-yellow-200 text-xs">
+                        Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
+                      </p>
+                      <p className="text-yellow-300 text-xs mt-1">
+                        You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        const correctedUrl = 'https://' + typosquattingWarning.suggestion;
+                        await addNormalizedUrlToList(correctedUrl);
+                      }}
+                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+                    >
+                      Use {typosquattingWarning.suggestion}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await addNormalizedUrlToList(typosquattingWarning.url);
+                      }}
+                      className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
+                    >
+                      Keep original
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTyposquattingWarning(null);
+                      }}
+                      className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Limit Type Selection */}
@@ -646,7 +818,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                     />
                   )}
                   <span className="text-white text-sm font-medium truncate">
-                    {getTargetDisplayName(limit)}
+                    {getTargetDisplayName(limit.targetId, limit.targetType)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 mt-1">

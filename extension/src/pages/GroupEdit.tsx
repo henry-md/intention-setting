@@ -520,9 +520,8 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
           className="gap-2"
           itemClassName="bg-slate-600 rounded-lg"
           onReorderFinish={handleReorderItems}
-        >
-          {group.items.map(item => renderItem(item))}
-        </ReorderList>
+          children={group.items.map(item => renderItem(item)) as React.ReactElement[]}
+        />
       )}
     </div>
   );

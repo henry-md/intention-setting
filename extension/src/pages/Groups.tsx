@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MoreVertical, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
+import type { Limit } from '../types/Limit';
 import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import Spinner from '../components/Spinner';
+import { ItemListInput } from '../components/ItemListInput';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '../components/ui/dialog';
 
 interface GroupsProps {
@@ -175,13 +175,44 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
 
   // Delete group
   const handleDeleteGroup = async () => {
-    if (!groupToDelete) return;
+    if (!groupToDelete || !user?.uid) return;
 
-    const updatedGroups = groups.filter(g => g.id !== groupToDelete);
-    setGroups(updatedGroups);
-    await saveGroupsToFirestore(updatedGroups);
-    setDeleteDialogOpen(false);
-    setGroupToDelete(null);
+    try {
+      // Update groups
+      const updatedGroups = groups.filter(g => g.id !== groupToDelete);
+
+      // Fetch and update limits that reference this group
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        const limits = (data.limits || []) as Limit[];
+
+        // Remove limits that target the deleted group
+        const updatedLimits = limits.filter(
+          limit => !(limit.targetType === 'group' && limit.targetId === groupToDelete)
+        );
+
+        // Save both groups and limits
+        await setDoc(userDocRef, {
+          groups: updatedGroups,
+          limits: updatedLimits
+        }, { merge: true });
+      } else {
+        // If no user doc exists, just save groups
+        await saveGroupsToFirestore(updatedGroups);
+      }
+
+      setGroups(updatedGroups);
+      setDeleteDialogOpen(false);
+      setGroupToDelete(null);
+    } catch (error) {
+      console.error('Error deleting group:', error);
+      // Still close the dialog even if there's an error
+      setDeleteDialogOpen(false);
+      setGroupToDelete(null);
+    }
   };
 
   // Get URLs from a group (recursively if it contains other groups)
@@ -240,31 +271,18 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
 
           {/* URL Input */}
           <div className="flex flex-col space-y-2">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newItemInput}
-                onChange={(e) => {
-                  setNewItemInput(e.target.value);
-                  setInputError('');
-                }}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddItemFromInput()}
-                placeholder="e.g. youtube.com"
-                className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <button
-                onClick={handleAddItemFromInput}
-                className="purple-button"
-                title="Add URL"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
-
-            {/* Error Message */}
-            {inputError && (
-              <p className="text-red-400 text-sm">{inputError}</p>
-            )}
+            <ItemListInput
+              items={newGroupItems}
+              inputValue={newItemInput}
+              onInputChange={(value) => {
+                setNewItemInput(value);
+                setInputError('');
+              }}
+              onAddItem={handleAddItemFromInput}
+              onRemoveItem={handleRemoveItem}
+              placeholder="e.g. youtube.com"
+              error={inputError}
+            />
 
             {/* Typosquatting Warning Dialog */}
             {typosquattingWarning && (
@@ -313,36 +331,6 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
               </div>
             )}
           </div>
-
-          {/* List of URLs being added */}
-          {newGroupItems.length > 0 && (
-            <div className="space-y-2">
-              {newGroupItems.map((item, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg"
-                >
-                  <img
-                    src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item)}&sz=32`}
-                    alt=""
-                    className="w-4 h-4"
-                    onError={(e) => {
-                      e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
-                    }}
-                  />
-                  <span className="flex-1 text-white text-sm">
-                    {item.replace(/^https?:\/\//, '')}
-                  </span>
-                  <button
-                    onClick={() => handleRemoveItem(item)}
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Action Buttons */}
           <div className="flex gap-2">
