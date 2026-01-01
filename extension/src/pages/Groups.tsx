@@ -8,6 +8,16 @@ import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import Spinner from '../components/Spinner';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../components/ui/dialog';
 
 interface GroupsProps {
   user: User | null;
@@ -32,6 +42,8 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     url: string;
     suggestion: string;
   } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
 
   // Fetch groups from Firestore
   useEffect(() => {
@@ -162,11 +174,14 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
   };
 
   // Delete group
-  const handleDeleteGroup = async (groupId: string) => {
-    const updatedGroups = groups.filter(g => g.id !== groupId);
+  const handleDeleteGroup = async () => {
+    if (!groupToDelete) return;
+
+    const updatedGroups = groups.filter(g => g.id !== groupToDelete);
     setGroups(updatedGroups);
     await saveGroupsToFirestore(updatedGroups);
-    setOpenMenuId(null);
+    setDeleteDialogOpen(false);
+    setGroupToDelete(null);
   };
 
   // Get URLs from a group (recursively if it contains other groups)
@@ -431,7 +446,9 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteGroup(group.id);
+                          setGroupToDelete(group.id);
+                          setDeleteDialogOpen(true);
+                          setOpenMenuId(null);
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2 rounded-b-lg"
                       >
@@ -446,6 +463,39 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
           })
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="bg-gray-800 border-gray-600 text-white" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="text-white">Delete Group?</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Are you sure you want to delete this group? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteDialogOpen(false);
+                setGroupToDelete(null);
+              }}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteGroup();
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -8,6 +8,16 @@ import type { Group } from '../types/Group';
 import { getNormalizedHostname } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import Spinner from '../components/Spinner';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../components/ui/dialog';
 
 interface LimitsProps {
   user: User | null;
@@ -41,6 +51,8 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     targetType: 'url' | 'group';
     targetId: string;
   } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [limitToDelete, setLimitToDelete] = useState<string | null>(null);
 
   // Fetch limits, groups, and URLs from Firestore
   useEffect(() => {
@@ -214,10 +226,14 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   };
 
   // Delete limit
-  const handleDeleteLimit = async (limitId: string) => {
-    const updatedLimits = limits.filter(l => l.id !== limitId);
+  const handleDeleteLimit = async () => {
+    if (!limitToDelete) return;
+
+    const updatedLimits = limits.filter(l => l.id !== limitToDelete);
     setLimits(updatedLimits);
     await saveLimitsToFirestore(updatedLimits);
+    setDeleteDialogOpen(false);
+    setLimitToDelete(null);
   };
 
   // Get display name for a target
@@ -648,7 +664,8 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteLimit(limit.id);
+                  setLimitToDelete(limit.id);
+                  setDeleteDialogOpen(true);
                 }}
                 className="text-gray-400 hover:text-red-400 transition-colors"
                 title="Delete Limit"
@@ -659,6 +676,39 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
           ))
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="bg-gray-800 border-gray-600 text-white" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="text-white">Delete Limit?</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Are you sure you want to delete this limit? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteDialogOpen(false);
+                setLimitToDelete(null);
+              }}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteLimit();
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
