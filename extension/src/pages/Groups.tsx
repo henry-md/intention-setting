@@ -119,15 +119,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     // Normalize the URL
     const normalizedUrl = normalizeUrl(url);
 
-    // Check if URL is already in another group
-    const isInAnotherGroup = groups.some(g => g.items.includes(normalizedUrl));
-    if (isInAnotherGroup) {
-      setInputError('This URL is already in another group');
-      setTyposquattingWarning(null);
-      return;
-    }
-
-    // Check if already in the new group items
+    // Check if already in the current group items
     if (newGroupItems.includes(normalizedUrl)) {
       setInputError('This URL is already in the current group');
       setTyposquattingWarning(null);
@@ -179,6 +171,28 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     if (!groupToDelete || !user?.uid) return;
 
     try {
+      // Get the group being deleted
+      const deletedGroup = groups.find(g => g.id === groupToDelete);
+      if (!deletedGroup) return;
+
+      // Get all URLs from the deleted group (recursively)
+      const getGroupUrls = (grp: Group): string[] => {
+        const urls: string[] = [];
+        for (const item of grp.items) {
+          if (item.startsWith('group:')) {
+            const nestedGroup = groups.find(g => g.id === item);
+            if (nestedGroup) {
+              urls.push(...getGroupUrls(nestedGroup));
+            }
+          } else {
+            urls.push(item);
+          }
+        }
+        return urls;
+      };
+
+      const deletedUrls = getGroupUrls(deletedGroup);
+
       // Update groups
       const updatedGroups = groups.filter(g => g.id !== groupToDelete);
 
@@ -190,10 +204,32 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
         const data = userDoc.data();
         const limits = (data.limits || []) as Limit[];
 
-        // Remove limits that target the deleted group
-        const updatedLimits = limits.filter(
-          limit => !(limit.targetType === 'group' && limit.targetId === groupToDelete)
-        );
+        // Update limits to remove URLs from the deleted group
+        const updatedLimits = limits
+          .map(limit => {
+            // Handle legacy limits
+            if (limit.targetType === 'group' && limit.targetId === groupToDelete) {
+              return null; // Delete legacy group limits
+            }
+
+            // Handle new URL-based limits
+            if (limit.urls) {
+              const filteredUrls = limit.urls.filter(
+                limitUrl => !deletedUrls.includes(limitUrl.url)
+              );
+
+              // If no URLs left, delete the limit
+              if (filteredUrls.length === 0) {
+                return null;
+              }
+
+              // Otherwise, keep the limit with remaining URLs
+              return { ...limit, urls: filteredUrls };
+            }
+
+            return limit;
+          })
+          .filter((limit): limit is Limit => limit !== null);
 
         // Save both groups and limits
         await setDoc(userDocRef, {

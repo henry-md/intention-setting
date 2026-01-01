@@ -183,16 +183,6 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     // Normalize the URL
     const normalizedUrl = normalizeUrl(url);
 
-    // Check if URL is already in another group
-    const isInAnotherGroup = allGroups.some(
-      g => g.id !== groupId && g.items.includes(normalizedUrl)
-    );
-    if (isInAnotherGroup) {
-      setInputError('This URL is already in another group');
-      setTyposquattingWarning(null);
-      return;
-    }
-
     // Check if already in this group
     if (group.items.includes(normalizedUrl)) {
       setInputError('This URL is already in the current group');
@@ -226,15 +216,6 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
       // Check for circular dependency
       if (wouldCreateCircularDependency(matchingGroupId)) {
         setInputError('Cannot add this group: it would create a circular dependency');
-        return;
-      }
-
-      // Check if already in another group
-      const isInAnotherGroup = allGroups.some(
-        g => g.id !== groupId && g.items.includes(matchingGroupId)
-      );
-      if (isInAnotherGroup) {
-        setInputError('This group is already in another group');
         return;
       }
 

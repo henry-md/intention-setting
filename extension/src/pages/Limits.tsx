@@ -3,7 +3,7 @@ import { Plus, Trash2, Clock } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
-import type { Limit } from '../types/Limit';
+import type { Limit, LimitUrl, LimitTarget } from '../types/Limit';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
@@ -38,7 +38,8 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
   // Create/Edit form state
   const [targetInput, setTargetInput] = useState('');
-  const [targetItems, setTargetItems] = useState<Array<{ type: 'url' | 'group'; id: string }>>([]);
+  const [targetItems, setTargetItems] = useState<LimitTarget[]>([]); // Visual representation
+  const [targetUrls, setTargetUrls] = useState<LimitUrl[]>([]); // For validation
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [limitType, setLimitType] = useState<'hard' | 'soft' | 'session'>('hard');
   const [timeLimit, setTimeLimit] = useState('60');
@@ -90,14 +91,42 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
   // Save limits to Firestore
   const saveLimitsToFirestore = async (newLimits: Limit[]) => {
-    if (!user?.uid) return;
+    console.log('saveLimitsToFirestore called with:', newLimits);
+    console.log('user?.uid:', user?.uid);
+
+    if (!user?.uid) {
+      console.error('No user UID available');
+      return;
+    }
 
     try {
       const userDocRef = doc(db, 'users', user.uid);
+      console.log('Saving to Firestore...');
       await setDoc(userDocRef, { limits: newLimits }, { merge: true });
+      console.log('Save completed successfully');
     } catch (error) {
       console.error('Error saving limits:', error);
+      throw error;
     }
+  };
+
+
+  // Get URLs from a group (recursively if it contains other groups)
+  const getGroupUrls = (group: Group): string[] => {
+    const urls: string[] = [];
+
+    for (const item of group.items) {
+      if (item.startsWith('group:')) {
+        const nestedGroup = groups.find(g => g.id === item);
+        if (nestedGroup) {
+          urls.push(...getGroupUrls(nestedGroup));
+        }
+      } else {
+        urls.push(item);
+      }
+    }
+
+    return urls;
   };
 
   // Get matching group suggestions
@@ -106,8 +135,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
     const input = targetInput.toLowerCase();
     return groups.filter(group =>
-      group.name.toLowerCase().includes(input) &&
-      !limits.some(l => l.targetId === group.id)
+      group.name.toLowerCase().includes(input)
     );
   };
 
@@ -115,20 +143,23 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   const addNormalizedUrlToList = async (url: string) => {
     const normalizedUrl = normalizeUrl(url);
 
-    // Check if URL is already in target items
-    if (targetItems.some(item => item.id === normalizedUrl)) {
-      setFormError('This URL is already in the list');
+    // Check if URL is already in target URLs
+    const existingUrl = targetUrls.find(u => u.url === normalizedUrl);
+    if (existingUrl) {
+      if (existingUrl.source === 'direct') {
+        setFormError('This URL is already in this limit');
+      } else {
+        setFormError(`This URL is already in this limit (as part of ${existingUrl.source})`);
+      }
       return;
     }
 
-    // Check if URL already has a limit
-    if (limits.some(l => l.targetId === normalizedUrl)) {
-      setFormError('This URL already has a limit');
-      return;
-    }
+    // Add to both visual targets and URL list
+    const newTargetItems: LimitTarget[] = [...targetItems, { type: 'url' as const, id: normalizedUrl }];
+    const newTargetUrls: LimitUrl[] = [...targetUrls, { url: normalizedUrl, source: 'direct' }];
 
-    // Add to list
-    setTargetItems([...targetItems, { type: 'url', id: normalizedUrl }]);
+    setTargetItems(newTargetItems);
+    setTargetUrls(newTargetUrls);
     setTargetInput('');
     setFormError('');
     setTyposquattingWarning(null);
@@ -147,20 +178,36 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     );
 
     if (matchingGroup) {
-      // Check if already in list
-      if (targetItems.some(item => item.id === matchingGroup.id)) {
-        setFormError('This group is already in the list');
+      // Get all URLs from the group
+      const groupUrls = getGroupUrls(matchingGroup);
+
+      if (groupUrls.length === 0) {
+        setFormError('This group has no URLs');
         return;
       }
 
-      // Check if already has a limit
-      if (limits.some(l => l.targetId === matchingGroup.id)) {
-        setFormError('This group already has a limit');
+      // Check how many URLs from this group already exist in the limit
+      const existingUrls = groupUrls.filter(url =>
+        targetUrls.some(u => u.url === url)
+      );
+
+      // Only prevent adding the group if ALL its URLs are already in the limit
+      if (existingUrls.length === groupUrls.length) {
+        setFormError('All URLs from this group are already in this limit');
         return;
       }
 
-      // Add to list
-      setTargetItems([...targetItems, { type: 'group', id: matchingGroup.id }]);
+      // Add URLs that don't already exist to the URL list (for validation)
+      const newUrls: LimitUrl[] = groupUrls
+        .filter(url => !targetUrls.some(u => u.url === url))
+        .map(url => ({ url, source: matchingGroup.name }));
+
+      // Add group to visual targets (for display)
+      const newTargetItems: LimitTarget[] = [...targetItems, { type: 'group' as const, id: matchingGroup.id }];
+      const newTargetUrls: LimitUrl[] = [...targetUrls, ...newUrls];
+
+      setTargetItems(newTargetItems);
+      setTargetUrls(newTargetUrls);
       setTargetInput('');
       setFormError('');
     } else {
@@ -190,7 +237,23 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
   // Remove target from list
   const handleRemoveTargetFromList = (targetId: string) => {
-    setTargetItems(targetItems.filter(item => item.id !== targetId));
+    const target = targetItems.find(t => t.id === targetId);
+    if (!target) return;
+
+    if (target.type === 'url') {
+      // Remove URL from both lists
+      setTargetItems(targetItems.filter(t => t.id !== targetId));
+      setTargetUrls(targetUrls.filter(u => u.url !== targetId));
+    } else {
+      // Remove group from visual list
+      setTargetItems(targetItems.filter(t => t.id !== targetId));
+
+      // Remove all URLs from this group from the URL list
+      const group = groups.find(g => g.id === targetId);
+      if (group) {
+        setTargetUrls(targetUrls.filter(u => u.source !== group.name));
+      }
+    }
   };
 
   // Get display name for a target
@@ -213,75 +276,13 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     }
   };
 
-  // Actually save the limit (called after typosquatting check or directly)
-  const saveLimitWithTarget = async (targetType: 'url' | 'group', targetId: string) => {
-    // For session limits, time limit is set when visiting the site
-    // For hard/soft limits, validate time limit
-    let timeLimitNum = 0;
-    if (limitType !== 'session') {
-      timeLimitNum = parseInt(timeLimit);
-      if (isNaN(timeLimitNum) || timeLimitNum <= 0) {
-        setFormError('Please enter a valid time limit');
-        return;
-      }
-    }
 
-    // Calculate plus-one duration in seconds for soft limits
-    let plusOneDurationSeconds: number | undefined;
-    if (limitType === 'soft') {
-      const minutes = parseInt(plusOneMinutes) || 0;
-      const seconds = parseInt(plusOneSeconds) || 0;
-      plusOneDurationSeconds = minutes * 60 + seconds;
-
-      if (plusOneDurationSeconds <= 0) {
-        setFormError('Plus-one duration must be greater than 0');
-        return;
-      }
-    }
-
-    if (editingLimitId) {
-      // Update existing limit
-      const updatedLimits = limits.map(limit => {
-        if (limit.id === editingLimitId) {
-          return {
-            ...limit,
-            type: limitType,
-            targetType: targetType,
-            targetId: targetId,
-            timeLimit: timeLimitNum,
-            plusOnes: limitType === 'soft' ? parseInt(plusOnes) : undefined,
-            plusOneDuration: plusOneDurationSeconds,
-          };
-        }
-        return limit;
-      });
-      setLimits(updatedLimits);
-      await saveLimitsToFirestore(updatedLimits);
-    } else {
-      // Create new limit
-      const newLimit: Limit = {
-        id: `limit:${Date.now()}`,
-        type: limitType,
-        targetType: targetType,
-        targetId: targetId,
-        timeLimit: timeLimitNum,
-        plusOnes: limitType === 'soft' ? parseInt(plusOnes) : undefined,
-        plusOneDuration: plusOneDurationSeconds,
-        createdAt: new Date().toISOString(),
-      };
-
-      const updatedLimits = [...limits, newLimit];
-      setLimits(updatedLimits);
-      await saveLimitsToFirestore(updatedLimits);
-    }
-
-    // Reset form
-    setTyposquattingWarning(null);
-    resetForm();
-  };
-
-  // Create or update limit
+  // Create limit
   const handleCreateLimit = async () => {
+    console.log('handleCreateLimit called');
+    console.log('targetItems:', targetItems);
+    console.log('targetUrls:', targetUrls);
+
     if (targetItems.length === 0) {
       setFormError('Please add at least one URL or group');
       return;
@@ -311,24 +312,39 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
       }
     }
 
-    // Create a limit for each target
-    const newLimits: Limit[] = targetItems.map((target, index) => ({
-      id: `limit:${Date.now() + index}`,
+    // Create a single limit with both visual targets and expanded URLs
+    const newLimit: Limit = {
+      id: `limit:${Date.now()}`,
       type: limitType,
-      targetType: target.type,
-      targetId: target.id,
+      targets: targetItems,
+      urls: targetUrls,
       timeLimit: timeLimitNum,
-      plusOnes: limitType === 'soft' ? parseInt(plusOnes) : undefined,
-      plusOneDuration: plusOneDurationSeconds,
       createdAt: new Date().toISOString(),
-    }));
+    };
 
-    const updatedLimits = [...limits, ...newLimits];
+    // Only add plusOnes and plusOneDuration for soft limits
+    if (limitType === 'soft') {
+      newLimit.plusOnes = parseInt(plusOnes);
+      newLimit.plusOneDuration = plusOneDurationSeconds;
+    }
+
+    console.log('New limit created:', newLimit);
+
+    const updatedLimits = [...limits, newLimit];
+    console.log('Updated limits:', updatedLimits);
+
     setLimits(updatedLimits);
-    await saveLimitsToFirestore(updatedLimits);
+
+    try {
+      await saveLimitsToFirestore(updatedLimits);
+      console.log('Successfully saved to Firestore');
+    } catch (error) {
+      console.error('Error saving limit:', error);
+      setFormError('Failed to save limit. Please try again.');
+      return;
+    }
 
     // Reset form
-    setTyposquattingWarning(null);
     resetForm();
   };
 
@@ -372,37 +388,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     return plusOneSeconds; // Return previous value if invalid
   };
 
-  // Start editing a limit
-  const handleEditLimit = (limit: Limit) => {
-    setEditingLimitId(limit.id);
-
-    // Populate form with limit data
-    setLimitType(limit.type);
-    setTimeLimit(limit.timeLimit.toString());
-
-    if (limit.type === 'soft' && limit.plusOnes !== undefined) {
-      setPlusOnes(limit.plusOnes.toString());
-
-      if (limit.plusOneDuration !== undefined) {
-        const mins = Math.floor(limit.plusOneDuration / 60);
-        const secs = limit.plusOneDuration % 60;
-        setPlusOneMinutes(mins.toString());
-        setPlusOneSeconds(secs.toString());
-      }
-    }
-
-    // Set target input based on type
-    if (limit.targetType === 'url') {
-      setTargetInput(limit.targetId);
-    } else {
-      const group = groups.find(g => g.id === limit.targetId);
-      if (group) {
-        setTargetInput(group.name);
-      }
-    }
-
-    setShowCreateForm(true);
-  };
 
   // Reset form to initial state
   const resetForm = () => {
@@ -410,6 +395,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     setEditingLimitId(null);
     setTargetInput('');
     setTargetItems([]);
+    setTargetUrls([]);
     setShowSuggestions(false);
     setLimitType('hard');
     setTimeLimit('60');
@@ -435,20 +421,15 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Limits</h3>
-        <button
-          onClick={() => {
-            if (showCreateForm) {
-              resetForm();
-            } else {
-              setShowCreateForm(true);
-              setEditingLimitId(null);
-            }
-          }}
-          className="purple-button"
-          title="Create Limit"
-        >
-          <Plus size={20} />
-        </button>
+        {!showCreateForm && (
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="purple-button"
+            title="Create Limit"
+          >
+            <Plus size={20} />
+          </button>
+        )}
       </div>
 
       {/* Create/Edit Limit Form */}
@@ -715,74 +696,19 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
             </div>
           )}
 
-          {/* Error Message */}
-          {formError && (
-            <p className="text-red-400 text-sm">{formError}</p>
-          )}
-
-          {/* Typosquatting Warning Dialog */}
-          {typosquattingWarning && (
-            <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3">
-              <div className="flex items-start gap-2">
-                <span className="text-yellow-500 text-xl">⚠️</span>
-                <div className="flex-1">
-                  <p className="text-yellow-100 text-sm font-medium mb-1">
-                    Possible typo detected
-                  </p>
-                  <p className="text-yellow-200 text-xs">
-                    Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
-                  </p>
-                  <p className="text-yellow-300 text-xs mt-1">
-                    You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    // Use the suggested correct domain
-                    const correctedUrl = 'https://' + typosquattingWarning.suggestion;
-                    await saveLimitWithTarget('url', correctedUrl);
-                  }}
-                  className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
-                >
-                  Use {typosquattingWarning.suggestion}
-                </button>
-                <button
-                  onClick={async () => {
-                    // User confirms they want to use the original (potentially misspelled) URL
-                    await saveLimitWithTarget('url', typosquattingWarning.url);
-                  }}
-                  className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
-                >
-                  Keep original
-                </button>
-                <button
-                  onClick={() => {
-                    // Cancel and go back to editing
-                    setTyposquattingWarning(null);
-                  }}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Actions */}
           <div className="flex gap-2">
+            <button
+              onClick={resetForm}
+              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+            >
+              Cancel
+            </button>
             <button
               onClick={handleCreateLimit}
               className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
             >
-              {editingLimitId ? 'Update Limit' : 'Create Limit'}
-            </button>
-            <button
-              onClick={resetForm}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
-            >
-              Cancel
+              Create Limit
             </button>
           </div>
         </div>
@@ -795,68 +721,98 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
             No limits set. Create one to get started!
           </p>
         ) : (
-          limits.map((limit) => (
-            <div
-              key={limit.id}
-              onClick={() => handleEditLimit(limit)}
-              className="bg-slate-700 hover:bg-slate-600 rounded-lg p-3 flex items-center gap-3 cursor-pointer"
-            >
-              {/* Icon */}
-              <div className={`p-2 rounded-lg ${
-                limit.type === 'hard' ? 'bg-red-600' :
-                limit.type === 'soft' ? 'bg-yellow-600' :
-                'bg-blue-600'
-              }`}>
-                <Clock size={16} className="text-white" />
-              </div>
+          limits.map((limit) => {
+            // Handle both new and legacy limit formats
+            const limitTargets = limit.targets || (limit.targetType && limit.targetId ? [{ type: limit.targetType, id: limit.targetId }] : []);
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  {limit.targetType === 'url' ? (
-                    <img
-                      src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(limit.targetId)}&sz=32`}
-                      alt=""
-                      className="w-4 h-4"
-                      onError={(e) => {
-                        e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
-                      }}
-                    />
-                  ) : (
-                    (() => {
-                      const group = groups.find(g => g.id === limit.targetId);
-                      return group ? <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={3} /> : null;
-                    })()
-                  )}
-                  <span className="text-white text-sm font-medium truncate">
-                    {getTargetDisplayName(limit.targetId, limit.targetType)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-gray-400">
-                    {limit.type.charAt(0).toUpperCase() + limit.type.slice(1)}
-                    {limit.type !== 'session' && ` • ${limit.timeLimit} min`}
-                    {limit.type === 'session' && ' • Set on visit'}
-                    {limit.type === 'soft' && limit.plusOnes !== undefined && ` • ${limit.plusOnes} plus ones`}
-                    {limit.type === 'soft' && limit.plusOneDuration !== undefined && ` (${formatPlusOneDuration(limit.plusOneDuration)} each)`}
-                  </span>
-                </div>
-              </div>
-
-              {/* Delete Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLimitToDelete(limit.id);
-                  setDeleteDialogOpen(true);
-                }}
-                className="text-gray-400 hover:text-red-400 transition-colors"
-                title="Delete Limit"
+            return (
+              <div
+                key={limit.id}
+                className="bg-slate-700 rounded-lg p-3 flex items-center gap-3"
               >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))
+                {/* Icon */}
+                <div className={`p-2 rounded-lg ${
+                  limit.type === 'hard' ? 'bg-red-600' :
+                  limit.type === 'soft' ? 'bg-yellow-600' :
+                  'bg-blue-600'
+                }`}>
+                  <Clock size={16} className="text-white" />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  {/* Separate groups and individual URLs */}
+                  {(() => {
+                    const groupTargets = limitTargets.filter(t => t.type === 'group');
+                    const urlTargets = limitTargets.filter(t => t.type === 'url');
+
+                    return (
+                      <div className="space-y-1">
+                        {/* Display each group on its own line */}
+                        {groupTargets.map((target, idx) => {
+                          const group = groups.find(g => g.id === target.id);
+                          if (!group) return null;
+
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={5} />
+                              <span className="text-white text-sm truncate">
+                                {group.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+
+                        {/* Display spare URLs on a single line with plus icon */}
+                        {urlTargets.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <Plus size={14} className="text-gray-400" />
+                            <div className="flex items-center gap-1">
+                              {urlTargets.map((target, idx) => (
+                                <img
+                                  key={idx}
+                                  src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(target.id)}&sz=32`}
+                                  alt=""
+                                  className="w-4 h-4"
+                                  onError={(e) => {
+                                    e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Limit info */}
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-400">
+                            {limit.type.charAt(0).toUpperCase() + limit.type.slice(1)}
+                            {limit.type !== 'session' && ` • ${limit.timeLimit} min`}
+                            {limit.type === 'session' && ' • Set on visit'}
+                            {limit.type === 'soft' && limit.plusOnes !== undefined && ` • ${limit.plusOnes} plus ones`}
+                            {limit.type === 'soft' && limit.plusOneDuration !== undefined && ` (${formatPlusOneDuration(limit.plusOneDuration)} each)`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Delete Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLimitToDelete(limit.id);
+                    setDeleteDialogOpen(true);
+                  }}
+                  className="text-gray-400 hover:text-red-400 transition-colors"
+                  title="Delete Limit"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 
