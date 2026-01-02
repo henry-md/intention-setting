@@ -175,23 +175,8 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
       const deletedGroup = groups.find(g => g.id === groupToDelete);
       if (!deletedGroup) return;
 
-      // Get all URLs from the deleted group (recursively)
-      const getGroupUrls = (grp: Group): string[] => {
-        const urls: string[] = [];
-        for (const item of grp.items) {
-          if (item.startsWith('group:')) {
-            const nestedGroup = groups.find(g => g.id === item);
-            if (nestedGroup) {
-              urls.push(...getGroupUrls(nestedGroup));
-            }
-          } else {
-            urls.push(item);
-          }
-        }
-        return urls;
-      };
-
-      const deletedUrls = getGroupUrls(deletedGroup);
+      // Get all URLs from the deleted group (groups only contain URLs, no nesting)
+      const deletedUrls = deletedGroup.items.filter(item => !item.startsWith('group:'));
 
       // Update groups
       const updatedGroups = groups.filter(g => g.id !== groupToDelete);
@@ -390,7 +375,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
                 className="bg-slate-700 hover:bg-slate-600 rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-colors"
               >
                 {/* Site Icons */}
-                <GroupIcons group={group} allGroups={groups} />
+                <GroupIcons group={group} />
 
                 {/* Group Name */}
                 <span className="flex-1 text-white font-medium">

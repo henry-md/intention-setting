@@ -4,43 +4,22 @@ import type { Group } from '../types/Group';
 
 interface GroupIconsProps {
   group: Group;
-  allGroups: Group[];
   maxIcons?: number;
   iconSize?: 'sm' | 'md' | 'lg';
 }
 
 /**
  * Displays favicon icons for URLs in a group
- * Recursively extracts URLs from nested groups
+ * Groups are one-level deep only (no nesting)
  * Shows up to maxIcons favicons with a +X indicator for additional URLs
  */
 export const GroupIcons: React.FC<GroupIconsProps> = ({
   group,
-  allGroups,
   maxIcons = 5,
   iconSize = 'md',
 }) => {
-  // Get URLs from a group (recursively if it contains other groups)
-  const getGroupUrls = (grp: Group): string[] => {
-    const urls: string[] = [];
-
-    for (const item of grp.items) {
-      if (item.startsWith('group:')) {
-        // It's a nested group, find it and get its URLs
-        const nestedGroup = allGroups.find(g => g.id === item);
-        if (nestedGroup) {
-          urls.push(...getGroupUrls(nestedGroup));
-        }
-      } else {
-        // It's a URL
-        urls.push(item);
-      }
-    }
-
-    return urls;
-  };
-
-  const urls = getGroupUrls(group);
+  // Groups only contain URLs (no nesting)
+  const urls = group.items.filter(item => !item.startsWith('group:'));
   const displayUrls = urls.slice(0, maxIcons);
 
   const sizeClasses = {

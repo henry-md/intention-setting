@@ -472,8 +472,8 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                           }}
                         />
                       ) : group ? (
-                        <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={3} />
-                      ) : null}
+                        <GroupIcons group={group} iconSize="sm" maxIcons={3} />
+                      ) : null} 
                       <span className="flex-1 text-white text-sm">
                         {getTargetDisplayName(item.id, item.type)}
                       </span>
@@ -755,7 +755,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
                           return (
                             <div key={idx} className="flex items-center gap-2">
-                              <GroupIcons group={group} allGroups={groups} iconSize="sm" maxIcons={5} />
+                              <GroupIcons group={group} iconSize="sm" maxIcons={5} />
                               <span className="text-white text-sm truncate">
                                 {group.name}
                               </span>
