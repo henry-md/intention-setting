@@ -9,6 +9,7 @@ import { GroupIcons } from './GroupIcons';
 
 interface LimitFormProps {
   limitId?: string; // If provided, we're editing; if not, we're creating
+  initialName?: string;
   initialTargetItems?: LimitTarget[];
   initialTargetUrls?: LimitUrl[];
   initialLimitType?: 'hard' | 'soft' | 'session';
@@ -17,6 +18,7 @@ interface LimitFormProps {
   initialPlusOneDuration?: number;
   groups: Group[];
   onSave: (
+    name: string,
     targetItems: LimitTarget[],
     targetUrls: LimitUrl[],
     limitType: 'hard' | 'soft' | 'session',
@@ -34,6 +36,7 @@ interface LimitFormProps {
  */
 export const LimitForm: React.FC<LimitFormProps> = ({
   limitId,
+  initialName = '',
   initialTargetItems = [],
   initialTargetUrls = [],
   initialLimitType = 'hard',
@@ -44,6 +47,7 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   onSave,
   onCancel,
 }) => {
+  const [limitName, setLimitName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
   const [targetItems, setTargetItems] = useState<LimitTarget[]>(initialTargetItems);
   const [targetUrls, setTargetUrls] = useState<LimitUrl[]>(initialTargetUrls);
@@ -66,6 +70,7 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   // Update state when limitId changes (switching to a different limit in edit mode)
   useEffect(() => {
     if (limitId) {
+      setLimitName(initialName);
       setTargetItems(initialTargetItems);
       setTargetUrls(initialTargetUrls);
       setLimitType(initialLimitType);
@@ -290,14 +295,36 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       plusOnesNum = parseInt(plusOnes);
     }
 
-    await onSave(targetItems, targetUrls, limitType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
+    await onSave(limitName.trim(), targetItems, targetUrls, limitType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
   };
 
   const groupSuggestions = getGroupSuggestions();
 
   return (
     <div className="bg-gray-800 border border-gray-600 rounded-lg p-4 space-y-3">
-      <h4 className="text-white font-medium">{isEditMode ? 'Edit Limit' : 'Create New Limit'}</h4>
+      {/* Limit Name - Always an input, styled based on whether we have a name */}
+      {isEditMode && limitName ? (
+        <input
+          type="text"
+          value={limitName}
+          onChange={(e) => setLimitName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          className="text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -mx-2 w-full text-white"
+        />
+      ) : (
+        <input
+          type="text"
+          value={limitName}
+          onChange={(e) => setLimitName(e.target.value)}
+          placeholder="Limit name (optional)"
+          className="w-full px-3 py-2 border border-gray-600 bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-white placeholder-gray-400"
+        />
+      )}
 
       {/* Target Input with List */}
       <div>

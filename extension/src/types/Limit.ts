@@ -15,6 +15,7 @@ export interface LimitTarget {
 
 export interface Limit {
   id: string;
+  name?: string; // Optional name for the limit
   type: 'hard' | 'soft' | 'session';
   // Visual representation - what to display (groups + individual URLs)
   targets: LimitTarget[];

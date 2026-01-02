@@ -84,6 +84,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
   // Create or update limit
   const handleSaveLimit = async (
+    name: string,
     targetItems: LimitTarget[],
     targetUrls: LimitUrl[],
     limitType: 'hard' | 'soft' | 'session',
@@ -97,6 +98,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
         if (limit.id === editingLimitId) {
           const updatedLimit: Limit = {
             ...limit,
+            name: name || undefined,
             type: limitType,
             targets: targetItems,
             urls: targetUrls,
@@ -128,6 +130,10 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
         timeLimit,
         createdAt: new Date().toISOString(),
       };
+
+      if (name) {
+        newLimit.name = name;
+      }
 
       if (limitType === 'soft') {
         newLimit.plusOnes = plusOnes;
@@ -200,6 +206,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
       {showCreateForm && (
         <LimitForm
           limitId={editingLimitId || undefined}
+          initialName={editingLimit?.name || ''}
           initialTargetItems={editingLimit?.targets || []}
           initialTargetUrls={editingLimit?.urls || []}
           initialLimitType={editingLimit?.type || 'hard'}
@@ -254,6 +261,13 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
 
                     return (
                       <div className="space-y-1">
+                        {/* Display limit name if it exists */}
+                        {limit.name && (
+                          <div className="text-white font-medium text-sm mb-1">
+                            {limit.name}
+                          </div>
+                        )}
+
                         {/* Display each group on its own line */}
                         {groupTargets.map((target, idx) => {
                           const group = groups.find(g => g.id === target.id);

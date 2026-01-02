@@ -212,6 +212,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
             if (e.key === 'Enter') {
               e.preventDefault();
               handleUpdateName();
+              e.currentTarget.blur();
             }
           }}
           className="text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 w-full"
