@@ -1027,6 +1027,15 @@ IMPORTANT GUIDELINES:
               toolResult = `Error: Unknown tool ${toolCall.function.name}`;
             }
 
+            // Dispatch event to refresh Groups/Limits tabs if the tool call was successful
+            if (!toolResult.startsWith('Error:')) {
+              const dataModifyingTools = ['create_group', 'update_group', 'delete_group', 'create_limit', 'update_limit', 'delete_limit'];
+              if (dataModifyingTools.includes(toolCall.function.name)) {
+                console.log(`Dispatching groupsOrLimitsUpdated event for tool: ${toolCall.function.name}`);
+                window.dispatchEvent(new CustomEvent('groupsOrLimitsUpdated'));
+              }
+            }
+
             // Update the tool call message with the result (display only)
             setMessages(prev => prev.map((msg, idx) =>
               idx === prev.length - 1 && msg.role === 'tool'

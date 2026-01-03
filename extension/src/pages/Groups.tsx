@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
@@ -36,36 +36,55 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
 
   // Fetch groups from Firestore
-  useEffect(() => {
-    const fetchGroups = async () => {
-      if (!user?.uid) {
-        setLoading(false);
-        return;
-      }
+  const fetchGroups = useCallback(async () => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
+    console.log('Fetching groups from Firestore...');
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          const fetchedGroups = data.groups || [];
-          setGroups(fetchedGroups);
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        const fetchedGroups = data.groups || [];
+        console.log('Fetched groups:', fetchedGroups.length);
+        setGroups(fetchedGroups);
 
-          // Auto-open create form if no groups exist
-          if (fetchedGroups.length === 0) {
-            setShowCreateForm(true);
-          }
+        // Auto-open create form if no groups exist (only on initial load)
+        if (fetchedGroups.length === 0 && loading) {
+          setShowCreateForm(true);
         }
-      } catch (error) {
-        console.error('Error fetching groups:', error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.uid, loading]);
+
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchGroups();
+  }, [fetchGroups]);
+
+  // Listen for updates from LLM panel
+  useEffect(() => {
+    const handleDataUpdate = () => {
+      console.log('Received groupsOrLimitsUpdated event in Groups component');
+      fetchGroups();
     };
 
-    fetchGroups();
-  }, [user?.uid]);
+    window.addEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+    console.log('Groups component: Added event listener for groupsOrLimitsUpdated');
+
+    return () => {
+      console.log('Groups component: Removing event listener');
+      window.removeEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+    };
+  }, [fetchGroups]);
 
   // Save groups to Firestore
   const saveGroupsToFirestore = async (newGroups: Group[]) => {

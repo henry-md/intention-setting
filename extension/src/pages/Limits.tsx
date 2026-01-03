@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Clock } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
@@ -37,37 +37,56 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   const [limitToDelete, setLimitToDelete] = useState<string | null>(null);
 
   // Fetch limits, groups, and URLs from Firestore
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user?.uid) {
-        setLoading(false);
-        return;
-      }
+  const fetchData = useCallback(async () => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
+    console.log('Fetching limits and groups from Firestore...');
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          const fetchedLimits = data.limits || [];
-          setLimits(fetchedLimits);
-          setGroups(data.groups || []);
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        const fetchedLimits = data.limits || [];
+        console.log('Fetched limits:', fetchedLimits.length);
+        setLimits(fetchedLimits);
+        setGroups(data.groups || []);
 
-          // Auto-open create form if no limits exist
-          if (fetchedLimits.length === 0) {
-            setShowCreateForm(true);
-          }
+        // Auto-open create form if no limits exist (only on initial load)
+        if (fetchedLimits.length === 0 && loading) {
+          setShowCreateForm(true);
         }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.uid, loading]);
+
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Listen for updates from LLM panel
+  useEffect(() => {
+    const handleDataUpdate = () => {
+      console.log('Received groupsOrLimitsUpdated event in Limits component');
+      fetchData();
     };
 
-    fetchData();
-  }, [user?.uid]);
+    window.addEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+    console.log('Limits component: Added event listener for groupsOrLimitsUpdated');
+
+    return () => {
+      console.log('Limits component: Removing event listener');
+      window.removeEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+    };
+  }, [fetchData]);
 
   // Save limits to Firestore
   const saveLimitsToFirestore = async (newLimits: Limit[]) => {
