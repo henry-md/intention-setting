@@ -685,13 +685,16 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
     setStreamingContent('');
     setError(null);
 
+    // Declare conversationMessages outside try block so it's accessible for error debugging
+    let conversationMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
     try {
       const openai = new OpenAI({
         apiKey: apiKey,
         dangerouslyAllowBrowser: true // Note: In production, API calls should go through a backend
       });
 
-      const conversationMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      conversationMessages = [
         {
           role: 'system',
           content: `You are a proactive assistant that helps users manage website groups and time limits. BE DECISIVE AND TAKE ACTION - don't ask unnecessary questions or ask for confirmation unless something is truly ambiguous.
@@ -749,16 +752,14 @@ IMPORTANT GUIDELINES:
       while (currentResponse.tool_calls && currentResponse.tool_calls.length > 0 && round < maxRounds) {
         round++;
 
-        // Store the assistant's message with tool calls in history
-        if (round === 1) {
-          // Only add on first round to avoid duplicates
-          const assistantWithToolsMessage: Message = {
-            role: 'assistant',
-            content: currentResponse.content || '',
-            openAiMessage: currentResponse
-          };
-          setMessages(prev => [...prev, assistantWithToolsMessage]);
-        }
+        // Store the assistant's message with tool calls in history (for ALL rounds)
+        // This ensures tool result messages have a corresponding assistant message with tool_calls
+        const assistantWithToolsMessage: Message = {
+          role: 'assistant',
+          content: currentResponse.content || '',
+          openAiMessage: currentResponse
+        };
+        setMessages(prev => [...prev, assistantWithToolsMessage]);
 
         // Add the assistant's message with tool calls to conversation
         conversationMessages.push(currentResponse);
@@ -939,9 +940,41 @@ IMPORTANT GUIDELINES:
         setStreamingContent('');
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
-      setError(`Failed to get response: ${errorMessage}`);
       console.error('OpenAI API error:', err);
+
+      let userFriendlyMessage = 'An unexpected error occurred. Please try again.';
+
+      if (err instanceof Error) {
+        const errorMsg = err.message.toLowerCase();
+
+        // Handle specific error patterns with user-friendly messages
+        if (errorMsg.includes('tool') && errorMsg.includes('tool_calls')) {
+          userFriendlyMessage = 'Internal conversation format error. Try clearing the chat with the trash icon and starting fresh.';
+          console.error('Tool message format error - conversation history may be corrupted');
+          console.error('=== DEBUG: Conversation that caused the error ===');
+          console.error('Full messages array:', messages);
+          console.error('Messages with openAiMessage field:', messages.filter(m => m.openAiMessage).map(m => m.openAiMessage));
+          console.error('conversationMessages sent to API:', conversationMessages);
+          console.error('=== END DEBUG ===');
+        } else if (errorMsg.includes('api key') || errorMsg.includes('unauthorized') || errorMsg.includes('401')) {
+          userFriendlyMessage = 'API key is invalid or missing. Please check your .env configuration.';
+        } else if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
+          userFriendlyMessage = 'API rate limit exceeded. Please wait a moment and try again.';
+        } else if (errorMsg.includes('quota') || errorMsg.includes('billing')) {
+          userFriendlyMessage = 'API quota exceeded. Please check your OpenAI account billing.';
+        } else if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
+          userFriendlyMessage = 'Request timed out. Please check your internet connection and try again.';
+        } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
+          userFriendlyMessage = 'Network error. Please check your internet connection.';
+        } else if (errorMsg.includes('400')) {
+          userFriendlyMessage = `Invalid request: ${err.message}. Try clearing the chat if the issue persists.`;
+        } else {
+          // For other errors, show the actual message but make it clearer
+          userFriendlyMessage = `Error: ${err.message}`;
+        }
+      }
+
+      setError(userFriendlyMessage);
     } finally {
       setLoading(false);
     }
