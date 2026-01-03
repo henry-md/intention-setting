@@ -114,7 +114,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_limit',
-      description: 'Updates an existing limit. Use this to change the type, time, or other properties of a limit. You can identify the limit by its name or by the group/URL it targets.',
+      description: 'Updates an existing limit. Use this to change the type, time, add/remove targets, or other properties of a limit. You can identify the limit by its name or by the group/URL it targets.',
       parameters: {
         type: 'object',
         properties: {
@@ -138,6 +138,16 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           plusOneDuration: {
             type: 'number',
             description: 'New duration of each extension in seconds (optional - only for soft limits)'
+          },
+          addUrls: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spare URLs to add to the limit (optional - e.g., ["youtube.com", "reddit.com"]). Note: Cannot add/remove groups, only individual URLs.'
+          },
+          removeUrls: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spare URLs to remove from the limit (optional - e.g., ["facebook.com"])'
           }
         },
         required: ['identifier']
@@ -169,6 +179,40 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: 'array',
             items: { type: 'string' },
             description: 'URLs to remove from the group (optional - e.g., ["facebook.com"])'
+          }
+        },
+        required: ['identifier']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_group',
+      description: 'Deletes an existing group. Use this when the user wants to remove a group entirely.',
+      parameters: {
+        type: 'object',
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'The name of the group to delete (e.g., "Social Media")'
+          }
+        },
+        required: ['identifier']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_limit',
+      description: 'Deletes an existing limit. Use this when the user wants to remove a limit entirely.',
+      parameters: {
+        type: 'object',
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'The name of the limit, or the name of the group/URL it targets'
           }
         },
         required: ['identifier']
@@ -464,9 +508,11 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
     limitType?: 'hard' | 'soft' | 'session',
     timeLimit?: number,
     plusOnes?: number,
-    plusOneDuration?: number
+    plusOneDuration?: number,
+    addUrls?: string[],
+    removeUrls?: string[]
   ): Promise<string> => {
-    console.log('executeUpdateLimit called with:', { identifier, limitType, timeLimit, plusOnes, plusOneDuration });
+    console.log('executeUpdateLimit called with:', { identifier, limitType, timeLimit, plusOnes, plusOneDuration, addUrls, removeUrls });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
@@ -543,23 +589,176 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
         }
       }
 
+      // Handle adding URLs
+      if (addUrls && addUrls.length > 0) {
+        const normalizedAddUrls = addUrls.map(url => {
+          const prepared = url.startsWith('http') ? url : `https://${url}`;
+          return normalizeUrl(prepared);
+        });
+
+        normalizedAddUrls.forEach(url => {
+          // Check if URL already exists in targets
+          const urlExists = updatedLimit.targets.some(t => t.type === 'url' && t.id === url);
+          if (!urlExists) {
+            updatedLimit.targets.push({ type: 'url', id: url });
+          }
+        });
+
+        // Also add to urls array for compatibility
+        if (!updatedLimit.urls) {
+          updatedLimit.urls = [];
+        }
+        normalizedAddUrls.forEach(url => {
+          const urlExists = updatedLimit.urls!.some(u => u.url === url);
+          if (!urlExists) {
+            updatedLimit.urls!.push({ url, source: 'direct' });
+          }
+        });
+      }
+
+      // Handle removing URLs
+      if (removeUrls && removeUrls.length > 0) {
+        const normalizedRemoveUrls = removeUrls.map(url => {
+          const prepared = url.startsWith('http') ? url : `https://${url}`;
+          return normalizeUrl(prepared);
+        });
+
+        updatedLimit.targets = updatedLimit.targets.filter(
+          t => !(t.type === 'url' && normalizedRemoveUrls.includes(t.id))
+        );
+
+        if (updatedLimit.urls) {
+          updatedLimit.urls = updatedLimit.urls.filter(
+            u => !normalizedRemoveUrls.includes(u.url)
+          );
+        }
+      }
+
       console.log('Updated limit:', updatedLimit);
 
       // Save to Firestore
       const updatedLimits = existingLimits.map(l => l.id === updatedLimit.id ? updatedLimit : l);
       await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
 
-      const limitName = updatedLimit.name || 'limit';
-      const limitDetails = updatedLimit.type === 'session'
-        ? 'session-based (prompts on visit)'
-        : updatedLimit.type === 'soft'
-        ? `${updatedLimit.timeLimit} minutes with ${updatedLimit.plusOnes} extensions of ${updatedLimit.plusOneDuration}s each`
-        : `${updatedLimit.timeLimit} minutes (hard block)`;
+      const changes: string[] = [];
+      if (limitType !== undefined) {
+        changes.push(`type changed to ${limitType}`);
+      }
+      if (timeLimit !== undefined) {
+        changes.push(`time limit changed to ${timeLimit} minutes`);
+      }
+      if (addUrls && addUrls.length > 0) {
+        changes.push(`added ${addUrls.length} URL(s): ${addUrls.join(', ')}`);
+      }
+      if (removeUrls && removeUrls.length > 0) {
+        changes.push(`removed ${removeUrls.length} URL(s): ${removeUrls.join(', ')}`);
+      }
 
-      return `Successfully updated ${limitName} to: ${limitDetails}`;
+      const limitName = updatedLimit.name || 'limit';
+      const changesSummary = changes.length > 0 ? ` (${changes.join('; ')})` : '';
+
+      return `Successfully updated ${limitName}${changesSummary}`;
     } catch (error) {
       console.error('Error updating limit:', error);
       return `Error updating limit: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  };
+
+  // Tool execution: Delete Group
+  const executeDeleteGroup = async (identifier: string): Promise<string> => {
+    console.log('executeDeleteGroup called with:', { identifier });
+
+    if (!user?.uid) {
+      return 'Error: User not authenticated';
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        return 'Error: User document not found';
+      }
+
+      const existingGroups: Group[] = userDoc.data().groups || [];
+
+      // Find the group to delete by name
+      const groupToDelete = existingGroups.find(group =>
+        group.name.toLowerCase().includes(identifier.toLowerCase())
+      );
+
+      if (!groupToDelete) {
+        return `Error: Could not find a group matching "${identifier}". Available groups: ${existingGroups.map(g => g.name).join(', ')}`;
+      }
+
+      // Remove the group
+      const updatedGroups = existingGroups.filter(g => g.id !== groupToDelete.id);
+      await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+
+      return `Successfully deleted group "${groupToDelete.name}"`;
+    } catch (error) {
+      console.error('Error deleting group:', error);
+      return `Error deleting group: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  };
+
+  // Tool execution: Delete Limit
+  const executeDeleteLimit = async (identifier: string): Promise<string> => {
+    console.log('executeDeleteLimit called with:', { identifier });
+
+    if (!user?.uid) {
+      return 'Error: User not authenticated';
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        return 'Error: User document not found';
+      }
+
+      const existingLimits: Limit[] = userDoc.data().limits || [];
+      const groups: Group[] = userDoc.data().groups || [];
+
+      // Find the limit to delete (same matching logic as update)
+      const limitToDelete = existingLimits.find(limit => {
+        // Match by limit name
+        if (limit.name && limit.name.toLowerCase().includes(identifier.toLowerCase())) {
+          return true;
+        }
+
+        // Match by group name in targets
+        for (const target of limit.targets) {
+          if (target.type === 'group') {
+            const group = groups.find(g => g.id === target.id);
+            if (group && group.name.toLowerCase().includes(identifier.toLowerCase())) {
+              return true;
+            }
+          } else if (target.type === 'url') {
+            // Match by URL
+            if (target.id.toLowerCase().includes(identifier.toLowerCase())) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      });
+
+      if (!limitToDelete) {
+        return `Error: Could not find a limit matching "${identifier}". Available limits: ${existingLimits.map(l => l.name || 'Unnamed').join(', ')}`;
+      }
+
+      // Remove the limit
+      const updatedLimits = existingLimits.filter(l => l.id !== limitToDelete.id);
+      await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+
+      const limitName = limitToDelete.name || 'limit';
+      return `Successfully deleted ${limitName}`;
+    } catch (error) {
+      console.error('Error deleting limit:', error);
+      return `Error deleting limit: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
 
@@ -703,17 +902,21 @@ You have access to these tools:
 1. get_groups_and_limits: View all existing groups and limits
 2. create_group: Creates a collection of websites (e.g., "Social Media" group with youtube.com, instagram.com, etc.)
 3. update_group: Modifies an existing group (rename, add URLs, remove URLs)
-4. create_limit: Sets time restrictions on websites or groups
-5. update_limit: Modifies an existing limit (change type, time, extensions, etc.)
+4. delete_group: Deletes a group entirely
+5. create_limit: Sets time restrictions on websites or groups
+6. update_limit: Modifies an existing limit (change type, time, extensions, add/remove spare URLs)
+   - Can add/remove individual URLs to a limit (spare URLs), but CANNOT change which groups are in the limit
    - "hard": Strict blocking when time runs out
    - "soft": Allows extensions/plus-ones after time expires
    - "session": Prompts user to set time limit when visiting the site
+7. delete_limit: Deletes a limit entirely
 
 IMPORTANT GUIDELINES:
 - BE PROACTIVE: Don't ask for unnecessary confirmation. The only question you may have to ask frequenty is whether they want their limit to be a hard or soft limit, if they don't specify. Also clarify that a hard limit means they will not be able to access the site after their time for the rest of the day, while a soft limit allows extensions of their limit. Also note that they can choose a "session" limit, which will prompt them for how much time they want to spend every time they visit the site, instead of setting the number beforehand.
 - CHAIN TOOLS: When appropriate, make multiple tool calls in sequence. For example, if a user says "create a social media group and limit it to 60 minutes", call BOTH create_group AND create_limit
 - CHECK FIRST: Before creating duplicates, use get_groups_and_limits to see what exists
 - UPDATE, DON'T RECREATE: If a user asks to change an existing group or limit, use update_group or update_limit instead of creating new ones
+- SPARE URLS IN LIMITS: When a user asks to add an individual URL to an existing limit, use update_limit with addUrls parameter - don't create a new limit
 - USE DEFAULTS: If details are missing, use sensible defaults:
   - Hard limits default to 60 minutes
   - Soft limits default to 60 minutes with 3 extensions of 300 seconds (5 minutes) each
@@ -812,8 +1015,14 @@ IMPORTANT GUIDELINES:
                 args.limitType,
                 args.timeLimit,
                 args.plusOnes,
-                args.plusOneDuration
+                args.plusOneDuration,
+                args.addUrls,
+                args.removeUrls
               );
+            } else if (toolCall.function.name === 'delete_group') {
+              toolResult = await executeDeleteGroup(args.identifier);
+            } else if (toolCall.function.name === 'delete_limit') {
+              toolResult = await executeDeleteLimit(args.identifier);
             } else {
               toolResult = `Error: Unknown tool ${toolCall.function.name}`;
             }
