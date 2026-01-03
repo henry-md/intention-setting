@@ -15,6 +15,7 @@ const LLMPanel: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -23,7 +24,7 @@ const LLMPanel: React.FC = () => {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -37,6 +38,7 @@ const LLMPanel: React.FC = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setStreamingContent('');
     setError(null);
 
     try {
@@ -45,7 +47,7 @@ const LLMPanel: React.FC = () => {
         dangerouslyAllowBrowser: true // Note: In production, API calls should go through a backend
       });
 
-      const response = await openai.chat.completions.create({
+      const stream = await openai.chat.completions.create({
         model: 'gpt-4',
         messages: [
           { role: 'system', content: 'You are a helpful assistant.' },
@@ -53,15 +55,25 @@ const LLMPanel: React.FC = () => {
           { role: 'user', content: userMessage.content }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 500,
+        stream: true
       });
+
+      let fullContent = '';
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        fullContent += content;
+        setStreamingContent(fullContent);
+      }
 
       const assistantMessage: Message = {
         role: 'assistant',
-        content: response.choices[0]?.message?.content || 'No response received.'
+        content: fullContent || 'No response received.'
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+      setStreamingContent('');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(`Failed to get response: ${errorMessage}`);
@@ -108,7 +120,15 @@ const LLMPanel: React.FC = () => {
             </div>
           </div>
         ))}
-        {loading && (
+        {streamingContent && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] bg-gray-800 text-gray-100 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+              <div className="whitespace-pre-wrap break-words">{streamingContent}</div>
+              <span className="inline-block w-2 h-4 ml-1 bg-blue-500 animate-pulse" />
+            </div>
+          </div>
+        )}
+        {loading && !streamingContent && (
           <div className="flex justify-start">
             <div className="bg-gray-800 text-gray-100 border border-gray-700 rounded-lg px-3 py-2 text-sm flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
