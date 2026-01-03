@@ -114,7 +114,7 @@ const Popup: React.FC = () => {
 
         {/* Bottom panel with LLM */}
         <ResizablePanel defaultSize={40} minSize={20}>
-          <LLMPanel />
+          <LLMPanel user={user} />
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
