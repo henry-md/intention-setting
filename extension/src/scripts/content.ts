@@ -28,38 +28,42 @@ const checkAndShowIntentionPopup = async () => {
       return;
     }
 
-    // Get user's saved URLs
-    const urlsResult = await chrome.storage.local.get(['userUrls']);
-    const savedUrls: string[] = urlsResult.userUrls || [];
+    // Get site limits from chrome storage
+    const limitsResult = await chrome.storage.local.get(['siteLimits']);
+    const siteLimits: Record<string, any> = limitsResult.siteLimits || {};
 
-    // Check if current domain matches any saved URL (both normalized)
-    const matchedUrl = savedUrls.find(url => {
-      try {
-        const savedDomain = normalizeHostname(new URL(url).hostname);
-        return currentDomain === savedDomain || currentDomain.endsWith('.' + savedDomain);
-      } catch {
-        return false;
-      }
-    });
+    // Check if current domain has a limit
+    const limitData = siteLimits[currentDomain];
 
-    if (matchedUrl) {
+    if (limitData) {
       // Check if we've already visited this site today (after 4am)
       const result = await chrome.storage.local.get(['siteTimeData']);
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
 
-      if (siteData && siteData.lastUpdated) {
-        // Check if it's a new day
-        if (!isNewDay(siteData.lastUpdated)) {
-          // Same day - skip popup, just show timer
-          console.log('Already visited today, skipping popup');
-          return; // Don't pause videos or show popup
+      const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated);
+
+      if (hasVisitedToday) {
+        // Same day revisit - for hard/soft limits, just show the timer badge
+        // For session limits, skip everything (already prompted today)
+        console.log('Already visited today');
+        if (limitData.limitType !== 'session') {
+          console.log('Starting timer for same-day revisit:', limitData);
+          await startTimeTracking(limitData.timeLimit);
         }
+        return;
       }
 
-      // New day or first visit - show popup
-      pauseAllVideos();
-      showIntentionPopup();
+      // New day or first visit
+      // Only show intention popup for session limits
+      if (limitData.limitType === 'session') {
+        pauseAllVideos();
+        showIntentionPopup();
+      } else {
+        // For hard/soft limits, start timer immediately with the configured time limit
+        console.log('Starting timer for hard/soft limit (first visit today):', limitData);
+        await startTimeTracking(limitData.timeLimit);
+      }
     }
   } catch (error) {
     console.error('Error checking intention:', error);
@@ -302,19 +306,12 @@ const updateTimerBadge = (timeSpent: number, timeLimit: number) => {
 const checkAndShowTimer = async () => {
   try {
     const currentDomain = getCurrentSiteKey();
-    const urlsResult = await chrome.storage.local.get(['userUrls']);
-    const savedUrls: string[] = urlsResult.userUrls || [];
+    const limitsResult = await chrome.storage.local.get(['siteLimits']);
+    const siteLimits: Record<string, any> = limitsResult.siteLimits || {};
 
-    const matchedUrl = savedUrls.find(url => {
-      try {
-        const savedDomain = normalizeHostname(new URL(url).hostname);
-        return currentDomain === savedDomain || currentDomain.endsWith('.' + savedDomain);
-      } catch {
-        return false;
-      }
-    });
+    const limitData = siteLimits[currentDomain];
 
-    if (matchedUrl) {
+    if (limitData) {
       const result = await chrome.storage.local.get(['siteTimeData']);
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
@@ -394,8 +391,8 @@ const showIntentionPopup = () => {
 
 // Listen for storage changes to update URLs in real-time
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.userUrls) {
-    // URLs updated, could trigger re-check if needed
+  if (changes.siteLimits) {
+    // Site limits updated, could trigger re-check if needed
   }
 });
 

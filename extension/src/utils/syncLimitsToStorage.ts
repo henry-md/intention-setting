@@ -3,10 +3,25 @@ import { db } from './firebase';
 import { expandTargetsToUrls } from './limitHelpers';
 import type { Limit } from '../types/Limit';
 import type { Group } from '../types/Group';
+import { getNormalizedHostname } from './urlNormalization';
+
+interface SiteLimitData {
+  limitType: 'hard' | 'soft' | 'session';
+  timeLimit: number;
+  plusOnes?: number;
+  plusOneDuration?: number;
+  limitId: string;
+}
 
 /**
  * Syncs all URLs from limits to chrome.storage for content script access.
  * This should be called whenever limits or groups are updated.
+ *
+ * Stores data as a map of normalized hostnames to limit data:
+ * {
+ *   "snapchat.com": { limitType: "hard", timeLimit: 60, limitId: "..." },
+ *   "instagram.com": { limitType: "soft", timeLimit: 90, plusOnes: 3, ... }
+ * }
  */
 export async function syncLimitsToStorage(userId: string): Promise<void> {
   try {
@@ -18,7 +33,7 @@ export async function syncLimitsToStorage(userId: string): Promise<void> {
 
     if (!userDoc.exists()) {
       console.log('[syncLimitsToStorage] User doc does not exist, clearing storage');
-      await chrome.storage.local.set({ userUrls: [] });
+      await chrome.storage.local.set({ siteLimits: {} });
       return;
     }
 
@@ -33,21 +48,43 @@ export async function syncLimitsToStorage(userId: string): Promise<void> {
       groups: groups
     });
 
-    // Expand all limits to get all URLs
-    const allUrls = new Set<string>();
+    // Build a map of normalized hostname -> limit data
+    const siteLimits: Record<string, SiteLimitData> = {};
+
     for (const limit of limits) {
-      console.log('[syncLimitsToStorage] Expanding limit:', limit.id, 'with targets:', limit.targets);
+      console.log('[syncLimitsToStorage] Processing limit:', limit.id, 'type:', limit.type);
+
+      // Expand targets to get all URLs
       const urls = expandTargetsToUrls(limit.targets, groups);
       console.log('[syncLimitsToStorage] Expanded to URLs:', urls);
-      urls.forEach(url => allUrls.add(url));
+
+      // For each URL, store the limit data
+      for (const url of urls) {
+        const hostname = getNormalizedHostname(url);
+
+        // If a site already has a limit, keep the first one (could be enhanced with priority logic)
+        if (!siteLimits[hostname]) {
+          siteLimits[hostname] = {
+            limitType: limit.type,
+            timeLimit: limit.timeLimit,
+            limitId: limit.id
+          };
+
+          // Add soft limit specific fields
+          if (limit.type === 'soft') {
+            siteLimits[hostname].plusOnes = limit.plusOnes;
+            siteLimits[hostname].plusOneDuration = limit.plusOneDuration;
+          }
+
+          console.log('[syncLimitsToStorage] Added site:', hostname, siteLimits[hostname]);
+        }
+      }
     }
 
-    // Convert to array and sync to chrome.storage
-    const urlArray = Array.from(allUrls);
-    console.log('[syncLimitsToStorage] Final URL array to sync:', urlArray);
-    await chrome.storage.local.set({ userUrls: urlArray });
+    console.log('[syncLimitsToStorage] Final siteLimits map:', siteLimits);
+    await chrome.storage.local.set({ siteLimits });
 
-    console.log(`[syncLimitsToStorage] ✓ Synced ${urlArray.length} URLs to chrome.storage from ${limits.length} limits`);
+    console.log(`[syncLimitsToStorage] ✓ Synced ${Object.keys(siteLimits).length} sites to chrome.storage from ${limits.length} limits`);
   } catch (error) {
     console.error('[syncLimitsToStorage] ERROR:', error);
   }
