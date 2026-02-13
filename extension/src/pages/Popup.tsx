@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useAuth from '../hooks/useAuth';
 import Home from './Home';
 import Account from './Account';
@@ -8,6 +8,7 @@ import GroupEdit from './GroupEdit';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
+import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 
 type TabType = 'home' | 'groups' | 'limits';
 type ViewType = 'main' | 'account' | 'groupEdit';
@@ -22,6 +23,15 @@ const Popup: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('main');
   const [currentTab, setCurrentTab] = useState<TabType>('home');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+
+  // Sync limits to chrome.storage on app initialization
+  useEffect(() => {
+    if (user?.uid) {
+      syncLimitsToStorage(user.uid).catch(error => {
+        console.error('Error syncing limits on initialization:', error);
+      });
+    }
+  }, [user?.uid]);
 
   if (authLoading) {
     return (

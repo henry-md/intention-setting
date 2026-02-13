@@ -6,6 +6,7 @@ import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import { GroupForm } from '../components/GroupForm';
 import Spinner from '../components/Spinner';
+import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 
 interface GroupEditProps {
   user: User | null;
@@ -64,6 +65,8 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
     } catch (error) {
       console.error('Error saving groups:', error);
     }

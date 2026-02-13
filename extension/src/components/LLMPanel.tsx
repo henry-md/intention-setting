@@ -7,6 +7,7 @@ import type { Limit, LimitTarget } from '../types/Limit';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { normalizeUrl } from '../utils/urlNormalization';
+import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -397,6 +398,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Save to Firestore
       const updatedGroups = [...existingGroups, newGroup];
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       return `Successfully created group "${name}" with ${urls.length} URL(s): ${urls.join(', ')}`;
     } catch (error) {
@@ -477,6 +480,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Save to Firestore
       const updatedGroups = existingGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g);
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       let message = `Successfully updated group "${groupToUpdate.name}"`;
       const changes: string[] = [];
@@ -622,6 +627,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Save to Firestore
       const updatedLimits = existingLimits.map(l => l.id === updatedLimit.id ? updatedLimit : l);
       await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       const changes: string[] = [];
       if (limitType !== undefined) {
@@ -677,6 +684,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Remove the group
       const updatedGroups = existingGroups.filter(g => g.id !== groupToDelete.id);
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       return `Successfully deleted group "${groupToDelete.name}"`;
     } catch (error) {
@@ -736,6 +745,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Remove the limit
       const updatedLimits = existingLimits.filter(l => l.id !== limitToDelete.id);
       await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       const limitName = limitToDelete.name || 'limit';
       return `Successfully deleted ${limitName}`;
@@ -826,6 +837,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       // Save to Firestore
       const updatedLimits = [...existingLimits, newLimit];
       await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
 
       const targetNames = targets.map(t => t.value).join(', ');
       const limitDetails = limitType === 'session'

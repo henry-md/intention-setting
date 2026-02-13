@@ -8,6 +8,7 @@ import type { Limit } from '../types/Limit';
 import Spinner from '../components/Spinner';
 import { GroupForm } from '../components/GroupForm';
 import { GroupIcons } from '../components/GroupIcons';
+import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 import {
   Dialog,
   DialogContent,
@@ -93,6 +94,8 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, { groups: newGroups }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
     } catch (error) {
       console.error('Error saving groups:', error);
     }
@@ -156,6 +159,8 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
           groups: updatedGroups,
           limits: updatedLimits
         }, { merge: true });
+        // Sync to chrome.storage for content script access
+        await syncLimitsToStorage(user.uid);
       } else {
         // If no user doc exists, just save groups
         await saveGroupsToFirestore(updatedGroups);

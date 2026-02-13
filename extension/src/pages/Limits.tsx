@@ -9,6 +9,7 @@ import { getNormalizedHostname } from '../utils/urlNormalization';
 import Spinner from '../components/Spinner';
 import { LimitForm } from '../components/LimitForm';
 import { GroupIcons } from '../components/GroupIcons';
+import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 import {
   Dialog,
   DialogContent,
@@ -95,6 +96,8 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, { limits: newLimits }, { merge: true });
+      // Sync to chrome.storage for content script access
+      await syncLimitsToStorage(user.uid);
     } catch (error) {
       console.error('Error saving limits:', error);
       throw error;
