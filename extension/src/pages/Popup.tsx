@@ -67,7 +67,7 @@ const Popup: React.FC = () => {
                     : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`}
               >
-                Home
+                Account
               </button>
               <button
                 onClick={() => setCurrentTab('groups')}

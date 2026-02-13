@@ -118,13 +118,6 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
     if (!groupToDelete || !user?.uid) return;
 
     try {
-      // Get the group being deleted
-      const deletedGroup = groups.find(g => g.id === groupToDelete);
-      if (!deletedGroup) return;
-
-      // Get all URLs from the deleted group (groups only contain URLs, no nesting)
-      const deletedUrls = deletedGroup.items.filter(item => !item.startsWith('group:'));
-
       // Update groups
       const updatedGroups = groups.filter(g => g.id !== groupToDelete);
 
@@ -136,27 +129,22 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
         const data = userDoc.data();
         const limits = (data.limits || []) as Limit[];
 
-        // Update limits to remove URLs from the deleted group
+        // Update limits to remove the deleted group from targets
         const updatedLimits = limits
           .map(limit => {
-            // Handle legacy limits
-            if (limit.targetType === 'group' && limit.targetId === groupToDelete) {
-              return null; // Delete legacy group limits
-            }
-
-            // Handle new URL-based limits
-            if (limit.urls) {
-              const filteredUrls = limit.urls.filter(
-                limitUrl => !deletedUrls.includes(limitUrl.url)
+            // Handle target-based limits
+            if (limit.targets) {
+              const filteredTargets = limit.targets.filter(
+                target => !(target.type === 'group' && target.id === groupToDelete)
               );
 
-              // If no URLs left, delete the limit
-              if (filteredUrls.length === 0) {
+              // If no targets left, delete the limit
+              if (filteredTargets.length === 0) {
                 return null;
               }
 
-              // Otherwise, keep the limit with remaining URLs
-              return { ...limit, urls: filteredUrls };
+              // Otherwise, keep the limit with remaining targets
+              return { ...limit, targets: filteredTargets };
             }
 
             return limit;

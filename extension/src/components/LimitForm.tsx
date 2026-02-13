@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import type { Group } from '../types/Group';
-import type { LimitTarget, LimitUrl } from '../types/Limit';
+import type { LimitTarget } from '../types/Limit';
 import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
+import { expandTargetsToUrls, isUrlInTargets } from '../utils/limitHelpers';
 import { ItemListInput } from './ItemListInput';
 import { GroupIcons } from './GroupIcons';
 
@@ -11,7 +12,6 @@ interface LimitFormProps {
   limitId?: string; // If provided, we're editing; if not, we're creating
   initialName?: string;
   initialTargetItems?: LimitTarget[];
-  initialTargetUrls?: LimitUrl[];
   initialLimitType?: 'hard' | 'soft' | 'session';
   initialTimeLimit?: number;
   initialPlusOnes?: number;
@@ -20,7 +20,6 @@ interface LimitFormProps {
   onSave: (
     name: string,
     targetItems: LimitTarget[],
-    targetUrls: LimitUrl[],
     limitType: 'hard' | 'soft' | 'session',
     timeLimit: number,
     plusOnes?: number,
@@ -38,7 +37,6 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   limitId,
   initialName = '',
   initialTargetItems = [],
-  initialTargetUrls = [],
   initialLimitType = 'hard',
   initialTimeLimit = 60,
   initialPlusOnes = 3,
@@ -50,7 +48,6 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   const [limitName, setLimitName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
   const [targetItems, setTargetItems] = useState<LimitTarget[]>(initialTargetItems);
-  const [targetUrls, setTargetUrls] = useState<LimitUrl[]>(initialTargetUrls);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [limitType, setLimitType] = useState<'hard' | 'soft' | 'session'>(initialLimitType);
   const [timeLimit, setTimeLimit] = useState(initialTimeLimit.toString());
@@ -72,7 +69,6 @@ export const LimitForm: React.FC<LimitFormProps> = ({
     if (limitId) {
       setLimitName(initialName);
       setTargetItems(initialTargetItems);
-      setTargetUrls(initialTargetUrls);
       setLimitType(initialLimitType);
       setTimeLimit(initialTimeLimit.toString());
       setPlusOnes(initialPlusOnes.toString());
@@ -80,24 +76,6 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       setPlusOneSeconds((initialPlusOneDuration % 60).toString());
     }
   }, [limitId]);
-
-  // Get URLs from a group (recursively if it contains other groups)
-  const getGroupUrls = (group: Group): string[] => {
-    const urls: string[] = [];
-
-    for (const item of group.items) {
-      if (item.startsWith('group:')) {
-        const nestedGroup = groups.find(g => g.id === item);
-        if (nestedGroup) {
-          urls.push(...getGroupUrls(nestedGroup));
-        }
-      } else {
-        urls.push(item);
-      }
-    }
-
-    return urls;
-  };
 
   // Get matching group suggestions
   const getGroupSuggestions = () => {
@@ -113,23 +91,16 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   const addNormalizedUrlToList = async (url: string) => {
     const normalizedUrl = normalizeUrl(url);
 
-    // Check if URL is already in target URLs
-    const existingUrl = targetUrls.find(u => u.url === normalizedUrl);
-    if (existingUrl) {
-      if (existingUrl.source === 'direct') {
-        setFormError('This URL is already in this limit');
-      } else {
-        setFormError(`This URL is already in this limit (as part of ${existingUrl.source})`);
-      }
+    // Check if URL is already in targets (either directly or in a group)
+    if (isUrlInTargets(normalizedUrl, targetItems, groups)) {
+      setFormError('This URL is already in this limit');
       return;
     }
 
-    // Add to both visual targets and URL list
+    // Add to targets list
     const newTargetItems: LimitTarget[] = [...targetItems, { type: 'url' as const, id: normalizedUrl }];
-    const newTargetUrls: LimitUrl[] = [...targetUrls, { url: normalizedUrl, source: 'direct' }];
 
     setTargetItems(newTargetItems);
-    setTargetUrls(newTargetUrls);
     setTargetInput('');
     setFormError('');
     setTyposquattingWarning(null);
@@ -148,8 +119,8 @@ export const LimitForm: React.FC<LimitFormProps> = ({
     );
 
     if (matchingGroup) {
-      // Get all URLs from the group
-      const groupUrls = getGroupUrls(matchingGroup);
+      // Check if group is empty
+      const groupUrls = expandTargetsToUrls([{ type: 'group', id: matchingGroup.id }], groups);
 
       if (groupUrls.length === 0) {
         setFormError('This group has no URLs');
@@ -157,9 +128,8 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       }
 
       // Check how many URLs from this group already exist in the limit
-      const existingUrls = groupUrls.filter(url =>
-        targetUrls.some(u => u.url === url)
-      );
+      const currentUrls = expandTargetsToUrls(targetItems, groups);
+      const existingUrls = groupUrls.filter(url => currentUrls.includes(url));
 
       // Only prevent adding the group if ALL its URLs are already in the limit
       if (existingUrls.length === groupUrls.length) {
@@ -167,17 +137,10 @@ export const LimitForm: React.FC<LimitFormProps> = ({
         return;
       }
 
-      // Add URLs that don't already exist to the URL list (for validation)
-      const newUrls: LimitUrl[] = groupUrls
-        .filter(url => !targetUrls.some(u => u.url === url))
-        .map(url => ({ url, source: matchingGroup.name }));
-
-      // Add group to visual targets (for display)
+      // Add group to targets
       const newTargetItems: LimitTarget[] = [...targetItems, { type: 'group' as const, id: matchingGroup.id }];
-      const newTargetUrls: LimitUrl[] = [...targetUrls, ...newUrls];
 
       setTargetItems(newTargetItems);
-      setTargetUrls(newTargetUrls);
       setTargetInput('');
       setFormError('');
       setShowSuggestions(false);
@@ -208,23 +171,7 @@ export const LimitForm: React.FC<LimitFormProps> = ({
 
   // Remove target from list
   const handleRemoveTargetFromList = (targetId: string) => {
-    const target = targetItems.find(t => t.id === targetId);
-    if (!target) return;
-
-    if (target.type === 'url') {
-      // Remove URL from both lists
-      setTargetItems(targetItems.filter(t => t.id !== targetId));
-      setTargetUrls(targetUrls.filter(u => u.url !== targetId));
-    } else {
-      // Remove group from visual list
-      setTargetItems(targetItems.filter(t => t.id !== targetId));
-
-      // Remove all URLs from this group from the URL list
-      const group = groups.find(g => g.id === targetId);
-      if (group) {
-        setTargetUrls(targetUrls.filter(u => u.source !== group.name));
-      }
-    }
+    setTargetItems(targetItems.filter(t => t.id !== targetId));
   };
 
   // Get display name for a target
@@ -295,7 +242,7 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       plusOnesNum = parseInt(plusOnes);
     }
 
-    await onSave(limitName.trim(), targetItems, targetUrls, limitType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
+    await onSave(limitName.trim(), targetItems, limitType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
   };
 
   const groupSuggestions = getGroupSuggestions();

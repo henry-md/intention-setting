@@ -3,7 +3,7 @@ import { Plus, Trash2, Clock } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
-import type { Limit, LimitUrl, LimitTarget } from '../types/Limit';
+import type { Limit, LimitTarget } from '../types/Limit';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname } from '../utils/urlNormalization';
 import Spinner from '../components/Spinner';
@@ -105,7 +105,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   const handleSaveLimit = async (
     name: string,
     targetItems: LimitTarget[],
-    targetUrls: LimitUrl[],
     limitType: 'hard' | 'soft' | 'session',
     timeLimit: number,
     plusOnes?: number,
@@ -120,7 +119,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
             name: name || undefined,
             type: limitType,
             targets: targetItems,
-            urls: targetUrls,
             timeLimit,
           };
 
@@ -145,7 +143,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
         id: `limit:${Date.now()}`,
         type: limitType,
         targets: targetItems,
-        urls: targetUrls,
         timeLimit,
         createdAt: new Date().toISOString(),
       };
@@ -227,7 +224,6 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
           limitId={editingLimitId || undefined}
           initialName={editingLimit?.name || ''}
           initialTargetItems={editingLimit?.targets || []}
-          initialTargetUrls={editingLimit?.urls || []}
           initialLimitType={editingLimit?.type || 'hard'}
           initialTimeLimit={editingLimit?.timeLimit || 60}
           initialPlusOnes={editingLimit?.plusOnes || 3}
@@ -250,8 +246,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
           </p>
         ) : (
           limits.map((limit) => {
-            // Handle both new and legacy limit formats
-            const limitTargets = limit.targets || (limit.targetType && limit.targetId ? [{ type: limit.targetType, id: limit.targetId }] : []);
+            const limitTargets = limit.targets || [];
 
             return (
               <div

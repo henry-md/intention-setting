@@ -3,7 +3,7 @@ import { Send, Loader2, Trash2 } from 'lucide-react';
 import OpenAI from 'openai';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
-import type { Limit, LimitTarget, LimitUrl } from '../types/Limit';
+import type { Limit, LimitTarget } from '../types/Limit';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { normalizeUrl } from '../utils/urlNormalization';
@@ -603,17 +603,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
             updatedLimit.targets.push({ type: 'url', id: url });
           }
         });
-
-        // Also add to urls array for compatibility
-        if (!updatedLimit.urls) {
-          updatedLimit.urls = [];
-        }
-        normalizedAddUrls.forEach(url => {
-          const urlExists = updatedLimit.urls!.some(u => u.url === url);
-          if (!urlExists) {
-            updatedLimit.urls!.push({ url, source: 'direct' });
-          }
-        });
       }
 
       // Handle removing URLs
@@ -626,12 +615,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
         updatedLimit.targets = updatedLimit.targets.filter(
           t => !(t.type === 'url' && normalizedRemoveUrls.includes(t.id))
         );
-
-        if (updatedLimit.urls) {
-          updatedLimit.urls = updatedLimit.urls.filter(
-            u => !normalizedRemoveUrls.includes(u.url)
-          );
-        }
       }
 
       console.log('Updated limit:', updatedLimit);
@@ -793,7 +776,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
 
       // Process targets
       const limitTargets: LimitTarget[] = [];
-      const limitUrls: LimitUrl[] = [];
 
       for (const target of targets) {
         console.log('Processing target:', target);
@@ -802,7 +784,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
           const prepared = target.value.startsWith('http') ? target.value : `https://${target.value}`;
           const normalizedUrl = normalizeUrl(prepared);
           limitTargets.push({ type: 'url', id: normalizedUrl });
-          limitUrls.push({ url: normalizedUrl, source: 'direct' });
           console.log('Added URL target:', normalizedUrl);
         } else {
           // Find group by name
@@ -814,10 +795,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
             return `Error: Group "${target.value}" not found. Available groups: ${availableGroups || 'none'}`;
           }
           limitTargets.push({ type: 'group', id: group.id });
-          // Add all URLs from the group
-          const groupUrls = group.items.filter(item => !item.startsWith('group:'));
-          limitUrls.push(...groupUrls.map(url => ({ url, source: group.name })));
-          console.log('Added group target:', group.name, 'with URLs:', groupUrls);
+          console.log('Added group target:', group.name);
         }
       }
 
@@ -830,7 +808,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
         id: `limit:${Date.now()}`,
         type: limitType,
         targets: limitTargets,
-        urls: limitUrls,
         timeLimit: timeLimit || 0,
         createdAt: new Date().toISOString(),
       };
