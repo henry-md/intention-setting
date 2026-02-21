@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import useAuth from '../hooks/useAuth';
 import Home from './Home';
-import Account from './Account';
 import Groups from './Groups';
 import Limits from './Limits';
 import GroupEdit from './GroupEdit';
@@ -11,10 +10,10 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../compone
 import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
 
 type TabType = 'home' | 'groups' | 'limits';
-type ViewType = 'main' | 'account' | 'groupEdit';
+type ViewType = 'main' | 'groupEdit';
 
 /**
- * Main router component. Child of App.tsx, manages tabs (Home, Groups, Limits) and full-page views (Account, GroupEdit).
+ * Main router component. Child of App.tsx, manages tabs (Home, Groups, Limits) and full-page views (GroupEdit).
  * NOT a page itself - switches between child components based on state.
  * Handles tab navigation and view routing for the entire extension.
  */
@@ -39,11 +38,6 @@ const Popup: React.FC = () => {
         <Spinner />
       </div>
     );
-  }
-
-  // Account view
-  if (currentView === 'account') {
-    return <Account onBack={() => setCurrentView('main')} />;
   }
 
   // Group edit view
@@ -104,7 +98,7 @@ const Popup: React.FC = () => {
             {/* Tab Content */}
             <div className="flex-1 overflow-hidden">
               {currentTab === 'home' && (
-                <Home onShowAccount={() => setCurrentView('account')} user={user} />
+                <Home user={user} />
               )}
               {currentTab === 'groups' && (
                 <Groups

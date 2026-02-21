@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import type { User } from '../types/User';
+import useAuth from '../hooks/useAuth';
+import { useStripe } from '../hooks/useStripe';
+import Spinner from '../components/Spinner';
 
 interface HomeProps {
-  onShowAccount: () => void;
   user: User | null;
 }
 
 /**
- * Home tab - simplified to show YouTube stop button when on YouTube.
- * Child of Popup.tsx, renders inside the Home tab.
- * URL management has been moved to Groups and Limits.
+ * Account tab - shows user authentication status, premium status, and account actions.
+ * Child of Popup.tsx, renders inside the Account tab.
+ * Also shows YouTube stop button when on YouTube.
  */
-const Home: React.FC<HomeProps> = ({ onShowAccount }) => {
+const Home: React.FC<HomeProps> = () => {
+  const { user, loading: authLoading, handleSignIn, handleSignOut } = useAuth();
+  const { paymentStatus, isProcessing, handleUpgrade } = useStripe(user, authLoading);
   const [isYouTube, setIsYouTube] = useState(false);
 
   // Detect if current tab is YouTube
@@ -52,16 +56,60 @@ const Home: React.FC<HomeProps> = ({ onShowAccount }) => {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  // Handle the case where the user is not signed in
+  if (!user) {
+    return (
+      <div className="h-screen w-full p-6 flex flex-col items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold mb-4">Boilerplate Chrome Extension</h2>
+          <button onClick={handleSignIn} className="purple-button">
+            Sign In with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-full flex flex-col space-y-4 p-4 overflow-y-auto">
-      {/* Header with title and profile icon */}
+      {/* Header with title */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Intention Setting</h3>
-        <button onClick={onShowAccount} className="purple-button" aria-label="Account">
-          {/* Profile Icon SVG */}
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
+      </div>
+
+      {/* Account Information */}
+      <div className="flex flex-col space-y-3 bg-gray-800 border border-gray-600 rounded-lg p-4">
+        <div className="text-center">
+          <p className="text-sm text-gray-400 mb-1">Signed in as:</p>
+          <p className="text-sm font-medium text-gray-200">{user.email}</p>
+        </div>
+
+        {paymentStatus === 'loading' && (
+          <div className="text-sm text-gray-400 text-center">Checking payment status...</div>
+        )}
+        {paymentStatus === 'paid' && (
+          <div className="text-sm text-green-400 text-center font-medium">Premium Active</div>
+        )}
+        {paymentStatus === 'unpaid' && (
+          <button
+            onClick={handleUpgrade}
+            disabled={isProcessing}
+            className="purple-button"
+          >
+            {isProcessing ? 'Processing...' : 'Upgrade to Premium'}
+          </button>
+        )}
+
+        <button onClick={handleSignOut} className="purple-button">
+          Sign Out
         </button>
       </div>
 
