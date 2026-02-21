@@ -348,27 +348,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       margin: 0;
       padding: 20px;
     `;
-
-    // Create drag handle
-    const dragHandle = document.createElement('div');
-    dragHandle.style.cssText = `
-      width: 32px;
-      height: 5px;
-      background: rgba(255, 255, 255, 0.4);
-      border-radius: 3px;
-      margin: 0 auto 8px auto;
-      cursor: grab;
-      transition: background 0.2s ease;
-    `;
-    dragHandle.title = 'Drag to reposition';
-
-    // Add hover effect
-    dragHandle.addEventListener('mouseenter', () => {
-      dragHandle.style.background = 'rgba(255, 255, 255, 0.6)';
-    });
-    dragHandle.addEventListener('mouseleave', () => {
-      dragHandle.style.background = 'rgba(255, 255, 255, 0.4)';
-    });
+    wrapper.title = 'Drag to reposition';
 
     // Create content container for React components
     const shadowContainer = document.createElement('div');
@@ -397,7 +377,6 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
       isDragging = true;
       wrapper.style.cursor = 'grabbing';
-      dragHandle.style.background = 'rgba(255, 255, 255, 0.8)';
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -423,7 +402,6 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
       isDragging = false;
       wrapper.style.cursor = 'grab';
-      dragHandle.style.background = 'rgba(255, 255, 255, 0.4)';
 
       // Save position to storage
       const rect = wrapper.getBoundingClientRect();
@@ -448,8 +426,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
 
-    // Build DOM structure: wrapper > [dragHandle, shadowContainer]
-    wrapper.appendChild(dragHandle);
+    // Build DOM structure: wrapper > shadowContainer
     wrapper.appendChild(shadowContainer);
     shadowRoot.appendChild(wrapper);
     document.body.appendChild(container);
