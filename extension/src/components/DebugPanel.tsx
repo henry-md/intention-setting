@@ -7,6 +7,7 @@ interface DebugPanelProps {
     instanceId: string;
     isActiveTimer: boolean;
     isTabVisible: boolean;
+    isStaleTab: boolean;
   };
 }
 
@@ -76,10 +77,16 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
               {debugInfo.isActiveTimer ? 'Yes' : 'No'}
             </div>
           </div>
-          <div>
+          <div style={{ marginBottom: '6px' }}>
             <div style={{ opacity: 0.6, marginBottom: '2px' }}>Is Tab Visible:</div>
             <div style={{ color: debugInfo.isTabVisible ? '#4ade80' : '#f87171' }}>
               {debugInfo.isTabVisible ? 'Yes' : 'No'}
+            </div>
+          </div>
+          <div>
+            <div style={{ opacity: 0.6, marginBottom: '2px' }}>Is Stale Tab:</div>
+            <div style={{ color: debugInfo.isStaleTab ? '#f87171' : '#4ade80' }}>
+              {debugInfo.isStaleTab ? 'Yes (will reload)' : 'No'}
             </div>
           </div>
         </div>

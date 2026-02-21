@@ -1,17 +1,136 @@
 // Content script for intention setting
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import IntentionPopup from '../components/IntentionPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
 import { normalizeHostname } from '../utils/urlNormalization';
+
+/** Shape of a site limit as stored in chrome.storage (siteLimits[siteKey]) */
+interface StoredSiteLimit {
+  limitType?: 'hard' | 'soft' | 'session';
+  timeLimit?: number;
+  limitId?: string;
+  plusOnes?: number;
+  plusOneDuration?: number;
+}
+
+// ============================================================================
+// CHROME API WRAPPERS - Handle extension context invalidation gracefully
+// ============================================================================
+
+let hasDetectedInvalidContext = false;
+
+/**
+ * Check if Chrome extension context is still valid
+ * When extension is reloaded, chrome.runtime.id becomes undefined
+ * If invalid, auto-refresh the page to load new content script
+ */
+function isExtensionContextValid(): boolean {
+  try {
+    // Accessing chrome.runtime.id will throw if context is invalidated
+    const isValid = chrome.runtime?.id !== undefined;
+
+    if (!isValid && !hasDetectedInvalidContext) {
+      hasDetectedInvalidContext = true;
+      console.log('[Extension] Context invalidated - reloading page to inject new content script');
+
+      // Small delay to ensure console message is visible
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    }
+
+    return isValid;
+  } catch {
+    if (!hasDetectedInvalidContext) {
+      hasDetectedInvalidContext = true;
+      console.log('[Extension] Context invalidated - reloading page to inject new content script');
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    }
+    return false;
+  }
+}
+
+/**
+ * Safely get from chrome.storage.local, handling context invalidation
+ * Returns null if extension was reloaded
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Chrome storage returns loose objects
+async function safeStorageGet(keys: string[]): Promise<Record<string, any> | null> {
+  if (!isExtensionContextValid()) {
+    console.log('[Storage] Extension context invalidated - cannot read');
+    return null;
+  }
+
+  try {
+    return await chrome.storage.local.get(keys);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('Extension context invalidated')) {
+      console.log('[Storage] Extension was reloaded - storage read failed');
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Safely set to chrome.storage.local, handling context invalidation
+ * Returns false if extension was reloaded, true if successful
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Chrome storage accepts loose objects
+async function safeStorageSet(items: Record<string, any>): Promise<boolean> {
+  if (!isExtensionContextValid()) {
+    console.log('[Storage] Extension context invalidated - cannot write');
+    return false;
+  }
+
+  try {
+    await chrome.storage.local.set(items);
+    return true;
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('Extension context invalidated')) {
+      console.log('[Storage] Extension was reloaded - storage write failed');
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Safely send message to background, handling context invalidation
+ * Returns null if extension was reloaded
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Chrome messaging API is loosely typed
+async function safeSendMessage(message: any): Promise<any | null> {
+  if (!isExtensionContextValid()) {
+    console.log('[Message] Extension context invalidated - cannot send');
+    return null;
+  }
+
+  try {
+    return await chrome.runtime.sendMessage(message);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('Extension context invalidated')) {
+      console.log('[Message] Extension was reloaded - message not sent');
+      return null;
+    }
+    throw error;
+  }
+}
 
 console.log('Intention Setting content script loaded');
 console.log('[Timer] Initial state - document.hidden:', document.hidden, 'visibilityState:', document.visibilityState);
 
 // Content script state (timer management moved to background service worker)
 let currentSiteKey: string | null = null;
-let containerRoot: any = null; // Root for the flex container holding both components
+let containerRoot: Root | null = null; // Root for the flex container holding both components
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
 
 // Check if current URL matches user's saved URLs
@@ -22,22 +141,24 @@ const checkAndShowIntentionPopup = async () => {
     const currentDomain = normalizeHostname(currentUrl.hostname);
 
     // Get user data from chrome storage
-    const result = await chrome.storage.local.get(['user']);
-    if (!result.user?.uid) {
+    const result = await safeStorageGet(['user']);
+    if (!result?.user?.uid) {
       console.log('No user found, skipping intention check');
       return;
     }
 
     // Get site limits from chrome storage
-    const limitsResult = await chrome.storage.local.get(['siteLimits']);
-    const siteLimits: Record<string, any> = limitsResult.siteLimits || {};
+    const limitsResult = await safeStorageGet(['siteLimits']);
+    if (!limitsResult) return; // Extension reloaded
+    const siteLimits: Record<string, StoredSiteLimit> = limitsResult.siteLimits || {};
 
     // Check if current domain has a limit
     const limitData = siteLimits[currentDomain];
 
     if (limitData) {
       // Check if we've already visited this site today (after 4am)
-      const result = await chrome.storage.local.get(['siteTimeData']);
+      const result = await safeStorageGet(['siteTimeData']);
+      if (!result) return; // Extension reloaded
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
 
@@ -47,7 +168,7 @@ const checkAndShowIntentionPopup = async () => {
         // Same day revisit - for hard/soft limits, just show the timer badge
         // For session limits, skip everything (already prompted today)
         console.log('Already visited today');
-        if (limitData.limitType !== 'session') {
+        if (limitData.limitType !== 'session' && limitData.timeLimit != null) {
           console.log('Starting timer for same-day revisit:', limitData);
           await startTimeTracking(limitData.timeLimit);
         }
@@ -59,7 +180,7 @@ const checkAndShowIntentionPopup = async () => {
       if (limitData.limitType === 'session') {
         pauseAllVideos();
         showIntentionPopup();
-      } else {
+      } else if (limitData.timeLimit != null) {
         // For hard/soft limits, start timer immediately with the configured time limit
         console.log('Starting timer for hard/soft limit (first visit today):', limitData);
         await startTimeTracking(limitData.timeLimit);
@@ -117,37 +238,14 @@ const isNewDay = (lastUpdated: number): boolean => {
   return lastUpdated < dayStart;
 };
 
-// Sync time data to Firestore
-const syncToFirestore = async (siteKey: string, timeSpent: number, timeLimit: number) => {
-  try {
-    // Get user from storage
-    const result = await chrome.storage.local.get(['user']);
-    if (!result.user?.uid) {
-      return;
-    }
-
-    // Send message to background script to update Firestore
-    await chrome.runtime.sendMessage({
-      action: 'updateTimeTracking',
-      userId: result.user.uid,
-      siteKey: siteKey,
-      timeData: {
-        timeSpent: timeSpent,
-        timeLimit: timeLimit,
-        lastUpdated: Date.now()
-      }
-    });
-  } catch (error) {
-    console.error('Error syncing to Firestore:', error);
-  }
-};
-
 // Start tracking time for current site (simplified - notifies background worker)
 const startTimeTracking = async (timeLimit: number) => {
   currentSiteKey = getCurrentSiteKey();
 
   // Get existing time data
-  const result = await chrome.storage.local.get(['siteTimeData']);
+  const result = await safeStorageGet(['siteTimeData']);
+  if (!result) return; // Extension reloaded
+
   const siteTimeData = result.siteTimeData || {};
 
   // Initialize time tracking for this site if not exists
@@ -162,14 +260,15 @@ const startTimeTracking = async (timeLimit: number) => {
     siteTimeData[currentSiteKey].timeLimit = timeLimit;
   }
 
-  await chrome.storage.local.set({ siteTimeData });
+  const success = await safeStorageSet({ siteTimeData });
+  if (!success) return; // Extension reloaded
 
   // Show timer badge
   await showTimerBadge(siteTimeData[currentSiteKey].timeSpent, timeLimit);
 
   // Notify background worker if tab is visible
   if (!document.hidden) {
-    await chrome.runtime.sendMessage({
+    await safeSendMessage({
       action: 'tab-focused',
       siteKey: currentSiteKey,
       url: window.location.href
@@ -180,12 +279,14 @@ const startTimeTracking = async (timeLimit: number) => {
 // Get debug info for the debug panel
 const getDebugInfo = async () => {
   const isVisible = !document.hidden && document.visibilityState === 'visible';
+  const isStale = !isExtensionContextValid();
   return {
     currentUrl: window.location.href,
     normalizedHostname: currentSiteKey || getCurrentSiteKey(),
     instanceId: 'N/A (managed by background)',
     isActiveTimer: false, // Timer managed by background worker now
-    isTabVisible: isVisible
+    isTabVisible: isVisible,
+    isStaleTab: isStale
   };
 };
 
@@ -206,27 +307,34 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
     const wrapper = document.createElement('div');
 
     // Load saved position from storage
-    const storage = await chrome.storage.local.get(['timerPosition']);
-    let savedPosition = storage.timerPosition;
-
-    // Reset position if it's from old code version (no version field) or invalid
+    let savedPosition;
     const POSITION_VERSION = 2; // Increment when position calculation changes
 
-    if (!savedPosition || savedPosition.version !== POSITION_VERSION) {
-      console.log('[Timer] Using fresh default position (v2)');
-      savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
-      await chrome.storage.local.set({ timerPosition: savedPosition });
-    }
+    const storage = await safeStorageGet(['timerPosition']);
 
-    // Additional validation (reset if out of reasonable bounds)
-    const maxTop = window.innerHeight - 100;
-    const maxRight = window.innerWidth - 100;
-
-    if (savedPosition.top < 0 || savedPosition.top > maxTop ||
-        savedPosition.right < 0 || savedPosition.right > maxRight) {
-      console.log('[Timer] Resetting out-of-bounds position');
+    // If extension reloaded or no saved position, use default
+    if (!storage) {
       savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
-      await chrome.storage.local.set({ timerPosition: savedPosition });
+    } else {
+      savedPosition = storage.timerPosition;
+
+      // Reset position if it's from old code version (no version field) or invalid
+      if (!savedPosition || savedPosition.version !== POSITION_VERSION) {
+        console.log('[Timer] Using fresh default position (v2)');
+        savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
+        await safeStorageSet({ timerPosition: savedPosition });
+      } else {
+        // Additional validation (reset if out of reasonable bounds)
+        const maxTop = window.innerHeight - 100;
+        const maxRight = window.innerWidth - 100;
+
+        if (savedPosition.top < 0 || savedPosition.top > maxTop ||
+            savedPosition.right < 0 || savedPosition.right > maxRight) {
+          console.log('[Timer] Resetting out-of-bounds position');
+          savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
+          await safeStorageSet({ timerPosition: savedPosition });
+        }
+      }
     }
 
     // Add styles to wrapper (flush to edges, padding creates the 20px spacing)
@@ -324,14 +432,16 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       // Calculate right offset (distance from right edge)
       const rightOffset = windowWidth - rect.right;
 
-      await chrome.storage.local.set({
+      const success = await safeStorageSet({
         timerPosition: {
           top: rect.top,
           right: rightOffset
         }
       });
 
-      console.log('[Timer] Position saved:', { top: rect.top, right: rightOffset });
+      if (success) {
+        console.log('[Timer] Position saved:', { top: rect.top, right: rightOffset });
+      }
     };
 
     wrapper.addEventListener('mousedown', onMouseDown);
@@ -402,13 +512,15 @@ const showDebugPanel = async () => {
 const checkAndShowTimer = async () => {
   try {
     const currentDomain = getCurrentSiteKey();
-    const limitsResult = await chrome.storage.local.get(['siteLimits']);
-    const siteLimits: Record<string, any> = limitsResult.siteLimits || {};
+    const limitsResult = await safeStorageGet(['siteLimits']);
+    if (!limitsResult) return; // Extension reloaded
+    const siteLimits: Record<string, StoredSiteLimit> = limitsResult.siteLimits || {};
 
     const limitData = siteLimits[currentDomain];
 
     if (limitData) {
-      const result = await chrome.storage.local.get(['siteTimeData']);
+      const result = await safeStorageGet(['siteTimeData']);
+      if (!result) return; // Extension reloaded
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
 
@@ -445,17 +557,13 @@ const showIntentionPopup = () => {
   const handleContinue = async (timeLimit: number, intention: string) => {
     if (intention) {
       // Save intention
-      try {
-        await chrome.runtime.sendMessage({
-          action: 'saveIntention',
-          intention: intention,
-          url: window.location.href,
-          timestamp: new Date().toISOString(),
-          timeLimit: timeLimit
-        });
-      } catch (error) {
-        console.error('Error saving intention:', error);
-      }
+      await safeSendMessage({
+        action: 'saveIntention',
+        intention: intention,
+        url: window.location.href,
+        timestamp: new Date().toISOString(),
+        timeLimit: timeLimit
+      });
     }
 
     // Remove popup and resume videos
@@ -505,12 +613,19 @@ chrome.storage.onChanged.addListener(async (changes) => {
 });
 
 // Listen for messages from background worker
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // Check if extension context is still valid
+  if (!isExtensionContextValid()) {
+    console.log('[Content] Extension context invalidated - ignoring message');
+    return false;
+  }
+
   console.log('[Content] Message received:', message);
 
   if (message.action === 'get-current-site') {
-    chrome.storage.local.get(['siteLimits'], (storage) => {
-      const siteLimits = storage.siteLimits || {};
+    (async () => {
+      const storage = await safeStorageGet(['siteLimits']);
+      const siteLimits = storage?.siteLimits || {};
       const hasSiteLimit = !!siteLimits[currentSiteKey || ''];
 
       sendResponse({
@@ -518,13 +633,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         url: window.location.href,
         hasSiteLimit: hasSiteLimit
       });
-    });
+    })();
     return true; // Will respond asynchronously
   }
 });
 
 // Listen for visibility changes - notify background worker
 const handleVisibilityChange = async () => {
+  // Check if extension context is still valid
+  if (!isExtensionContextValid()) {
+    console.log('[Timer] Extension context invalidated - skipping visibility change');
+    return;
+  }
+
   console.log('[Timer] ⚠️ VISIBILITY CHANGED EVENT FIRED');
   console.log('[Timer] document.hidden:', document.hidden);
   console.log('[Timer] document.visibilityState:', document.visibilityState);
@@ -540,14 +661,14 @@ const handleVisibilityChange = async () => {
   if (isHidden) {
     // Tab is now hidden - notify background to stop timer
     console.log('[Timer] 🔽 Tab hidden - notifying background');
-    await chrome.runtime.sendMessage({
+    await safeSendMessage({
       action: 'tab-blurred',
       siteKey: currentSiteKey
     });
   } else {
     // Tab is now visible - notify background to start timer
     console.log('[Timer] 🔼 Tab visible - notifying background');
-    await chrome.runtime.sendMessage({
+    await safeSendMessage({
       action: 'tab-focused',
       siteKey: currentSiteKey,
       url: window.location.href
@@ -556,7 +677,9 @@ const handleVisibilityChange = async () => {
 
   // Update UI to reflect changes
   if (containerRoot) {
-    const result = await chrome.storage.local.get(['siteTimeData']);
+    const result = await safeStorageGet(['siteTimeData']);
+    if (!result) return; // Extension reloaded
+
     const siteTimeData = result.siteTimeData || {};
     const siteData = currentSiteKey ? siteTimeData[currentSiteKey] : null;
 
@@ -576,6 +699,11 @@ console.log('[Timer] ✓ Visibility change listener attached');
 // FALLBACK: Poll visibility every 500ms in case visibilitychange doesn't fire (some sites block it)
 let lastVisibilityState = document.hidden;
 setInterval(() => {
+  // Check if extension context is still valid
+  if (!isExtensionContextValid()) {
+    return; // Silently ignore if extension was reloaded
+  }
+
   const currentVisibilityState = document.hidden;
 
   // If state changed but event didn't fire, manually trigger
@@ -589,6 +717,12 @@ setInterval(() => {
 
 // Initialize on page load
 const initialize = async () => {
+  // Check if extension context is still valid
+  if (!isExtensionContextValid()) {
+    console.log('[Init] Extension context invalidated - skipping initialization');
+    return;
+  }
+
   await checkAndShowIntentionPopup();
   await checkAndShowTimer();
   // Show debug panel if DEBUG_UI is enabled (even if no timer)
@@ -605,6 +739,11 @@ if (document.readyState === 'loading') {
 // Also run on navigation (for SPAs)
 let lastUrl = location.href;
 new MutationObserver(() => {
+  // Check if extension context is still valid
+  if (!isExtensionContextValid()) {
+    return; // Silently ignore if extension was reloaded
+  }
+
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
@@ -617,7 +756,7 @@ new MutationObserver(() => {
 
     // If site changed (different domain), notify background
     if (previousSiteKey && previousSiteKey !== newSiteKey) {
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         action: 'tab-navigated',
         previousSiteKey: previousSiteKey,
         newSiteKey: newSiteKey,
@@ -629,3 +768,8 @@ new MutationObserver(() => {
     initialize();
   }
 }).observe(document, { subtree: true, childList: true });
+
+// STALE TAB DETECTION: Poll every second to detect if extension was reloaded
+setInterval(() => {
+  isExtensionContextValid(); // Will auto-reload if stale
+}, 1000);
