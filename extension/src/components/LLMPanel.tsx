@@ -3,11 +3,11 @@ import { Send, Loader2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import OpenAI from 'openai';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
-import type { Limit, LimitTarget } from '../types/Limit';
+import type { Rule, RuleTarget } from '../types/Rule';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { normalizeUrl } from '../utils/urlNormalization';
-import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
+import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -28,8 +28,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'get_groups_and_limits',
-      description: 'Retrieves all existing groups and limits. Use this to see what groups and limits are already configured before creating new ones or when the user asks about existing configurations.',
+      name: 'get_groups_and_rules',
+      description: 'Retrieves all existing groups and rules. Use this to see what groups and rules are already configured before creating new ones or when the user asks about existing configurations.',
       parameters: {
         type: 'object',
         properties: {},
@@ -41,7 +41,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_group',
-      description: 'Creates a new group of websites. Groups are collections of URLs that can be used in limits. When creating a group, provide a name and a list of website URLs.',
+      description: 'Creates a new group of websites. Groups are collections of URLs that can be used in rules. When creating a group, provide a name and a list of website URLs.',
       parameters: {
         type: 'object',
         properties: {
@@ -62,14 +62,14 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'create_limit',
-      description: 'Creates a time limit on websites or groups. Limits restrict how long you can spend on specified sites. There are three types: "hard" (strict blocking after time expires), "soft" (allows extensions/plus-ones), and "session" (prompts for time limit when visiting). You can specify groups by name or individual URLs.',
+      name: 'create_rule',
+      description: 'Creates a time rule on websites or groups. Rules restrict how long you can spend on specified sites. There are three types: "hard" (strict blocking after time expires), "soft" (allows extensions/plus-ones), and "session" (prompts for time rule when visiting). You can specify groups by name or individual URLs.',
       parameters: {
         type: 'object',
         properties: {
           name: {
             type: 'string',
-            description: 'Optional name for the limit'
+            description: 'Optional name for the rule'
           },
           targets: {
             type: 'array',
@@ -88,68 +88,68 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
               },
               required: ['type', 'value']
             },
-            description: 'Array of targets (URLs or group names) to apply the limit to'
+            description: 'Array of targets (URLs or group names) to apply the rule to'
           },
-          limitType: {
+          ruleType: {
             type: 'string',
             enum: ['hard', 'soft', 'session'],
-            description: 'Type of limit: "hard" (strict block), "soft" (allows extensions), or "session" (prompts on visit)'
+            description: 'Type of rule: "hard" (strict block), "soft" (allows extensions), or "session" (prompts on visit)'
           },
           timeLimit: {
             type: 'number',
-            description: 'Time limit in minutes (not needed for session limits)'
+            description: 'Time rule in minutes (not needed for session rules)'
           },
           plusOnes: {
             type: 'number',
-            description: 'Number of time extensions allowed (only for soft limits). For ex. they can ask for 3 extensions of 5 minutes each. So they would get their allotted time, and be able to press a "one more" button 3 times for a total of 15 extra minutes on their sites.'
+            description: 'Number of time extensions allowed (only for soft rules). For ex. they can ask for 3 extensions of 5 minutes each. So they would get their allotted time, and be able to press a "one more" button 3 times for a total of 15 extra minutes on their sites.'
           },
           plusOneDuration: {
             type: 'number',
-            description: 'Duration of each extension in seconds (only for soft limits)'
+            description: 'Duration of each extension in seconds (only for soft rules)'
           }
         },
-        required: ['targets', 'limitType']
+        required: ['targets', 'ruleType']
       }
     }
   },
   {
     type: 'function',
     function: {
-      name: 'update_limit',
-      description: 'Updates an existing limit. Use this to change the type, time, add/remove targets, or other properties of a limit. You can identify the limit by its name or by the group/URL it targets.',
+      name: 'update_rule',
+      description: 'Updates an existing rule. Use this to change the type, time, add/remove targets, or other properties of a rule. You can identify the rule by its name or by the group/URL it targets.',
       parameters: {
         type: 'object',
         properties: {
           identifier: {
             type: 'string',
-            description: 'The name of the limit, or the name of the group/URL it targets (e.g., "Social Media Limit" or "Social Media")'
+            description: 'The name of the rule, or the name of the group/URL it targets (e.g., "Social Media Rule" or "Social Media")'
           },
-          limitType: {
+          ruleType: {
             type: 'string',
             enum: ['hard', 'soft', 'session'],
-            description: 'New limit type (optional - only include if changing)'
+            description: 'New rule type (optional - only include if changing)'
           },
           timeLimit: {
             type: 'number',
-            description: 'New time limit in minutes (optional - only include if changing)'
+            description: 'New time rule in minutes (optional - only include if changing)'
           },
           plusOnes: {
             type: 'number',
-            description: 'New number of extensions (optional - only for soft limits)'
+            description: 'New number of extensions (optional - only for soft rules)'
           },
           plusOneDuration: {
             type: 'number',
-            description: 'New duration of each extension in seconds (optional - only for soft limits)'
+            description: 'New duration of each extension in seconds (optional - only for soft rules)'
           },
           addUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Spare URLs to add to the limit (optional - e.g., ["youtube.com", "reddit.com"]). Note: Cannot add/remove groups, only individual URLs.'
+            description: 'Spare URLs to add to the rule (optional - e.g., ["youtube.com", "reddit.com"]). Note: Cannot add/remove groups, only individual URLs.'
           },
           removeUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Spare URLs to remove from the limit (optional - e.g., ["facebook.com"])'
+            description: 'Spare URLs to remove from the rule (optional - e.g., ["facebook.com"])'
           }
         },
         required: ['identifier']
@@ -207,14 +207,14 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'delete_limit',
-      description: 'Deletes an existing limit. Use this when the user wants to remove a limit entirely.',
+      name: 'delete_rule',
+      description: 'Deletes an existing rule. Use this when the user wants to remove a rule entirely.',
       parameters: {
         type: 'object',
         properties: {
           identifier: {
             type: 'string',
-            description: 'The name of the limit, or the name of the group/URL it targets'
+            description: 'The name of the rule, or the name of the group/URL it targets'
           }
         },
         required: ['identifier']
@@ -226,7 +226,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 /**
  * LLM Panel component that provides a chat interface using OpenAI API.
  * Displays at the bottom of the screen in a resizable panel.
- * Supports function calling to create groups and limits.
+ * Supports function calling to create groups and rules.
  */
 const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -346,8 +346,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     return result;
   }, [messages]);
 
-  // Tool execution: Get Groups and Limits
-  const executeGetGroupsAndLimits = async (): Promise<string> => {
+  // Tool execution: Get Groups and Rules
+  const executeGetGroupsAndRules = async (): Promise<string> => {
     if (!user?.uid) {
       return 'Error: User not authenticated';
     }
@@ -357,15 +357,15 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       const userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
-        return 'No groups or limits found. The user has not created any yet.';
+        return 'No groups or rules found. The user has not created any yet.';
       }
 
       const data = userDoc.data();
       const groups: Group[] = data.groups || [];
-      const limits: Limit[] = data.limits || [];
+      const rules: Rule[] = data.rules || [];
 
-      if (groups.length === 0 && limits.length === 0) {
-        return 'No groups or limits found. The user has not created any yet.';
+      if (groups.length === 0 && rules.length === 0) {
+        return 'No groups or rules found. The user has not created any yet.';
       }
 
       let result = '';
@@ -380,17 +380,17 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         result += '\n';
       }
 
-      // Format limits
-      if (limits.length > 0) {
-        result += '**LIMITS:**\n';
-        limits.forEach((limit, index) => {
-          const name = limit.name || 'Unnamed limit';
-          const type = limit.type;
-          const time = limit.timeLimit;
+      // Format rules
+      if (rules.length > 0) {
+        result += '**RULES:**\n';
+        rules.forEach((rule, index) => {
+          const name = rule.name || 'Unnamed rule';
+          const type = rule.type;
+          const time = rule.timeLimit;
 
           // Get target names
           const targetNames: string[] = [];
-          limit.targets.forEach(target => {
+          rule.targets.forEach(target => {
             if (target.type === 'url') {
               targetNames.push(target.id.replace(/^https?:\/\//, ''));
             } else {
@@ -403,22 +403,22 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
 
           const targetsStr = targetNames.join(', ');
 
-          let limitDetails = '';
+          let ruleDetails = '';
           if (type === 'session') {
-            limitDetails = 'session-based (prompts on visit)';
+            ruleDetails = 'session-based (prompts on visit)';
           } else if (type === 'soft') {
-            limitDetails = `${time} minutes, ${limit.plusOnes} extensions of ${limit.plusOneDuration}s each`;
+            ruleDetails = `${time} minutes, ${rule.plusOnes} extensions of ${rule.plusOneDuration}s each`;
           } else {
-            limitDetails = `${time} minutes (hard block)`;
+            ruleDetails = `${time} minutes (hard block)`;
           }
 
-          result += `${index + 1}. ${name} - ${type} limit on ${targetsStr}: ${limitDetails}\n`;
+          result += `${index + 1}. ${name} - ${type} rule on ${targetsStr}: ${ruleDetails}\n`;
         });
       }
 
       return result.trim();
     } catch (error) {
-      console.error('Error getting groups and limits:', error);
+      console.error('Error getting groups and rules:', error);
       return `Error retrieving data: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
@@ -453,7 +453,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       const updatedGroups = [...existingGroups, newGroup];
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
       return `Successfully created group "${name}" with ${urls.length} URL(s): ${urls.join(', ')}`;
     } catch (error) {
@@ -535,7 +535,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       const updatedGroups = existingGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g);
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
       let message = `Successfully updated group "${groupToUpdate.name}"`;
       const changes: string[] = [];
@@ -561,17 +561,17 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     }
   };
 
-  // Tool execution: Update Limit
-  const executeUpdateLimit = async (
+  // Tool execution: Update Rule
+  const executeUpdateRule = async (
     identifier: string,
-    limitType?: 'hard' | 'soft' | 'session',
+    ruleType?: 'hard' | 'soft' | 'session',
     timeLimit?: number,
     plusOnes?: number,
     plusOneDuration?: number,
     addUrls?: string[],
     removeUrls?: string[]
   ): Promise<string> => {
-    console.log('executeUpdateLimit called with:', { identifier, limitType, timeLimit, plusOnes, plusOneDuration, addUrls, removeUrls });
+    console.log('executeUpdateRule called with:', { identifier, ruleType, timeLimit, plusOnes, plusOneDuration, addUrls, removeUrls });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
@@ -585,19 +585,19 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         return 'Error: User document not found';
       }
 
-      const existingLimits: Limit[] = userDoc.data().limits || [];
+      const existingRules: Rule[] = userDoc.data().rules || [];
       const groups: Group[] = userDoc.data().groups || [];
 
-      // Find the limit to update
-      // Try matching by: 1) limit name, 2) group name in targets, 3) URL in targets
-      const limitToUpdate = existingLimits.find(limit => {
-        // Match by limit name
-        if (limit.name && limit.name.toLowerCase().includes(identifier.toLowerCase())) {
+      // Find the rule to update
+      // Try matching by: 1) rule name, 2) group name in targets, 3) URL in targets
+      const ruleToUpdate = existingRules.find(rule => {
+        // Match by rule name
+        if (rule.name && rule.name.toLowerCase().includes(identifier.toLowerCase())) {
           return true;
         }
 
         // Match by group name in targets
-        for (const target of limit.targets) {
+        for (const target of rule.targets) {
           if (target.type === 'group') {
             const group = groups.find(g => g.id === target.id);
             if (group && group.name.toLowerCase().includes(identifier.toLowerCase())) {
@@ -614,37 +614,37 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         return false;
       });
 
-      if (!limitToUpdate) {
-        return `Error: Could not find a limit matching "${identifier}". Available limits: ${existingLimits.map(l => l.name || 'Unnamed').join(', ')}`;
+      if (!ruleToUpdate) {
+        return `Error: Could not find a rule matching "${identifier}". Available rules: ${existingRules.map(l => l.name || 'Unnamed').join(', ')}`;
       }
 
-      // Update the limit
-      const updatedLimit: Limit = { ...limitToUpdate };
+      // Update the rule
+      const updatedRule: Rule = { ...ruleToUpdate };
 
-      if (limitType !== undefined) {
-        updatedLimit.type = limitType;
+      if (ruleType !== undefined) {
+        updatedRule.type = ruleType;
 
         // If changing to soft, ensure we have plusOnes and plusOneDuration
-        if (limitType === 'soft') {
-          updatedLimit.plusOnes = plusOnes !== undefined ? plusOnes : (updatedLimit.plusOnes || 3);
-          updatedLimit.plusOneDuration = plusOneDuration !== undefined ? plusOneDuration : (updatedLimit.plusOneDuration || 300);
+        if (ruleType === 'soft') {
+          updatedRule.plusOnes = plusOnes !== undefined ? plusOnes : (updatedRule.plusOnes || 3);
+          updatedRule.plusOneDuration = plusOneDuration !== undefined ? plusOneDuration : (updatedRule.plusOneDuration || 300);
         } else {
           // If not soft, remove plusOnes and plusOneDuration
-          delete updatedLimit.plusOnes;
-          delete updatedLimit.plusOneDuration;
+          delete updatedRule.plusOnes;
+          delete updatedRule.plusOneDuration;
         }
       }
 
       if (timeLimit !== undefined) {
-        updatedLimit.timeLimit = timeLimit;
+        updatedRule.timeLimit = timeLimit;
       }
 
-      if (limitType === 'soft' || updatedLimit.type === 'soft') {
+      if (ruleType === 'soft' || updatedRule.type === 'soft') {
         if (plusOnes !== undefined) {
-          updatedLimit.plusOnes = plusOnes;
+          updatedRule.plusOnes = plusOnes;
         }
         if (plusOneDuration !== undefined) {
-          updatedLimit.plusOneDuration = plusOneDuration;
+          updatedRule.plusOneDuration = plusOneDuration;
         }
       }
 
@@ -657,9 +657,9 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
 
         normalizedAddUrls.forEach(url => {
           // Check if URL already exists in targets
-          const urlExists = updatedLimit.targets.some(t => t.type === 'url' && t.id === url);
+          const urlExists = updatedRule.targets.some(t => t.type === 'url' && t.id === url);
           if (!urlExists) {
-            updatedLimit.targets.push({ type: 'url', id: url });
+            updatedRule.targets.push({ type: 'url', id: url });
           }
         });
       }
@@ -671,25 +671,25 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
           return normalizeUrl(prepared);
         });
 
-        updatedLimit.targets = updatedLimit.targets.filter(
+        updatedRule.targets = updatedRule.targets.filter(
           t => !(t.type === 'url' && normalizedRemoveUrls.includes(t.id))
         );
       }
 
-      console.log('Updated limit:', updatedLimit);
+      console.log('Updated rule:', updatedRule);
 
       // Save to Firestore
-      const updatedLimits = existingLimits.map(l => l.id === updatedLimit.id ? updatedLimit : l);
-      await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      const updatedRules = existingRules.map(l => l.id === updatedRule.id ? updatedRule : l);
+      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
       const changes: string[] = [];
-      if (limitType !== undefined) {
-        changes.push(`type changed to ${limitType}`);
+      if (ruleType !== undefined) {
+        changes.push(`type changed to ${ruleType}`);
       }
       if (timeLimit !== undefined) {
-        changes.push(`time limit changed to ${timeLimit} minutes`);
+        changes.push(`time rule changed to ${timeLimit} minutes`);
       }
       if (addUrls && addUrls.length > 0) {
         changes.push(`added ${addUrls.length} URL(s): ${addUrls.join(', ')}`);
@@ -698,13 +698,13 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         changes.push(`removed ${removeUrls.length} URL(s): ${removeUrls.join(', ')}`);
       }
 
-      const limitName = updatedLimit.name || 'limit';
+      const ruleName = updatedRule.name || 'rule';
       const changesSummary = changes.length > 0 ? ` (${changes.join('; ')})` : '';
 
-      return `Successfully updated ${limitName}${changesSummary}`;
+      return `Successfully updated ${ruleName}${changesSummary}`;
     } catch (error) {
-      console.error('Error updating limit:', error);
-      return `Error updating limit: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error('Error updating rule:', error);
+      return `Error updating rule: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
 
@@ -739,7 +739,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       const updatedGroups = existingGroups.filter(g => g.id !== groupToDelete.id);
       await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
       return `Successfully deleted group "${groupToDelete.name}"`;
     } catch (error) {
@@ -748,9 +748,9 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     }
   };
 
-  // Tool execution: Delete Limit
-  const executeDeleteLimit = async (identifier: string): Promise<string> => {
-    console.log('executeDeleteLimit called with:', { identifier });
+  // Tool execution: Delete Rule
+  const executeDeleteRule = async (identifier: string): Promise<string> => {
+    console.log('executeDeleteRule called with:', { identifier });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
@@ -764,18 +764,18 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         return 'Error: User document not found';
       }
 
-      const existingLimits: Limit[] = userDoc.data().limits || [];
+      const existingRules: Rule[] = userDoc.data().rules || [];
       const groups: Group[] = userDoc.data().groups || [];
 
-      // Find the limit to delete (same matching logic as update)
-      const limitToDelete = existingLimits.find(limit => {
-        // Match by limit name
-        if (limit.name && limit.name.toLowerCase().includes(identifier.toLowerCase())) {
+      // Find the rule to delete (same matching logic as update)
+      const ruleToDelete = existingRules.find(rule => {
+        // Match by rule name
+        if (rule.name && rule.name.toLowerCase().includes(identifier.toLowerCase())) {
           return true;
         }
 
         // Match by group name in targets
-        for (const target of limit.targets) {
+        for (const target of rule.targets) {
           if (target.type === 'group') {
             const group = groups.find(g => g.id === target.id);
             if (group && group.name.toLowerCase().includes(identifier.toLowerCase())) {
@@ -792,41 +792,41 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         return false;
       });
 
-      if (!limitToDelete) {
-        return `Error: Could not find a limit matching "${identifier}". Available limits: ${existingLimits.map(l => l.name || 'Unnamed').join(', ')}`;
+      if (!ruleToDelete) {
+        return `Error: Could not find a rule matching "${identifier}". Available rules: ${existingRules.map(l => l.name || 'Unnamed').join(', ')}`;
       }
 
-      // Remove the limit
-      const updatedLimits = existingLimits.filter(l => l.id !== limitToDelete.id);
-      await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      // Remove the rule
+      const updatedRules = existingRules.filter(l => l.id !== ruleToDelete.id);
+      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
-      const limitName = limitToDelete.name || 'limit';
-      return `Successfully deleted ${limitName}`;
+      const ruleName = ruleToDelete.name || 'rule';
+      return `Successfully deleted ${ruleName}`;
     } catch (error) {
-      console.error('Error deleting limit:', error);
-      return `Error deleting limit: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error('Error deleting rule:', error);
+      return `Error deleting rule: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
 
-  // Tool execution: Create Limit
-  const executeCreateLimit = async (
+  // Tool execution: Create Rule
+  const executeCreateRule = async (
     name: string | undefined,
     targets: Array<{ type: 'url' | 'group'; value: string }>,
-    limitType: 'hard' | 'soft' | 'session',
+    ruleType: 'hard' | 'soft' | 'session',
     timeLimit: number | undefined,
     plusOnes: number | undefined,
     plusOneDuration: number | undefined
   ): Promise<string> => {
-    console.log('executeCreateLimit called with:', { name, targets, limitType, timeLimit, plusOnes, plusOneDuration });
+    console.log('executeCreateRule called with:', { name, targets, ruleType, timeLimit, plusOnes, plusOneDuration });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
     }
 
     try {
-      // Fetch existing groups and limits
+      // Fetch existing groups and rules
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
 
@@ -834,13 +834,13 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         return 'Error: User document not found';
       }
 
-      const existingLimits: Limit[] = userDoc.data().limits || [];
+      const existingRules: Rule[] = userDoc.data().rules || [];
       const groups: Group[] = userDoc.data().groups || [];
 
       console.log('Available groups:', groups.map(g => ({ id: g.id, name: g.name })));
 
       // Process targets
-      const limitTargets: LimitTarget[] = [];
+      const ruleTargets: RuleTarget[] = [];
 
       for (const target of targets) {
         console.log('Processing target:', target);
@@ -848,7 +848,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
         if (target.type === 'url') {
           const prepared = target.value.startsWith('http') ? target.value : `https://${target.value}`;
           const normalizedUrl = normalizeUrl(prepared);
-          limitTargets.push({ type: 'url', id: normalizedUrl });
+          ruleTargets.push({ type: 'url', id: normalizedUrl });
           console.log('Added URL target:', normalizedUrl);
         } else {
           // Find group by name
@@ -859,52 +859,52 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
             const availableGroups = groups.map(g => g.name).join(', ');
             return `Error: Group "${target.value}" not found. Available groups: ${availableGroups || 'none'}`;
           }
-          limitTargets.push({ type: 'group', id: group.id });
+          ruleTargets.push({ type: 'group', id: group.id });
           console.log('Added group target:', group.name);
         }
       }
 
-      if (limitTargets.length === 0) {
+      if (ruleTargets.length === 0) {
         return 'Error: No valid targets specified';
       }
 
-      // Create new limit
-      const newLimit: Limit = {
-        id: `limit:${Date.now()}`,
-        type: limitType,
-        targets: limitTargets,
+      // Create new rule
+      const newRule: Rule = {
+        id: `rule:${Date.now()}`,
+        type: ruleType,
+        targets: ruleTargets,
         timeLimit: timeLimit || 0,
         createdAt: new Date().toISOString(),
       };
 
       if (name) {
-        newLimit.name = name;
+        newRule.name = name;
       }
 
-      if (limitType === 'soft' && plusOnes !== undefined && plusOneDuration !== undefined) {
-        newLimit.plusOnes = plusOnes;
-        newLimit.plusOneDuration = plusOneDuration;
+      if (ruleType === 'soft' && plusOnes !== undefined && plusOneDuration !== undefined) {
+        newRule.plusOnes = plusOnes;
+        newRule.plusOneDuration = plusOneDuration;
       }
 
-      console.log('Creating limit:', newLimit);
+      console.log('Creating rule:', newRule);
 
       // Save to Firestore
-      const updatedLimits = [...existingLimits, newLimit];
-      await setDoc(userDocRef, { limits: updatedLimits }, { merge: true });
+      const updatedRules = [...existingRules, newRule];
+      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
 
       const targetNames = targets.map(t => t.value).join(', ');
-      const limitDetails = limitType === 'session'
+      const ruleDetails = ruleType === 'session'
         ? 'session-based (prompts on visit)'
-        : limitType === 'soft'
+        : ruleType === 'soft'
         ? `${timeLimit} minutes with ${plusOnes} extensions of ${plusOneDuration}s each`
         : `${timeLimit} minutes (hard block)`;
 
-      return `Successfully created ${limitType} limit${name ? ` "${name}"` : ''} on: ${targetNames}. Limit: ${limitDetails}`;
+      return `Successfully created ${ruleType} rule${name ? ` "${name}"` : ''} on: ${targetNames}. Rule: ${ruleDetails}`;
     } catch (error) {
-      console.error('Error creating limit:', error);
-      return `Error creating limit: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error('Error creating rule:', error);
+      return `Error creating rule: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
 
@@ -940,33 +940,33 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       conversationMessages = [
         {
           role: 'system',
-          content: `You are a proactive assistant that helps users manage website groups and time limits. BE DECISIVE AND TAKE ACTION - don't ask unnecessary questions or ask for confirmation unless something is truly ambiguous.
+          content: `You are a proactive assistant that helps users manage website groups and time rules. BE DECISIVE AND TAKE ACTION - don't ask unnecessary questions or ask for confirmation unless something is truly ambiguous.
 
 You have access to these tools:
-1. get_groups_and_limits: View all existing groups and limits
+1. get_groups_and_rules: View all existing groups and rules
 2. create_group: Creates a collection of websites (e.g., "Social Media" group with youtube.com, instagram.com, etc.)
 3. update_group: Modifies an existing group (rename, add URLs, remove URLs)
 4. delete_group: Deletes a group entirely
-5. create_limit: Sets time restrictions on websites or groups
-6. update_limit: Modifies an existing limit (change type, time, extensions, add/remove spare URLs)
-   - Can add/remove individual URLs to a limit (spare URLs), but CANNOT change which groups are in the limit
+5. create_rule: Sets time restrictions on websites or groups
+6. update_rule: Modifies an existing rule (change type, time, extensions, add/remove spare URLs)
+   - Can add/remove individual URLs to a rule (spare URLs), but CANNOT change which groups are in the rule
    - "hard": Strict blocking when time runs out
    - "soft": Allows extensions/plus-ones after time expires
-   - "session": Prompts user to set time limit when visiting the site
-7. delete_limit: Deletes a limit entirely
+   - "session": Prompts user to set time rule when visiting the site
+7. delete_rule: Deletes a rule entirely
 
 IMPORTANT GUIDELINES:
-- BE PROACTIVE: Don't ask for unnecessary confirmation. The only question you may have to ask frequenty is whether they want their limit to be a hard or soft limit, if they don't specify. Also clarify that a hard limit means they will not be able to access the site after their time for the rest of the day, while a soft limit allows extensions of their limit. Also note that they can choose a "session" limit, which will prompt them for how much time they want to spend every time they visit the site, instead of setting the number beforehand.
-- CHAIN TOOLS: When appropriate, make multiple tool calls in sequence. For example, if a user says "create a social media group and limit it to 60 minutes", call BOTH create_group AND create_limit
-- CHECK FIRST: Before creating duplicates, use get_groups_and_limits to see what exists
-- UPDATE, DON'T RECREATE: If a user asks to change an existing group or limit, use update_group or update_limit instead of creating new ones
-- SPARE URLS IN LIMITS: When a user asks to add an individual URL to an existing limit, use update_limit with addUrls parameter - don't create a new limit
+- BE PROACTIVE: Don't ask for unnecessary confirmation. The only question you may have to ask frequenty is whether they want their rule to be a hard or soft rule, if they don't specify. Also clarify that a hard rule means they will not be able to access the site after their time for the rest of the day, while a soft rule allows extensions of their rule. Also note that they can choose a "session" rule, which will prompt them for how much time they want to spend every time they visit the site, instead of setting the number beforehand.
+- CHAIN TOOLS: When appropriate, make multiple tool calls in sequence. For example, if a user says "create a social media group and rule it to 60 minutes", call BOTH create_group AND create_rule
+- CHECK FIRST: Before creating duplicates, use get_groups_and_rules to see what exists
+- UPDATE, DON'T RECREATE: If a user asks to change an existing group or rule, use update_group or update_rule instead of creating new ones
+- SPARE URLS IN RULES: When a user asks to add an individual URL to an existing rule, use update_rule with addUrls parameter - don't create a new rule
 - USE DEFAULTS: If details are missing, use sensible defaults:
-  - Hard limits default to 60 minutes
-  - Soft limits default to 60 minutes with 3 extensions of 300 seconds (5 minutes) each
+  - Hard rules default to 60 minutes
+  - Soft rules default to 60 minutes with 3 extensions of 300 seconds (5 minutes) each
   - Include common sites for well-known categories (e.g., Social Media = instagram, twitter, tiktok, facebook, etc.)
 - URLS: Use only domain names without https:// or www. (e.g., "youtube.com" not "https://www.youtube.com")
-- ERR ON THE SIDE OF CREATING GROUPS: If they ask you to "create a hard limit across all social media", it would be best to create a social media group, and then to create a limit using that group. This would be as opposed to creating a limit with spare urls.
+- ERR ON THE SIDE OF CREATING GROUPS: If they ask you to "create a hard rule across all social media", it would be best to create a social media group, and then to create a rule using that group. This would be as opposed to creating a rule with spare urls.
 `
         },
         // Build conversation from stored OpenAI messages
@@ -1033,8 +1033,8 @@ IMPORTANT GUIDELINES:
             };
             setMessages(prev => [...prev, toolCallMessage]);
 
-            if (toolCall.function.name === 'get_groups_and_limits') {
-              toolResult = await executeGetGroupsAndLimits();
+            if (toolCall.function.name === 'get_groups_and_rules') {
+              toolResult = await executeGetGroupsAndRules();
             } else if (toolCall.function.name === 'create_group') {
               toolResult = await executeCreateGroup(args.name, args.urls);
             } else if (toolCall.function.name === 'update_group') {
@@ -1044,19 +1044,19 @@ IMPORTANT GUIDELINES:
                 args.addUrls,
                 args.removeUrls
               );
-            } else if (toolCall.function.name === 'create_limit') {
-              toolResult = await executeCreateLimit(
+            } else if (toolCall.function.name === 'create_rule') {
+              toolResult = await executeCreateRule(
                 args.name,
                 args.targets,
-                args.limitType,
+                args.ruleType,
                 args.timeLimit,
                 args.plusOnes,
                 args.plusOneDuration
               );
-            } else if (toolCall.function.name === 'update_limit') {
-              toolResult = await executeUpdateLimit(
+            } else if (toolCall.function.name === 'update_rule') {
+              toolResult = await executeUpdateRule(
                 args.identifier,
-                args.limitType,
+                args.ruleType,
                 args.timeLimit,
                 args.plusOnes,
                 args.plusOneDuration,
@@ -1065,18 +1065,18 @@ IMPORTANT GUIDELINES:
               );
             } else if (toolCall.function.name === 'delete_group') {
               toolResult = await executeDeleteGroup(args.identifier);
-            } else if (toolCall.function.name === 'delete_limit') {
-              toolResult = await executeDeleteLimit(args.identifier);
+            } else if (toolCall.function.name === 'delete_rule') {
+              toolResult = await executeDeleteRule(args.identifier);
             } else {
               toolResult = `Error: Unknown tool ${toolCall.function.name}`;
             }
 
-            // Dispatch event to refresh Groups/Limits tabs if the tool call was successful
+            // Dispatch event to refresh Groups/Rules tabs if the tool call was successful
             if (!toolResult.startsWith('Error:')) {
-              const dataModifyingTools = ['create_group', 'update_group', 'delete_group', 'create_limit', 'update_limit', 'delete_limit'];
+              const dataModifyingTools = ['create_group', 'update_group', 'delete_group', 'create_rule', 'update_rule', 'delete_rule'];
               if (dataModifyingTools.includes(toolCall.function.name)) {
-                console.log(`Dispatching groupsOrLimitsUpdated event for tool: ${toolCall.function.name}`);
-                window.dispatchEvent(new CustomEvent('groupsOrLimitsUpdated'));
+                console.log(`Dispatching groupsOrRulesUpdated event for tool: ${toolCall.function.name}`);
+                window.dispatchEvent(new CustomEvent('groupsOrRulesUpdated'));
               }
             }
 

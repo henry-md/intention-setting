@@ -1,20 +1,20 @@
 /**
- * Type definition used by Limits.tsx to manage time limits on URLs and groups.
- * Stored in Firestore under users/{uid}/limits as an array.
+ * Type definition used by Rules.tsx to manage time rules on URLs and groups.
+ * Stored in Firestore under users/{uid}/rules as an array.
  */
 
-export interface LimitTarget {
+export interface RuleTarget {
   type: 'url' | 'group';
   id: string; // URL or group ID
 }
 
-export interface Limit {
+export interface Rule {
   id: string;
-  name?: string; // Optional name for the limit
+  name?: string; // Optional name for the rule
   type: 'hard' | 'soft' | 'session';
   // Single source of truth: references to groups or direct URLs
-  // Use expandTargetsToUrls() from utils/limitHelpers.ts to get actual URLs
-  targets: LimitTarget[];
+  // Use expandTargetsToUrls() from utils/ruleHelpers.ts to get actual URLs
+  targets: RuleTarget[];
   // Time limit in minutes
   timeLimit: number;
   // For soft limits - how many plus ones remaining

@@ -6,11 +6,11 @@ import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
 import { normalizeHostname } from '../utils/urlNormalization';
 
-/** Shape of a site limit as stored in chrome.storage (siteLimits[siteKey]) */
-interface StoredSiteLimit {
-  limitType?: 'hard' | 'soft' | 'session';
+/** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
+interface StoredSiteRule {
+  ruleType?: 'hard' | 'soft' | 'session';
   timeLimit?: number;
-  limitId?: string;
+  ruleId?: string;
   plusOnes?: number;
   plusOneDuration?: number;
 }
@@ -147,15 +147,15 @@ const checkAndShowIntentionPopup = async () => {
       return;
     }
 
-    // Get site limits from chrome storage
-    const limitsResult = await safeStorageGet(['siteLimits']);
-    if (!limitsResult) return; // Extension reloaded
-    const siteLimits: Record<string, StoredSiteLimit> = limitsResult.siteLimits || {};
+    // Get site rules from chrome storage
+    const rulesResult = await safeStorageGet(['siteRules']);
+    if (!rulesResult) return; // Extension reloaded
+    const siteRules: Record<string, StoredSiteRule> = rulesResult.siteRules || {};
 
-    // Check if current domain has a limit
-    const limitData = siteLimits[currentDomain];
+    // Check if current domain has a rule
+    const ruleData = siteRules[currentDomain];
 
-    if (limitData) {
+    if (ruleData) {
       // Check if we've already visited this site today (after 4am)
       const result = await safeStorageGet(['siteTimeData']);
       if (!result) return; // Extension reloaded
@@ -165,25 +165,25 @@ const checkAndShowIntentionPopup = async () => {
       const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated);
 
       if (hasVisitedToday) {
-        // Same day revisit - for hard/soft limits, just show the timer badge
-        // For session limits, skip everything (already prompted today)
+        // Same day revisit - for hard/soft rules, just show the timer badge
+        // For session rules, skip everything (already prompted today)
         console.log('Already visited today');
-        if (limitData.limitType !== 'session' && limitData.timeLimit != null) {
-          console.log('Starting timer for same-day revisit:', limitData);
-          await startTimeTracking(limitData.timeLimit);
+        if (ruleData.ruleType !== 'session' && ruleData.timeLimit != null) {
+          console.log('Starting timer for same-day revisit:', ruleData);
+          await startTimeTracking(ruleData.timeLimit);
         }
         return;
       }
 
       // New day or first visit
-      // Only show intention popup for session limits
-      if (limitData.limitType === 'session') {
+      // Only show intention popup for session rules
+      if (ruleData.ruleType === 'session') {
         pauseAllVideos();
         showIntentionPopup();
-      } else if (limitData.timeLimit != null) {
-        // For hard/soft limits, start timer immediately with the configured time limit
-        console.log('Starting timer for hard/soft limit (first visit today):', limitData);
-        await startTimeTracking(limitData.timeLimit);
+      } else if (ruleData.timeLimit != null) {
+        // For hard/soft rules, start timer immediately with the configured time limit
+        console.log('Starting timer for hard/soft rule (first visit today):', ruleData);
+        await startTimeTracking(ruleData.timeLimit);
       }
     }
   } catch (error) {
@@ -489,13 +489,13 @@ const showDebugPanel = async () => {
 const checkAndShowTimer = async () => {
   try {
     const currentDomain = getCurrentSiteKey();
-    const limitsResult = await safeStorageGet(['siteLimits']);
-    if (!limitsResult) return; // Extension reloaded
-    const siteLimits: Record<string, StoredSiteLimit> = limitsResult.siteLimits || {};
+    const rulesResult = await safeStorageGet(['siteRules']);
+    if (!rulesResult) return; // Extension reloaded
+    const siteRules: Record<string, StoredSiteRule> = rulesResult.siteRules || {};
 
-    const limitData = siteLimits[currentDomain];
+    const ruleData = siteRules[currentDomain];
 
-    if (limitData) {
+    if (ruleData) {
       const result = await safeStorageGet(['siteTimeData']);
       if (!result) return; // Extension reloaded
       const siteTimeData = result.siteTimeData || {};
@@ -572,8 +572,8 @@ const showIntentionPopup = () => {
 
 // Listen for storage changes to update badge in real-time
 chrome.storage.onChanged.addListener(async (changes) => {
-  if (changes.siteLimits) {
-    // Site limits updated, could trigger re-check if needed
+  if (changes.siteRules) {
+    // Site rules updated, could trigger re-check if needed
   }
 
   // If siteTimeData changes and we're not the active tab, update our display
@@ -601,14 +601,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.action === 'get-current-site') {
     (async () => {
-      const storage = await safeStorageGet(['siteLimits']);
-      const siteLimits = storage?.siteLimits || {};
-      const hasSiteLimit = !!siteLimits[currentSiteKey || ''];
+      const storage = await safeStorageGet(['siteRules']);
+      const siteRules = storage?.siteRules || {};
+      const hasSiteRule = !!siteRules[currentSiteKey || ''];
 
       sendResponse({
         siteKey: currentSiteKey,
         url: window.location.href,
-        hasSiteLimit: hasSiteLimit
+        hasSiteRule: hasSiteRule
       });
     })();
     return true; // Will respond asynchronously

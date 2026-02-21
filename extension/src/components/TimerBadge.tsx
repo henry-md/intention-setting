@@ -60,7 +60,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
             />
           </div>
           <div style={{ fontSize: '11px', opacity: 0.6 }}>
-            Limit: {formatTime(timeLimit)}
+            Total: {formatTime(timeLimit)}
           </div>
         </>
       )}

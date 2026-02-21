@@ -1,35 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useAuth from '../hooks/useAuth';
 import Home from './Home';
+import Rules from './Rules';
 import Groups from './Groups';
-import Limits from './Limits';
 import GroupEdit from './GroupEdit';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
-import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
+import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { MessageSquare } from 'lucide-react';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
 
-type TabType = 'home' | 'groups' | 'limits';
-type ViewType = 'main' | 'groupEdit';
+type TabType = 'home' | 'rules';
+type RulesView = 'rules' | 'groups' | 'groupEdit';
 
 /**
- * Main router component. Child of App.tsx, manages tabs (Home, Groups, Limits) and full-page views (GroupEdit).
+ * Main router component. Child of App.tsx, manages tabs (Home, Rules).
  * NOT a page itself - switches between child components based on state.
  * Handles tab navigation and view routing for the entire extension.
  */
 const Popup: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewType>('main');
   const [currentTab, setCurrentTab] = useState<TabType>('home');
+  const [rulesView, setRulesView] = useState<RulesView>('rules');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(false);
+  const aiPanelRef = useRef<ImperativePanelHandle>(null);
 
-  // Sync limits to chrome.storage on app initialization
+  // Sync rules to chrome.storage on app initialization
   useEffect(() => {
     if (user?.uid) {
-      syncLimitsToStorage(user.uid).catch(error => {
-        console.error('Error syncing limits on initialization:', error);
+      syncRulesToStorage(user.uid).catch(error => {
+        console.error('Error syncing rules on initialization:', error);
       });
     }
   }, [user?.uid]);
@@ -47,11 +49,15 @@ const Popup: React.FC = () => {
     <div className="h-screen w-full flex flex-col relative">
       <ResizablePanelGroup direction="vertical">
         {/* Top panel with tabs */}
-        <ResizablePanel defaultSize={60} minSize={20}>
+        <ResizablePanel
+          id="main-content"
+          order={1}
+          defaultSize={60}
+          minSize={20}
+        >
           <div className="h-full flex flex-col">
-            {/* Conditionally show tabs only in main view */}
-            {currentView === 'main' && (
-              <div className="flex border-b border-gray-700 bg-gray-900">
+            {/* Tabs */}
+            <div className="flex border-b border-gray-700 bg-gray-900">
                 <button
                   onClick={() => setCurrentTab('home')}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
@@ -63,54 +69,48 @@ const Popup: React.FC = () => {
                   Account
                 </button>
                 <button
-                  onClick={() => setCurrentTab('groups')}
+                  onClick={() => {
+                    setCurrentTab('rules');
+                    setRulesView('rules');
+                  }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    currentTab === 'groups'
+                    currentTab === 'rules'
                       ? 'text-white border-b-2 border-blue-500 bg-gray-800'
                       : 'text-gray-400 hover:text-white hover:bg-gray-800'
                   }`}
                 >
-                  Groups
+                  Rules
                 </button>
-                <button
-                  onClick={() => setCurrentTab('limits')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    currentTab === 'limits'
-                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                  }`}
-                >
-                  Limits
-                </button>
-              </div>
-            )}
+            </div>
 
-            {/* Content - either tabs or full-page views */}
+            {/* Content */}
             <div className="flex-1 overflow-y-auto">
-              {currentView === 'main' && (
-                <>
-                  {currentTab === 'home' && (
-                    <Home user={user} />
-                  )}
-                  {currentTab === 'groups' && (
-                    <Groups
-                      user={user}
-                      onEditGroup={(groupId) => {
-                        setEditingGroupId(groupId);
-                        setCurrentView('groupEdit');
-                      }}
-                    />
-                  )}
-                  {currentTab === 'limits' && <Limits user={user} />}
-                </>
+              {currentTab === 'home' && (
+                <Home user={user} />
               )}
-              {currentView === 'groupEdit' && editingGroupId && (
+              {currentTab === 'rules' && rulesView === 'rules' && (
+                <Rules
+                  user={user}
+                  onNavigateToGroups={() => setRulesView('groups')}
+                />
+              )}
+              {currentTab === 'rules' && rulesView === 'groups' && (
+                <Groups
+                  user={user}
+                  onEditGroup={(groupId) => {
+                    setEditingGroupId(groupId);
+                    setRulesView('groupEdit');
+                  }}
+                  onBack={() => setRulesView('rules')}
+                />
+              )}
+              {currentTab === 'rules' && rulesView === 'groupEdit' && editingGroupId && (
                 <GroupEdit
                   user={user}
                   groupId={editingGroupId}
                   onBack={() => {
-                    setCurrentView('main');
                     setEditingGroupId(null);
+                    setRulesView('groups');
                   }}
                 />
               )}
@@ -118,20 +118,35 @@ const Popup: React.FC = () => {
           </div>
         </ResizablePanel>
 
-        {!isAIPanelCollapsed && <ResizableHandle withHandle />}
+        <ResizableHandle withHandle />
 
         {/* Bottom panel with LLM */}
-        {!isAIPanelCollapsed && (
-          <ResizablePanel defaultSize={40} minSize={15}>
-            <LLMPanel user={user} onCollapse={() => setIsAIPanelCollapsed(true)} />
-          </ResizablePanel>
-        )}
+        <ResizablePanel
+          ref={aiPanelRef}
+          id="ai-assistant"
+          order={2}
+          defaultSize={40}
+          minSize={15}
+          collapsible={true}
+          collapsedSize={0}
+          onCollapse={() => setIsAIPanelCollapsed(true)}
+          onExpand={() => setIsAIPanelCollapsed(false)}
+        >
+          <LLMPanel
+            user={user}
+            onCollapse={() => {
+              aiPanelRef.current?.collapse();
+            }}
+          />
+        </ResizablePanel>
       </ResizablePanelGroup>
 
       {/* Floating chat button when collapsed */}
       {isAIPanelCollapsed && (
         <button
-          onClick={() => setIsAIPanelCollapsed(false)}
+          onClick={() => {
+            aiPanelRef.current?.expand();
+          }}
           className="fixed bottom-4 right-4 w-14 h-14 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-50"
           title="Open AI Assistant"
         >

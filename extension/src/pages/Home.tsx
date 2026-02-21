@@ -124,14 +124,13 @@ const Home: React.FC<HomeProps> = () => {
           </button>
         )}
 
-        {/* Info message about using Groups and Limits */}
+        {/* Info message about using Rules */}
         <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
           <p className="text-gray-300 text-sm mb-2">
-            To manage URLs and time limits:
+            To manage URLs and time rules:
           </p>
           <ul className="text-gray-400 text-sm space-y-1 list-disc list-inside">
-            <li>Use the <span className="text-blue-400 font-medium">Groups</span> tab to organize URLs</li>
-            <li>Use the <span className="text-blue-400 font-medium">Limits</span> tab to set time restrictions</li>
+            <li>Use the <span className="text-blue-400 font-medium">Rules</span> tab to manage groups and set time restrictions</li>
           </ul>
         </div>
       </div>

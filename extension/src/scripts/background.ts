@@ -24,11 +24,11 @@ interface SiteTimeData {
   lastUpdated: number;
 }
 
-interface SiteLimits {
+interface SiteRules {
   [siteKey: string]: {
-    limitType: 'hard' | 'soft' | 'session';
+    ruleType: 'hard' | 'soft' | 'session';
     timeLimit: number;
-    limitId: string;
+    ruleId: string;
     plusOnes?: number;
     plusOneDuration?: number;
   };
@@ -216,12 +216,12 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
     return;
   }
 
-  // Check if site has a limit
-  const storage = await chrome.storage.local.get(['siteLimits', 'siteTimeData']);
-  const siteLimits: SiteLimits = storage.siteLimits || {};
+  // Check if site has a rule
+  const storage = await chrome.storage.local.get(['siteRules', 'siteTimeData']);
+  const siteRules: SiteRules = storage.siteRules || {};
 
-  if (!siteLimits[siteKey]) {
-    console.log(`[Timer] Site ${siteKey} has no limit, not starting timer`);
+  if (!siteRules[siteKey]) {
+    console.log(`[Timer] Site ${siteKey} has no rule, not starting timer`);
     return;
   }
 
@@ -230,7 +230,7 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
   if (!siteTimeData[siteKey]) {
     siteTimeData[siteKey] = {
       timeSpent: 0,
-      timeLimit: siteLimits[siteKey].timeLimit,
+      timeLimit: siteRules[siteKey].timeLimit,
       lastUpdated: Date.now()
     };
     await chrome.storage.local.set({ siteTimeData });
@@ -405,7 +405,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
       action: 'get-current-site'
     });
 
-    if (response?.siteKey && response?.hasSiteLimit) {
+    if (response?.siteKey && response?.hasSiteRule) {
       startTimerForTab(activeInfo.tabId, response.siteKey);
     }
   } catch (error: unknown) {
@@ -448,7 +448,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
             action: 'get-current-site'
           });
 
-          if (response?.siteKey && response?.hasSiteLimit) {
+          if (response?.siteKey && response?.hasSiteRule) {
             startTimerForTab(tabs[0].id, response.siteKey);
           }
         } catch {
@@ -472,7 +472,7 @@ chrome.runtime.onStartup.addListener(async () => {
         action: 'get-current-site'
       });
 
-      if (response?.siteKey && response?.hasSiteLimit) {
+      if (response?.siteKey && response?.hasSiteRule) {
         startTimerForTab(tabs[0].id, response.siteKey);
       }
     } catch {

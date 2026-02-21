@@ -1,26 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import type { Group } from '../types/Group';
-import type { LimitTarget } from '../types/Limit';
+import type { RuleTarget } from '../types/Rule';
 import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
-import { expandTargetsToUrls, isUrlInTargets } from '../utils/limitHelpers';
+import { expandTargetsToUrls, isUrlInTargets } from '../utils/ruleHelpers';
 import { ItemListInput } from './ItemListInput';
 import { GroupIcons } from './GroupIcons';
 
-interface LimitFormProps {
-  limitId?: string; // If provided, we're editing; if not, we're creating
+interface RuleFormProps {
+  ruleId?: string; // If provided, we're editing; if not, we're creating
   initialName?: string;
-  initialTargetItems?: LimitTarget[];
-  initialLimitType?: 'hard' | 'soft' | 'session';
+  initialTargetItems?: RuleTarget[];
+  initialRuleType?: 'hard' | 'soft' | 'session';
   initialTimeLimit?: number;
   initialPlusOnes?: number;
   initialPlusOneDuration?: number;
   groups: Group[];
   onSave: (
     name: string,
-    targetItems: LimitTarget[],
-    limitType: 'hard' | 'soft' | 'session',
+    targetItems: RuleTarget[],
+    ruleType: 'hard' | 'soft' | 'session',
     timeLimit: number,
     plusOnes?: number,
     plusOneDuration?: number
@@ -29,15 +29,15 @@ interface LimitFormProps {
 }
 
 /**
- * Shared form component for both creating and editing limits.
- * When limitId is provided, we're in edit mode.
- * When limitId is not provided, we're in create mode.
+ * Shared form component for both creating and editing rules.
+ * When ruleId is provided, we're in edit mode.
+ * When ruleId is not provided, we're in create mode.
  */
-export const LimitForm: React.FC<LimitFormProps> = ({
-  limitId,
+export const RuleForm: React.FC<RuleFormProps> = ({
+  ruleId,
   initialName = '',
   initialTargetItems = [],
-  initialLimitType = 'hard',
+  initialRuleType = 'hard',
   initialTimeLimit = 60,
   initialPlusOnes = 3,
   initialPlusOneDuration = 300,
@@ -45,11 +45,11 @@ export const LimitForm: React.FC<LimitFormProps> = ({
   onSave,
   onCancel,
 }) => {
-  const [limitName, setLimitName] = useState(initialName);
+  const [ruleName, setRuleName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
-  const [targetItems, setTargetItems] = useState<LimitTarget[]>(initialTargetItems);
+  const [targetItems, setTargetItems] = useState<RuleTarget[]>(initialTargetItems);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [limitType, setLimitType] = useState<'hard' | 'soft' | 'session'>(initialLimitType);
+  const [ruleType, setRuleType] = useState<'hard' | 'soft' | 'session'>(initialRuleType);
   const [timeLimit, setTimeLimit] = useState(initialTimeLimit.toString());
   const [plusOnes, setPlusOnes] = useState(initialPlusOnes.toString());
   const [plusOneMinutes, setPlusOneMinutes] = useState(Math.floor(initialPlusOneDuration / 60).toString());
@@ -62,20 +62,20 @@ export const LimitForm: React.FC<LimitFormProps> = ({
     targetId: string;
   } | null>(null);
 
-  const isEditMode = !!limitId;
+  const isEditMode = !!ruleId;
 
-  // Update state when limitId changes (switching to a different limit in edit mode)
+  // Update state when ruleId changes (switching to a different rule in edit mode)
   useEffect(() => {
-    if (limitId) {
-      setLimitName(initialName);
+    if (ruleId) {
+      setRuleName(initialName);
       setTargetItems(initialTargetItems);
-      setLimitType(initialLimitType);
+      setRuleType(initialRuleType);
       setTimeLimit(initialTimeLimit.toString());
       setPlusOnes(initialPlusOnes.toString());
       setPlusOneMinutes(Math.floor(initialPlusOneDuration / 60).toString());
       setPlusOneSeconds((initialPlusOneDuration % 60).toString());
     }
-  }, [limitId]);
+  }, [ruleId]);
 
   // Get matching group suggestions
   const getGroupSuggestions = () => {
@@ -93,12 +93,12 @@ export const LimitForm: React.FC<LimitFormProps> = ({
 
     // Check if URL is already in targets (either directly or in a group)
     if (isUrlInTargets(normalizedUrl, targetItems, groups)) {
-      setFormError('This URL is already in this limit');
+      setFormError('This URL is already in this rule');
       return;
     }
 
     // Add to targets list
-    const newTargetItems: LimitTarget[] = [...targetItems, { type: 'url' as const, id: normalizedUrl }];
+    const newTargetItems: RuleTarget[] = [...targetItems, { type: 'url' as const, id: normalizedUrl }];
 
     setTargetItems(newTargetItems);
     setTargetInput('');
@@ -127,18 +127,18 @@ export const LimitForm: React.FC<LimitFormProps> = ({
         return;
       }
 
-      // Check how many URLs from this group already exist in the limit
+      // Check how many URLs from this group already exist in the rule
       const currentUrls = expandTargetsToUrls(targetItems, groups);
       const existingUrls = groupUrls.filter(url => currentUrls.includes(url));
 
-      // Only prevent adding the group if ALL its URLs are already in the limit
+      // Only prevent adding the group if ALL its URLs are already in the rule
       if (existingUrls.length === groupUrls.length) {
-        setFormError('All URLs from this group are already in this limit');
+        setFormError('All URLs from this group are already in this rule');
         return;
       }
 
       // Add group to targets
-      const newTargetItems: LimitTarget[] = [...targetItems, { type: 'group' as const, id: matchingGroup.id }];
+      const newTargetItems: RuleTarget[] = [...targetItems, { type: 'group' as const, id: matchingGroup.id }];
 
       setTargetItems(newTargetItems);
       setTargetInput('');
@@ -215,10 +215,10 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       return;
     }
 
-    // For session limits, time limit is set when visiting the site
-    // For hard/soft limits, validate time limit
+    // For session rules, time limit is set when visiting the site
+    // For hard/soft rules, validate time limit
     let timeLimitNum = 0;
-    if (limitType !== 'session') {
+    if (ruleType !== 'session') {
       timeLimitNum = parseInt(timeLimit);
       if (isNaN(timeLimitNum) || timeLimitNum <= 0) {
         setFormError('Please enter a valid time limit');
@@ -226,10 +226,10 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       }
     }
 
-    // Calculate plus-one duration in seconds for soft limits
+    // Calculate plus-one duration in seconds for soft rules
     let plusOneDurationSeconds: number | undefined;
     let plusOnesNum: number | undefined;
-    if (limitType === 'soft') {
+    if (ruleType === 'soft') {
       const minutes = parseInt(plusOneMinutes) || 0;
       const seconds = parseInt(plusOneSeconds) || 0;
       plusOneDurationSeconds = minutes * 60 + seconds;
@@ -242,19 +242,19 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       plusOnesNum = parseInt(plusOnes);
     }
 
-    await onSave(limitName.trim(), targetItems, limitType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
+    await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
   };
 
   const groupSuggestions = getGroupSuggestions();
 
   return (
     <div className="bg-gray-800 border border-gray-600 rounded-lg p-4 space-y-3">
-      {/* Limit Name - Always an input, styled based on whether we have a name */}
-      {isEditMode && limitName ? (
+      {/* Rule Name - Always an input, styled based on whether we have a name */}
+      {isEditMode && ruleName ? (
         <input
           type="text"
-          value={limitName}
-          onChange={(e) => setLimitName(e.target.value)}
+          value={ruleName}
+          onChange={(e) => setRuleName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -266,9 +266,9 @@ export const LimitForm: React.FC<LimitFormProps> = ({
       ) : (
         <input
           type="text"
-          value={limitName}
-          onChange={(e) => setLimitName(e.target.value)}
-          placeholder="Limit name (optional)"
+          value={ruleName}
+          onChange={(e) => setRuleName(e.target.value)}
+          placeholder="Rule name (optional)"
           className="w-full px-3 py-2 border border-gray-600 bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-white placeholder-gray-400"
         />
       )}
@@ -334,7 +334,29 @@ export const LimitForm: React.FC<LimitFormProps> = ({
                 <button
                   key={group.id}
                   onClick={() => {
-                    setTargetInput(group.name);
+                    // Check if group is empty
+                    const groupUrls = expandTargetsToUrls([{ type: 'group', id: group.id }], groups);
+
+                    if (groupUrls.length === 0) {
+                      setFormError('This group has no URLs');
+                      setShowSuggestions(false);
+                      return;
+                    }
+
+                    // Check how many URLs from this group already exist in the rule
+                    const currentUrls = expandTargetsToUrls(targetItems, groups);
+                    const existingUrls = groupUrls.filter(url => currentUrls.includes(url));
+
+                    // Only prevent adding the group if ALL its URLs are already in the rule
+                    if (existingUrls.length === groupUrls.length) {
+                      setFormError('All URLs from this group are already in this rule');
+                      setShowSuggestions(false);
+                      return;
+                    }
+
+                    // Add group to targets
+                    setTargetItems([...targetItems, { type: 'group', id: group.id }]);
+                    setTargetInput('');
                     setShowSuggestions(false);
                     setFormError('');
                   }}
@@ -396,14 +418,14 @@ export const LimitForm: React.FC<LimitFormProps> = ({
         </div>
       </div>
 
-      {/* Limit Type Selection */}
+      {/* Rule Type Selection */}
       <div>
-        <label className="block text-gray-400 text-xs mb-1">Limit Type</label>
+        <label className="block text-gray-400 text-xs mb-1">Rule Type</label>
         <div className="flex gap-2">
           <button
-            onClick={() => setLimitType('hard')}
+            onClick={() => setRuleType('hard')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-              limitType === 'hard'
+              ruleType === 'hard'
                 ? 'bg-red-600 text-white'
                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
@@ -411,9 +433,9 @@ export const LimitForm: React.FC<LimitFormProps> = ({
             Hard
           </button>
           <button
-            onClick={() => setLimitType('soft')}
+            onClick={() => setRuleType('soft')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-              limitType === 'soft'
+              ruleType === 'soft'
                 ? 'bg-yellow-600 text-white'
                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
@@ -421,9 +443,9 @@ export const LimitForm: React.FC<LimitFormProps> = ({
             Soft
           </button>
           <button
-            onClick={() => setLimitType('session')}
+            onClick={() => setRuleType('session')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-              limitType === 'session'
+              ruleType === 'session'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
@@ -433,8 +455,8 @@ export const LimitForm: React.FC<LimitFormProps> = ({
         </div>
       </div>
 
-      {/* Time Limit (hidden for session limits) */}
-      {limitType !== 'session' && (
+      {/* Time Limit (hidden for session rules) */}
+      {ruleType !== 'session' && (
         <div>
           <label className="block text-gray-400 text-xs mb-1">Time Limit (minutes)</label>
           <input
@@ -447,17 +469,17 @@ export const LimitForm: React.FC<LimitFormProps> = ({
         </div>
       )}
 
-      {/* Session limit explanation */}
-      {limitType === 'session' && (
+      {/* Session rule explanation */}
+      {ruleType === 'session' && (
         <div className="bg-blue-900 border border-blue-600 rounded-lg p-2">
           <p className="text-blue-200 text-xs">
-            Session limits prompt you to set a time limit when you visit the site
+            Session rules prompt you to set a time limit when you visit the site
           </p>
         </div>
       )}
 
-      {/* Plus Ones (for soft limits) */}
-      {limitType === 'soft' && (
+      {/* Plus Ones (for soft rules) */}
+      {ruleType === 'soft' && (
         <div>
           <style dangerouslySetInnerHTML={{__html: `
             .no-spinner::-webkit-outer-spin-button,
@@ -544,7 +566,7 @@ export const LimitForm: React.FC<LimitFormProps> = ({
           onClick={handleSubmit}
           className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
         >
-          {isEditMode ? 'Save Changes' : 'Create Limit'}
+          {isEditMode ? 'Save Changes' : 'Create Rule'}
         </button>
       </div>
     </div>

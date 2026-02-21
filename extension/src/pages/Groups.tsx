@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Trash2, ArrowLeft } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
-import type { Limit } from '../types/Limit';
+import type { Rule } from '../types/Rule';
 import Spinner from '../components/Spinner';
 import { GroupForm } from '../components/GroupForm';
 import { GroupIcons } from '../components/GroupIcons';
-import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
+import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import {
   Dialog,
   DialogContent,
@@ -21,14 +21,15 @@ import {
 interface GroupsProps {
   user: User | null;
   onEditGroup: (groupId: string) => void;
+  onBack?: () => void;
 }
 
 /**
  * List view showing all groups as cards. Child of Popup.tsx, renders inside the Groups tab.
  * NOT the editor - clicking a group navigates to GroupEdit.tsx for editing.
- * Sibling to Home.tsx and Limits.tsx (other tabs).
+ * Sibling to Home.tsx and Rules.tsx (other tabs).
  */
-const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
+const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -74,16 +75,16 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
   // Listen for updates from LLM panel
   useEffect(() => {
     const handleDataUpdate = () => {
-      console.log('Received groupsOrLimitsUpdated event in Groups component');
+      console.log('Received groupsOrRulesUpdated event in Groups component');
       fetchGroups();
     };
 
-    window.addEventListener('groupsOrLimitsUpdated', handleDataUpdate);
-    console.log('Groups component: Added event listener for groupsOrLimitsUpdated');
+    window.addEventListener('groupsOrRulesUpdated', handleDataUpdate);
+    console.log('Groups component: Added event listener for groupsOrRulesUpdated');
 
     return () => {
       console.log('Groups component: Removing event listener');
-      window.removeEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+      window.removeEventListener('groupsOrRulesUpdated', handleDataUpdate);
     };
   }, [fetchGroups]);
 
@@ -95,7 +96,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, { groups: newGroups }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
     } catch (error) {
       console.error('Error saving groups:', error);
     }
@@ -124,43 +125,43 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
       // Update groups
       const updatedGroups = groups.filter(g => g.id !== groupToDelete);
 
-      // Fetch and update limits that reference this group
+      // Fetch and update rules that reference this group
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
 
       if (userDoc.exists()) {
         const data = userDoc.data();
-        const limits = (data.limits || []) as Limit[];
+        const rules = (data.rules || []) as Rule[];
 
-        // Update limits to remove the deleted group from targets
-        const updatedLimits = limits
-          .map(limit => {
-            // Handle target-based limits
-            if (limit.targets) {
-              const filteredTargets = limit.targets.filter(
+        // Update rules to remove the deleted group from targets
+        const updatedRules = rules
+          .map(rule => {
+            // Handle target-based rules
+            if (rule.targets) {
+              const filteredTargets = rule.targets.filter(
                 target => !(target.type === 'group' && target.id === groupToDelete)
               );
 
-              // If no targets left, delete the limit
+              // If no targets left, delete the rule
               if (filteredTargets.length === 0) {
                 return null;
               }
 
-              // Otherwise, keep the limit with remaining targets
-              return { ...limit, targets: filteredTargets };
+              // Otherwise, keep the rule with remaining targets
+              return { ...rule, targets: filteredTargets };
             }
 
-            return limit;
+            return rule;
           })
-          .filter((limit): limit is Limit => limit !== null);
+          .filter((rule): rule is Rule => rule !== null);
 
-        // Save both groups and limits
+        // Save both groups and rules
         await setDoc(userDocRef, {
           groups: updatedGroups,
-          limits: updatedLimits
+          rules: updatedRules
         }, { merge: true });
         // Sync to chrome.storage for content script access
-        await syncLimitsToStorage(user.uid);
+        await syncRulesToStorage(user.uid);
       } else {
         // If no user doc exists, just save groups
         await saveGroupsToFirestore(updatedGroups);
@@ -188,7 +189,18 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
   return (
     <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Groups</h3>
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              title="Back to Rules"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
+          <h3 className="text-lg font-semibold">Groups</h3>
+        </div>
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
           className="purple-button"
@@ -219,7 +231,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
               <div
                 key={group.id}
                 onClick={() => onEditGroup(group.id)}
-                className="bg-slate-700 hover:bg-slate-600 rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-colors"
+                className="bg-slate-700 rounded-lg p-4 flex items-center gap-4 transition-colors hover:bg-slate-600 cursor-pointer"
               >
                 {/* Site Icons */}
                 <GroupIcons group={group} />

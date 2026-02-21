@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Trash2, Clock, Folder } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
-import type { Limit, LimitTarget } from '../types/Limit';
+import type { Rule, RuleTarget } from '../types/Rule';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname } from '../utils/urlNormalization';
 import Spinner from '../components/Spinner';
-import { LimitForm } from '../components/LimitForm';
+import { RuleForm } from '../components/RuleForm';
 import { GroupIcons } from '../components/GroupIcons';
-import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
+import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import {
   Dialog,
   DialogContent,
@@ -19,45 +19,47 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 
-interface LimitsProps {
+interface RulesProps {
   user: User | null;
+  onNavigateToGroups: () => void;
 }
 
 /**
- * Limits management tab. Child of Popup.tsx, renders inside the Limits tab.
- * Sibling to Groups.tsx and Home.tsx (other tabs).
+ * Rules management tab. Child of Popup.tsx, renders inside the Rules tab.
  * Manages hard, soft, and session time limits on URLs and groups.
+ * Includes Groups modal for managing URL groups.
  */
-const Limits: React.FC<LimitsProps> = ({ user }) => {
-  const [limits, setLimits] = useState<Limit[]>([]);
+const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups }) => {
+  const [rules, setRules] = useState<Rule[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingLimitId, setEditingLimitId] = useState<string | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [limitToDelete, setLimitToDelete] = useState<string | null>(null);
+  const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
+  const isInitialLoad = useRef(true);
 
-  // Fetch limits, groups, and URLs from Firestore
+  // Fetch rules, groups, and URLs from Firestore
   const fetchData = useCallback(async () => {
     if (!user?.uid) {
       setLoading(false);
       return;
     }
 
-    console.log('Fetching limits and groups from Firestore...');
+    console.log('Fetching rules and groups from Firestore...');
     try {
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
 
       if (userDoc.exists()) {
         const data = userDoc.data();
-        const fetchedLimits = data.limits || [];
-        console.log('Fetched limits:', fetchedLimits.length);
-        setLimits(fetchedLimits);
+        const fetchedRules = data.rules || [];
+        console.log('Fetched rules:', fetchedRules.length);
+        setRules(fetchedRules);
         setGroups(data.groups || []);
 
-        // Auto-open create form if no limits exist (only on initial load)
-        if (fetchedLimits.length === 0 && loading) {
+        // Auto-open create form if no rules exist (only on initial load)
+        if (fetchedRules.length === 0 && isInitialLoad.current) {
           setShowCreateForm(true);
         }
       }
@@ -65,8 +67,9 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+      isInitialLoad.current = false;
     }
-  }, [user?.uid, loading]);
+  }, [user?.uid]);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -76,108 +79,108 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   // Listen for updates from LLM panel
   useEffect(() => {
     const handleDataUpdate = () => {
-      console.log('Received groupsOrLimitsUpdated event in Limits component');
+      console.log('Received groupsOrRulesUpdated event in Rules component');
       fetchData();
     };
 
-    window.addEventListener('groupsOrLimitsUpdated', handleDataUpdate);
-    console.log('Limits component: Added event listener for groupsOrLimitsUpdated');
+    window.addEventListener('groupsOrRulesUpdated', handleDataUpdate);
+    console.log('Rules component: Added event listener for groupsOrRulesUpdated');
 
     return () => {
-      console.log('Limits component: Removing event listener');
-      window.removeEventListener('groupsOrLimitsUpdated', handleDataUpdate);
+      console.log('Rules component: Removing event listener');
+      window.removeEventListener('groupsOrRulesUpdated', handleDataUpdate);
     };
   }, [fetchData]);
 
-  // Save limits to Firestore
-  const saveLimitsToFirestore = async (newLimits: Limit[]) => {
+  // Save rules to Firestore
+  const saveRulesToFirestore = async (newRules: Rule[]) => {
     if (!user?.uid) return;
 
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, { limits: newLimits }, { merge: true });
+      await setDoc(userDocRef, { rules: newRules }, { merge: true });
       // Sync to chrome.storage for content script access
-      await syncLimitsToStorage(user.uid);
+      await syncRulesToStorage(user.uid);
     } catch (error) {
-      console.error('Error saving limits:', error);
+      console.error('Error saving rules:', error);
       throw error;
     }
   };
 
-  // Create or update limit
-  const handleSaveLimit = async (
+  // Create or update rule
+  const handleSaveRule = async (
     name: string,
-    targetItems: LimitTarget[],
-    limitType: 'hard' | 'soft' | 'session',
+    targetItems: RuleTarget[],
+    ruleType: 'hard' | 'soft' | 'session',
     timeLimit: number,
     plusOnes?: number,
     plusOneDuration?: number
   ) => {
-    if (editingLimitId) {
-      // Update existing limit
-      const updatedLimits = limits.map(limit => {
-        if (limit.id === editingLimitId) {
-          const updatedLimit: Limit = {
-            ...limit,
+    if (editingRuleId) {
+      // Update existing rule
+      const updatedRules = rules.map(rule => {
+        if (rule.id === editingRuleId) {
+          const updatedRule: Rule = {
+            ...rule,
             name: name || undefined,
-            type: limitType,
+            type: ruleType,
             targets: targetItems,
             timeLimit,
           };
 
-          if (limitType === 'soft') {
-            updatedLimit.plusOnes = plusOnes;
-            updatedLimit.plusOneDuration = plusOneDuration;
+          if (ruleType === 'soft') {
+            updatedRule.plusOnes = plusOnes;
+            updatedRule.plusOneDuration = plusOneDuration;
           } else {
-            delete updatedLimit.plusOnes;
-            delete updatedLimit.plusOneDuration;
+            delete updatedRule.plusOnes;
+            delete updatedRule.plusOneDuration;
           }
 
-          return updatedLimit;
+          return updatedRule;
         }
-        return limit;
+        return rule;
       });
 
-      setLimits(updatedLimits);
-      await saveLimitsToFirestore(updatedLimits);
+      setRules(updatedRules);
+      await saveRulesToFirestore(updatedRules);
     } else {
-      // Create new limit
-      const newLimit: Limit = {
-        id: `limit:${Date.now()}`,
-        type: limitType,
+      // Create new rule
+      const newRule: Rule = {
+        id: `rule:${Date.now()}`,
+        type: ruleType,
         targets: targetItems,
         timeLimit,
         createdAt: new Date().toISOString(),
       };
 
       if (name) {
-        newLimit.name = name;
+        newRule.name = name;
       }
 
-      if (limitType === 'soft') {
-        newLimit.plusOnes = plusOnes;
-        newLimit.plusOneDuration = plusOneDuration;
+      if (ruleType === 'soft') {
+        newRule.plusOnes = plusOnes;
+        newRule.plusOneDuration = plusOneDuration;
       }
 
-      const updatedLimits = [...limits, newLimit];
-      setLimits(updatedLimits);
-      await saveLimitsToFirestore(updatedLimits);
+      const updatedRules = [...rules, newRule];
+      setRules(updatedRules);
+      await saveRulesToFirestore(updatedRules);
     }
 
     // Reset form
     setShowCreateForm(false);
-    setEditingLimitId(null);
+    setEditingRuleId(null);
   };
 
-  // Delete limit
-  const handleDeleteLimit = async () => {
-    if (!limitToDelete) return;
+  // Delete rule
+  const handleDeleteRule = async () => {
+    if (!ruleToDelete) return;
 
-    const updatedLimits = limits.filter(l => l.id !== limitToDelete);
-    setLimits(updatedLimits);
-    await saveLimitsToFirestore(updatedLimits);
+    const updatedRules = rules.filter(r => r.id !== ruleToDelete);
+    setRules(updatedRules);
+    await saveRulesToFirestore(updatedRules);
     setDeleteDialogOpen(false);
-    setLimitToDelete(null);
+    setRuleToDelete(null);
   };
 
   // Format plus-one duration from seconds to human-readable string
@@ -202,68 +205,78 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
     );
   }
 
-  // Get the limit being edited
-  const editingLimit = editingLimitId ? limits.find(l => l.id === editingLimitId) : null;
+  // Get the rule being edited
+  const editingRule = editingRuleId ? rules.find(r => r.id === editingRuleId) : null;
 
   return (
     <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Limits</h3>
+        <h3 className="text-lg font-semibold">Rules</h3>
         {!showCreateForm && (
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="purple-button"
-            title="Create Limit"
-          >
-            <Plus size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNavigateToGroups}
+              className="purple-button flex items-center gap-2"
+              title="Manage Groups"
+            >
+              <Folder size={18} />
+              <span className="text-sm">Groups</span>
+            </button>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="purple-button"
+              title="Create Rule"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Create/Edit Limit Form */}
+      {/* Create/Edit Rule Form */}
       {showCreateForm && (
-        <LimitForm
-          limitId={editingLimitId || undefined}
-          initialName={editingLimit?.name || ''}
-          initialTargetItems={editingLimit?.targets || []}
-          initialLimitType={editingLimit?.type || 'hard'}
-          initialTimeLimit={editingLimit?.timeLimit || 60}
-          initialPlusOnes={editingLimit?.plusOnes || 3}
-          initialPlusOneDuration={editingLimit?.plusOneDuration || 300}
+        <RuleForm
+          ruleId={editingRuleId || undefined}
+          initialName={editingRule?.name || ''}
+          initialTargetItems={editingRule?.targets || []}
+          initialRuleType={editingRule?.type || 'hard'}
+          initialTimeLimit={editingRule?.timeLimit || 60}
+          initialPlusOnes={editingRule?.plusOnes || 3}
+          initialPlusOneDuration={editingRule?.plusOneDuration || 300}
           groups={groups}
-          onSave={handleSaveLimit}
+          onSave={handleSaveRule}
           onCancel={() => {
             setShowCreateForm(false);
-            setEditingLimitId(null);
+            setEditingRuleId(null);
           }}
         />
       )}
 
-      {/* Limits List - Hidden when form is open */}
+      {/* Rules List - Hidden when form is open */}
       {!showCreateForm && (
         <div className="flex flex-col space-y-2">
-        {limits.length === 0 ? (
+        {rules.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-8">
-            No limits set. Create one to get started!
+            No rules set. Create one to get started!
           </p>
         ) : (
-          limits.map((limit) => {
-            const limitTargets = limit.targets || [];
+          rules.map((rule) => {
+            const ruleTargets = rule.targets || [];
 
             return (
               <div
-                key={limit.id}
+                key={rule.id}
                 onClick={() => {
-                  setEditingLimitId(limit.id);
+                  setEditingRuleId(rule.id);
                   setShowCreateForm(true);
                 }}
                 className="bg-slate-700 hover:bg-slate-600 rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors"
               >
                 {/* Icon */}
                 <div className={`p-2 rounded-lg ${
-                  limit.type === 'hard' ? 'bg-red-600' :
-                  limit.type === 'soft' ? 'bg-yellow-600' :
+                  rule.type === 'hard' ? 'bg-red-600' :
+                  rule.type === 'soft' ? 'bg-yellow-600' :
                   'bg-blue-600'
                 }`}>
                   <Clock size={16} className="text-white" />
@@ -273,15 +286,15 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                 <div className="flex-1 min-w-0">
                   {/* Separate groups and individual URLs */}
                   {(() => {
-                    const groupTargets = limitTargets.filter(t => t.type === 'group');
-                    const urlTargets = limitTargets.filter(t => t.type === 'url');
+                    const groupTargets = ruleTargets.filter(t => t.type === 'group');
+                    const urlTargets = ruleTargets.filter(t => t.type === 'url');
 
                     return (
                       <div className="space-y-1">
-                        {/* Display limit name if it exists */}
-                        {limit.name && (
+                        {/* Display rule name if it exists */}
+                        {rule.name && (
                           <div className="text-white font-medium text-sm mb-1">
-                            {limit.name}
+                            {rule.name}
                           </div>
                         )}
 
@@ -320,14 +333,14 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                           </div>
                         )}
 
-                        {/* Limit info */}
+                        {/* Rule info */}
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-gray-400">
-                            {limit.type.charAt(0).toUpperCase() + limit.type.slice(1)}
-                            {limit.type !== 'session' && ` • ${limit.timeLimit} min`}
-                            {limit.type === 'session' && ' • Set on visit'}
-                            {limit.type === 'soft' && limit.plusOnes !== undefined && ` • ${limit.plusOnes} plus ones`}
-                            {limit.type === 'soft' && limit.plusOneDuration !== undefined && ` (${formatPlusOneDuration(limit.plusOneDuration)} each)`}
+                            {rule.type.charAt(0).toUpperCase() + rule.type.slice(1)}
+                            {rule.type !== 'session' && ` • ${rule.timeLimit} min`}
+                            {rule.type === 'session' && ' • Set on visit'}
+                            {rule.type === 'soft' && rule.plusOnes !== undefined && ` • ${rule.plusOnes} plus ones`}
+                            {rule.type === 'soft' && rule.plusOneDuration !== undefined && ` (${formatPlusOneDuration(rule.plusOneDuration)} each)`}
                           </span>
                         </div>
                       </div>
@@ -339,11 +352,11 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setLimitToDelete(limit.id);
+                    setRuleToDelete(rule.id);
                     setDeleteDialogOpen(true);
                   }}
                   className="text-gray-400 hover:text-red-400 transition-colors"
-                  title="Delete Limit"
+                  title="Delete Rule"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -358,9 +371,9 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="bg-gray-800 border-gray-600 text-white" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle className="text-white">Delete Limit?</DialogTitle>
+            <DialogTitle className="text-white">Delete Rule?</DialogTitle>
             <DialogDescription className="text-gray-300">
-              Are you sure you want to delete this limit? This cannot be undone.
+              Are you sure you want to delete this rule? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -368,7 +381,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
               onClick={(e) => {
                 e.stopPropagation();
                 setDeleteDialogOpen(false);
-                setLimitToDelete(null);
+                setRuleToDelete(null);
               }}
               className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
             >
@@ -377,7 +390,7 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleDeleteLimit();
+                handleDeleteRule();
               }}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
             >
@@ -390,4 +403,4 @@ const Limits: React.FC<LimitsProps> = ({ user }) => {
   );
 };
 
-export default Limits;
+export default Rules;

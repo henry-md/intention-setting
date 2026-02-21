@@ -1,5 +1,5 @@
 import type { Group } from '../types/Group';
-import type { LimitTarget } from '../types/Limit';
+import type { RuleTarget } from '../types/Rule';
 
 /**
  * Recursively expands a group to all its URLs (handles nested groups)
@@ -31,15 +31,15 @@ function expandGroupUrls(group: Group, allGroups: Group[], visited: Set<string> 
 }
 
 /**
- * Expands limit targets to actual URLs by resolving group references.
+ * Expands rule targets to actual URLs by resolving group references.
  * This is the core function that makes groups the single source of truth.
  *
- * @param targets - Array of limit targets (groups or direct URLs)
+ * @param targets - Array of rule targets (groups or direct URLs)
  * @param groups - All available groups (to resolve references)
  * @returns Array of unique URLs
  */
 export function expandTargetsToUrls(
-  targets: LimitTarget[],
+  targets: RuleTarget[],
   groups: Group[]
 ): string[] {
   const urls: string[] = [];
@@ -76,13 +76,13 @@ export function expandTargetsToUrls(
  * Checks if a URL is already present in the expanded targets
  *
  * @param url - The URL to check
- * @param targets - Array of limit targets
+ * @param targets - Array of rule targets
  * @param groups - All available groups
  * @returns true if the URL is already present
  */
 export function isUrlInTargets(
   url: string,
-  targets: LimitTarget[],
+  targets: RuleTarget[],
   groups: Group[]
 ): boolean {
   const expandedUrls = expandTargetsToUrls(targets, groups);
