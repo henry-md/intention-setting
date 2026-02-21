@@ -179,14 +179,14 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup }) => {
 
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center">
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-full flex flex-col space-y-4 p-4 overflow-y-auto">
+    <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Groups</h3>
         <button

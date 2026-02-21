@@ -98,14 +98,14 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
 
   if (loading || !group) {
     return (
-      <div className="h-screen w-full flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center">
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-full flex flex-col space-y-4 p-4 overflow-y-auto">
+    <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       {/* Header with Back Button */}
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="text-gray-400 hover:text-white">

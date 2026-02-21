@@ -8,6 +8,7 @@ import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
 import { syncLimitsToStorage } from '../utils/syncLimitsToStorage';
+import { MessageSquare } from 'lucide-react';
 
 type TabType = 'home' | 'groups' | 'limits';
 type ViewType = 'main' | 'groupEdit';
@@ -22,6 +23,7 @@ const Popup: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('main');
   const [currentTab, setCurrentTab] = useState<TabType>('home');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(false);
 
   // Sync limits to chrome.storage on app initialization
   useEffect(() => {
@@ -40,87 +42,102 @@ const Popup: React.FC = () => {
     );
   }
 
-  // Group edit view
-  if (currentView === 'groupEdit' && editingGroupId) {
-    return (
-      <GroupEdit
-        user={user}
-        groupId={editingGroupId}
-        onBack={() => {
-          setCurrentView('main');
-          setEditingGroupId(null);
-        }}
-      />
-    );
-  }
-
   // Main view with tabs
   return (
-    <div className="h-screen w-full flex flex-col">
+    <div className="h-screen w-full flex flex-col relative">
       <ResizablePanelGroup direction="vertical">
         {/* Top panel with tabs */}
-        <ResizablePanel defaultSize={60} minSize={30}>
+        <ResizablePanel defaultSize={60} minSize={20}>
           <div className="h-full flex flex-col">
-            {/* Tab Navigation */}
-            <div className="flex border-b border-gray-700 bg-gray-900">
-              <button
-                onClick={() => setCurrentTab('home')}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  currentTab === 'home'
-                    ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                Account
-              </button>
-              <button
-                onClick={() => setCurrentTab('groups')}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  currentTab === 'groups'
-                    ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                Groups
-              </button>
-              <button
-                onClick={() => setCurrentTab('limits')}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                  currentTab === 'limits'
-                    ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                Limits
-              </button>
-            </div>
+            {/* Conditionally show tabs only in main view */}
+            {currentView === 'main' && (
+              <div className="flex border-b border-gray-700 bg-gray-900">
+                <button
+                  onClick={() => setCurrentTab('home')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    currentTab === 'home'
+                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Account
+                </button>
+                <button
+                  onClick={() => setCurrentTab('groups')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    currentTab === 'groups'
+                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Groups
+                </button>
+                <button
+                  onClick={() => setCurrentTab('limits')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    currentTab === 'limits'
+                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Limits
+                </button>
+              </div>
+            )}
 
-            {/* Tab Content */}
-            <div className="flex-1 overflow-hidden">
-              {currentTab === 'home' && (
-                <Home user={user} />
+            {/* Content - either tabs or full-page views */}
+            <div className="flex-1 overflow-y-auto">
+              {currentView === 'main' && (
+                <>
+                  {currentTab === 'home' && (
+                    <Home user={user} />
+                  )}
+                  {currentTab === 'groups' && (
+                    <Groups
+                      user={user}
+                      onEditGroup={(groupId) => {
+                        setEditingGroupId(groupId);
+                        setCurrentView('groupEdit');
+                      }}
+                    />
+                  )}
+                  {currentTab === 'limits' && <Limits user={user} />}
+                </>
               )}
-              {currentTab === 'groups' && (
-                <Groups
+              {currentView === 'groupEdit' && editingGroupId && (
+                <GroupEdit
                   user={user}
-                  onEditGroup={(groupId) => {
-                    setEditingGroupId(groupId);
-                    setCurrentView('groupEdit');
+                  groupId={editingGroupId}
+                  onBack={() => {
+                    setCurrentView('main');
+                    setEditingGroupId(null);
                   }}
                 />
               )}
-              {currentTab === 'limits' && <Limits user={user} />}
             </div>
           </div>
         </ResizablePanel>
 
-        <ResizableHandle withHandle />
+        {!isAIPanelCollapsed && <ResizableHandle withHandle />}
 
         {/* Bottom panel with LLM */}
-        <ResizablePanel defaultSize={40} minSize={20}>
-          <LLMPanel user={user} />
-        </ResizablePanel>
+        {!isAIPanelCollapsed && (
+          <ResizablePanel defaultSize={40} minSize={15}>
+            <LLMPanel user={user} onCollapse={() => setIsAIPanelCollapsed(true)} />
+          </ResizablePanel>
+        )}
       </ResizablePanelGroup>
+
+      {/* Floating chat button when collapsed */}
+      {isAIPanelCollapsed && (
+        <button
+          onClick={() => setIsAIPanelCollapsed(false)}
+          className="fixed bottom-4 right-4 w-14 h-14 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-50"
+          title="Open AI Assistant"
+        >
+          <MessageSquare className="w-6 h-6" />
+        </button>
+      )}
     </div>
   );
 };

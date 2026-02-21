@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Trash2 } from 'lucide-react';
+import { Send, Loader2, Trash2, ChevronDown } from 'lucide-react';
 import OpenAI from 'openai';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
@@ -20,6 +20,7 @@ interface Message {
 
 interface LLMPanelProps {
   user: User | null;
+  onCollapse?: () => void;
 }
 
 // Define OpenAI function tools
@@ -227,7 +228,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
  * Displays at the bottom of the screen in a resizable panel.
  * Supports function calling to create groups and limits.
  */
-const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
+const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1230,13 +1231,24 @@ IMPORTANT GUIDELINES:
       {/* Header */}
       <div className="px-4 py-2 border-b border-gray-700 bg-gray-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">AI Assistant</h3>
-        <button
-          onClick={clearChat}
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-          title="Clear chat"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={clearChat}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            title="Clear chat"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              title="Collapse AI Assistant"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
