@@ -276,8 +276,22 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user }) => {
       if (!user?.uid || messages.length === 0) return;
 
       try {
+        // Clean messages: remove undefined fields before saving to Firestore
+        const cleanedMessages = messages.map(msg => {
+          const cleaned: any = {
+            role: msg.role,
+            content: msg.content || ''
+          };
+
+          if (msg.toolName !== undefined) cleaned.toolName = msg.toolName;
+          if (msg.toolArgs !== undefined) cleaned.toolArgs = msg.toolArgs;
+          if (msg.openAiMessage !== undefined) cleaned.openAiMessage = msg.openAiMessage;
+
+          return cleaned;
+        });
+
         const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { conversationHistory: messages }, { merge: true });
+        await setDoc(userDocRef, { conversationHistory: cleanedMessages }, { merge: true });
       } catch (error) {
         console.error('Error saving conversation history:', error);
       }

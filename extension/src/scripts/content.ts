@@ -3,16 +3,16 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import IntentionPopup from '../components/IntentionPopup';
 import TimerBadge from '../components/TimerBadge';
+import DebugPanel from '../components/DebugPanel';
 import { normalizeHostname } from '../utils/urlNormalization';
 
 console.log('Intention Setting content script loaded');
+console.log('[Timer] Initial state - document.hidden:', document.hidden, 'visibilityState:', document.visibilityState);
 
-// Timer state
-let timerInterval: NodeJS.Timeout | null = null;
-let syncInterval: NodeJS.Timeout | null = null;
+// Content script state (timer management moved to background service worker)
 let currentSiteKey: string | null = null;
-let timerBadgeRoot: any = null;
-let secondsCounter = 0; // Track seconds since last sync
+let containerRoot: any = null; // Root for the flex container holding both components
+const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
 
 // Check if current URL matches user's saved URLs
 const checkAndShowIntentionPopup = async () => {
@@ -142,95 +142,7 @@ const syncToFirestore = async (siteKey: string, timeSpent: number, timeLimit: nu
   }
 };
 
-// Pause time tracking if tab is not active
-const pauseTimeTracking = async () => {
-  // Sync to Firestore before pausing
-  if (currentSiteKey && secondsCounter > 0) {
-    const result = await chrome.storage.local.get(['siteTimeData']);
-    const data = result.siteTimeData || {};
-
-    if (data[currentSiteKey]) {
-      await syncToFirestore(
-        currentSiteKey,
-        data[currentSiteKey].timeSpent,
-        data[currentSiteKey].timeLimit
-      );
-      secondsCounter = 0;
-    }
-  }
-
-  // Clear intervals
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
-  if (syncInterval) {
-    clearInterval(syncInterval);
-    syncInterval = null;
-  }
-};
-
-// Resume time tracking
-const resumeTimeTracking = async () => {
-  if (!currentSiteKey) return;
-
-  // Only resume if tab is visible
-  if (document.hidden) return;
-
-  const result = await chrome.storage.local.get(['siteTimeData']);
-  const siteTimeData = result.siteTimeData || {};
-  const siteData = siteTimeData[currentSiteKey];
-
-  if (siteData) {
-    // Restart the intervals
-    if (timerInterval) {
-      clearInterval(timerInterval);
-    }
-
-    timerInterval = setInterval(async () => {
-      // Only increment if tab is visible
-      if (document.hidden) return;
-
-      const result = await chrome.storage.local.get(['siteTimeData']);
-      const data = result.siteTimeData || {};
-
-      if (data[currentSiteKey!]) {
-        data[currentSiteKey!].timeSpent += 1;
-        data[currentSiteKey!].lastUpdated = Date.now();
-        await chrome.storage.local.set({ siteTimeData: data });
-
-        // Update badge display
-        updateTimerBadge(data[currentSiteKey!].timeSpent, data[currentSiteKey!].timeLimit);
-
-        // Increment counter for Firestore sync
-        secondsCounter += 1;
-      }
-    }, 1000); // Every second
-
-    // Set up Firestore sync every 5 seconds
-    if (syncInterval) {
-      clearInterval(syncInterval);
-    }
-
-    syncInterval = setInterval(async () => {
-      if (secondsCounter >= 5 && currentSiteKey) {
-        const result = await chrome.storage.local.get(['siteTimeData']);
-        const data = result.siteTimeData || {};
-
-        if (data[currentSiteKey]) {
-          await syncToFirestore(
-            currentSiteKey,
-            data[currentSiteKey].timeSpent,
-            data[currentSiteKey].timeLimit
-          );
-          secondsCounter = 0; // Reset counter after sync
-        }
-      }
-    }, 5000); // Check every 5 seconds
-  }
-};
-
-// Start tracking time for current site
+// Start tracking time for current site (simplified - notifies background worker)
 const startTimeTracking = async (timeLimit: number) => {
   currentSiteKey = getCurrentSiteKey();
 
@@ -253,52 +165,109 @@ const startTimeTracking = async (timeLimit: number) => {
   await chrome.storage.local.set({ siteTimeData });
 
   // Show timer badge
-  showTimerBadge(siteTimeData[currentSiteKey].timeSpent, timeLimit);
+  await showTimerBadge(siteTimeData[currentSiteKey].timeSpent, timeLimit);
 
-  // Only start timer if tab is visible
+  // Notify background worker if tab is visible
   if (!document.hidden) {
-    await resumeTimeTracking();
+    await chrome.runtime.sendMessage({
+      action: 'tab-focused',
+      siteKey: currentSiteKey,
+      url: window.location.href
+    });
   }
 };
 
-// Show timer badge
-const showTimerBadge = (timeSpent: number, timeLimit: number) => {
-  // Check if badge already exists
-  if (document.getElementById('timer-badge-container')) {
-    return;
-  }
-
-  // Create container for timer badge
-  const container = document.createElement('div');
-  container.id = 'timer-badge-container';
-
-  // Create shadow DOM
-  const shadowRoot = container.attachShadow({ mode: 'open' });
-  const shadowContainer = document.createElement('div');
-  shadowRoot.appendChild(shadowContainer);
-
-  // Append to body
-  document.body.appendChild(container);
-
-  // Render timer badge
-  timerBadgeRoot = createRoot(shadowContainer);
-  timerBadgeRoot.render(
-    React.createElement(TimerBadge, {
-      timeSpent: timeSpent,
-      timeLimit: timeLimit
-    })
-  );
+// Get debug info for the debug panel
+const getDebugInfo = async () => {
+  const isVisible = !document.hidden && document.visibilityState === 'visible';
+  return {
+    currentUrl: window.location.href,
+    normalizedHostname: currentSiteKey || getCurrentSiteKey(),
+    instanceId: 'N/A (managed by background)',
+    isActiveTimer: false, // Timer managed by background worker now
+    isTabVisible: isVisible
+  };
 };
 
-// Update timer badge display
-const updateTimerBadge = (timeSpent: number, timeLimit: number) => {
-  if (timerBadgeRoot) {
-    timerBadgeRoot.render(
+// Render the container with both timer badge and debug panel
+const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
+  // Check if container already exists
+  let container = document.getElementById('timer-debug-container');
+
+  if (!container) {
+    // Create container
+    container = document.createElement('div');
+    container.id = 'timer-debug-container';
+
+    // Create shadow DOM
+    const shadowRoot = container.attachShadow({ mode: 'open' });
+    const shadowContainer = document.createElement('div');
+
+    // Add flexbox styles to the shadow container
+    shadowContainer.style.cssText = `
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 999998;
+    `;
+
+    shadowRoot.appendChild(shadowContainer);
+    document.body.appendChild(container);
+
+    // Create React root
+    containerRoot = createRoot(shadowContainer);
+  }
+
+  // Get debug info
+  const debugInfo = await getDebugInfo();
+
+  // Render both components
+  const components = [];
+
+  // Add timer badge if we have time data
+  if (timeSpent !== undefined && timeLimit !== undefined) {
+    components.push(
       React.createElement(TimerBadge, {
+        key: 'timer',
         timeSpent: timeSpent,
         timeLimit: timeLimit
       })
     );
+  }
+
+  // Add debug panel if DEBUG_UI is enabled
+  if (DEBUG_UI) {
+    components.push(
+      React.createElement(DebugPanel, {
+        key: 'debug',
+        debugInfo: debugInfo
+      })
+    );
+  }
+
+  // Render the components
+  if (containerRoot && components.length > 0) {
+    containerRoot.render(React.createElement(React.Fragment, null, ...components));
+  }
+};
+
+// Show timer badge (now part of the container)
+const showTimerBadge = async (timeSpent: number, timeLimit: number) => {
+  await renderContainer(timeSpent, timeLimit);
+};
+
+// Update timer badge display (now updates the whole container)
+const updateTimerBadge = async (timeSpent: number, timeLimit: number) => {
+  await renderContainer(timeSpent, timeLimit);
+};
+
+// Show debug panel on its own (when there's no timer)
+const showDebugPanel = async () => {
+  if (DEBUG_UI) {
+    await renderContainer();
   }
 };
 
@@ -389,30 +358,114 @@ const showIntentionPopup = () => {
   );
 };
 
-// Listen for storage changes to update URLs in real-time
-chrome.storage.onChanged.addListener((changes) => {
+// Listen for storage changes to update badge in real-time
+chrome.storage.onChanged.addListener(async (changes) => {
   if (changes.siteLimits) {
     // Site limits updated, could trigger re-check if needed
   }
-});
 
-// Listen for visibility changes to pause/resume timer
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) {
-    // Tab is now hidden - pause timer
-    console.log('Tab hidden, pausing timer');
-    await pauseTimeTracking();
-  } else {
-    // Tab is now visible - resume timer
-    console.log('Tab visible, resuming timer');
-    await resumeTimeTracking();
+  // If siteTimeData changes and we're not the active tab, update our display
+  if (changes.siteTimeData && currentSiteKey && !document.hidden) {
+    const newData = changes.siteTimeData.newValue || {};
+    const siteData = newData[currentSiteKey];
+    if (siteData && containerRoot) {
+      await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);
+    } else if (DEBUG_UI && containerRoot) {
+      // Update debug panel even if no timer data
+      await showDebugPanel();
+    }
   }
 });
+
+// Listen for messages from background worker
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Content] Message received:', message);
+
+  if (message.action === 'get-current-site') {
+    chrome.storage.local.get(['siteLimits'], (storage) => {
+      const siteLimits = storage.siteLimits || {};
+      const hasSiteLimit = !!siteLimits[currentSiteKey || ''];
+
+      sendResponse({
+        siteKey: currentSiteKey,
+        url: window.location.href,
+        hasSiteLimit: hasSiteLimit
+      });
+    });
+    return true; // Will respond asynchronously
+  }
+});
+
+// Listen for visibility changes - notify background worker
+const handleVisibilityChange = async () => {
+  console.log('[Timer] ⚠️ VISIBILITY CHANGED EVENT FIRED');
+  console.log('[Timer] document.hidden:', document.hidden);
+  console.log('[Timer] document.visibilityState:', document.visibilityState);
+  console.log('[Timer] currentSiteKey:', currentSiteKey);
+
+  const isHidden = document.hidden || document.visibilityState === 'hidden';
+
+  if (!currentSiteKey) {
+    console.log('[Timer] No currentSiteKey, skipping visibility change handling');
+    return;
+  }
+
+  if (isHidden) {
+    // Tab is now hidden - notify background to stop timer
+    console.log('[Timer] 🔽 Tab hidden - notifying background');
+    await chrome.runtime.sendMessage({
+      action: 'tab-blurred',
+      siteKey: currentSiteKey
+    });
+  } else {
+    // Tab is now visible - notify background to start timer
+    console.log('[Timer] 🔼 Tab visible - notifying background');
+    await chrome.runtime.sendMessage({
+      action: 'tab-focused',
+      siteKey: currentSiteKey,
+      url: window.location.href
+    });
+  }
+
+  // Update UI to reflect changes
+  if (containerRoot) {
+    const result = await chrome.storage.local.get(['siteTimeData']);
+    const siteTimeData = result.siteTimeData || {};
+    const siteData = currentSiteKey ? siteTimeData[currentSiteKey] : null;
+
+    if (siteData) {
+      await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);
+    } else if (DEBUG_UI) {
+      await showDebugPanel();
+    }
+  }
+
+  console.log('[Timer] ✓ Visibility change handling complete');
+};
+
+document.addEventListener('visibilitychange', handleVisibilityChange);
+console.log('[Timer] ✓ Visibility change listener attached');
+
+// FALLBACK: Poll visibility every 500ms in case visibilitychange doesn't fire (some sites block it)
+let lastVisibilityState = document.hidden;
+setInterval(() => {
+  const currentVisibilityState = document.hidden;
+
+  // If state changed but event didn't fire, manually trigger
+  if (currentVisibilityState !== lastVisibilityState) {
+    console.log('[Timer] 🔄 POLLING DETECTED VISIBILITY CHANGE (event did not fire!)');
+    console.log('[Timer] Was hidden:', lastVisibilityState, '→ Now hidden:', currentVisibilityState);
+    lastVisibilityState = currentVisibilityState;
+    handleVisibilityChange();
+  }
+}, 500);
 
 // Initialize on page load
 const initialize = async () => {
   await checkAndShowIntentionPopup();
   await checkAndShowTimer();
+  // Show debug panel if DEBUG_UI is enabled (even if no timer)
+  await showDebugPanel();
 };
 
 // Run check when page loads
@@ -428,16 +481,24 @@ new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    // Stop previous timers
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
+
+    const previousSiteKey = currentSiteKey;
+    const newSiteKey = getCurrentSiteKey();
+
+    console.log('[Timer] URL changed:', lastUrl, '→', url);
+    console.log('[Timer] Site key:', previousSiteKey, '→', newSiteKey);
+
+    // If site changed (different domain), notify background
+    if (previousSiteKey && previousSiteKey !== newSiteKey) {
+      chrome.runtime.sendMessage({
+        action: 'tab-navigated',
+        previousSiteKey: previousSiteKey,
+        newSiteKey: newSiteKey,
+        url: url
+      });
     }
-    if (syncInterval) {
-      clearInterval(syncInterval);
-      syncInterval = null;
-    }
-    secondsCounter = 0;
+
+    // Re-initialize UI
     initialize();
   }
 }).observe(document, { subtree: true, childList: true });

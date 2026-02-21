@@ -19,15 +19,11 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
   return (
     <div
       style={{
-        position: 'fixed',
-        top: '16px',
-        right: '16px',
         backgroundColor: isOverLimit ? '#dc2626' : '#1a1a1a',
         color: 'white',
         padding: '12px 16px',
         borderRadius: '12px',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-        zIndex: 999998,
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: '14px',
         fontWeight: 600,
