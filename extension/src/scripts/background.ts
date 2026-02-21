@@ -72,15 +72,19 @@ async function syncToFirestore(): Promise<void> {
     }
 
     // Send to Firestore using existing updateTimeTracking handler
-    await chrome.runtime.sendMessage({
+    // Fire-and-forget - don't await since we don't need the response
+    chrome.runtime.sendMessage({
       action: 'updateTimeTracking',
       userId: user.uid,
       siteKey: siteKey,
       timeData: siteTimeData[siteKey]
+    }).catch(error => {
+      // Service worker might be restarting - this is expected occasionally
+      console.log('[Timer] Firestore sync message failed (will retry):', error.message);
     });
 
     secondsCounter = 0;
-    console.log('[Timer] ✓ Firestore sync complete');
+    console.log('[Timer] ✓ Firestore sync initiated');
   } catch (error) {
     console.error('[Timer] Firestore sync failed (will retry):', error);
     // Don't reset counter - will retry on next interval
@@ -224,7 +228,7 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
   }
 
   // Initialize time data if doesn't exist
-  let siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+  const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
   if (!siteTimeData[siteKey]) {
     siteTimeData[siteKey] = {
       timeSpent: 0,
@@ -376,6 +380,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => {
         console.error('Error updating time tracking:', error);
       });
+
+    return false; // No async response needed
   }
 });
 
@@ -404,8 +410,14 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     if (response?.siteKey && response?.hasSiteLimit) {
       startTimerForTab(activeInfo.tabId, response.siteKey);
     }
-  } catch (error) {
-    console.log('[Timer] Could not process tab activation:', error);
+  } catch (error: any) {
+    // Content script may not be loaded yet - this is expected
+    // Timer will start when content script sends 'tab-focused' message
+    if (error.message?.includes('Receiving end does not exist')) {
+      console.log('[Timer] Content script not ready yet (tab still loading)');
+    } else {
+      console.log('[Timer] Could not process tab activation:', error.message);
+    }
   }
 });
 
@@ -440,8 +452,9 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
           if (response?.siteKey && response?.hasSiteLimit) {
             startTimerForTab(tabs[0].id, response.siteKey);
           }
-        } catch (error) {
-          console.log('[Timer] Could not reach content script');
+        } catch (error: any) {
+          // Content script may not be loaded yet - this is normal
+          console.log('[Timer] Content script not ready (window focus)');
         }
       }
     });
@@ -463,8 +476,9 @@ chrome.runtime.onStartup.addListener(async () => {
       if (response?.siteKey && response?.hasSiteLimit) {
         startTimerForTab(tabs[0].id, response.siteKey);
       }
-    } catch (error) {
-      console.log('[Timer] Could not reach content script on startup');
+    } catch (error: any) {
+      // Content script may not be injected yet - this is normal on startup
+      console.log('[Timer] Content script not ready (startup)');
     }
   }
 });
