@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Trash2, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Send, Loader2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import OpenAI from 'openai';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
@@ -306,6 +306,45 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
+
+  // Group tool messages with the assistant response that follows them
+  const groupedMessages = useMemo(() => {
+    const result: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      toolCalls?: Array<{ name: string; args: any; result: string }>;
+    }> = [];
+
+    let pendingToolCalls: Array<{ name: string; args: any; result: string }> = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+
+      if (msg.role === 'tool' && msg.toolName) {
+        // Collect tool calls
+        pendingToolCalls.push({
+          name: msg.toolName,
+          args: msg.toolArgs,
+          result: msg.content
+        });
+      } else if (msg.role === 'assistant' && msg.content) {
+        // Assistant message - attach any pending tool calls
+        result.push({
+          role: 'assistant',
+          content: msg.content,
+          toolCalls: pendingToolCalls.length > 0 ? [...pendingToolCalls] : undefined
+        });
+        pendingToolCalls = [];
+      } else if (msg.role === 'user') {
+        result.push({
+          role: 'user',
+          content: msg.content
+        });
+      }
+    }
+
+    return result;
+  }, [messages]);
 
   // Tool execution: Get Groups and Limits
   const executeGetGroupsAndLimits = async (): Promise<string> => {
@@ -1226,6 +1265,58 @@ IMPORTANT GUIDELINES:
     }
   };
 
+  // Collapsible tool call component
+  const ToolCallsDisplay: React.FC<{
+    toolCalls: Array<{ name: string; args: any; result: string }>;
+  }> = ({ toolCalls }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    return (
+      <div className="mt-2 border-t border-gray-600 pt-2">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
+          <span className="font-medium">
+            {toolCalls.length} tool call{toolCalls.length > 1 ? 's' : ''} used
+          </span>
+        </button>
+
+        {isExpanded && (
+          <div className="mt-2 space-y-2">
+            {toolCalls.map((tool, idx) => (
+              <div
+                key={idx}
+                className="bg-gray-900/50 border border-gray-600 rounded px-2 py-1.5"
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-purple-400 text-xs font-semibold">🔧</span>
+                  <span className="text-purple-300 text-xs font-medium">{tool.name}</span>
+                </div>
+                {tool.args && (
+                  <div className="text-xs text-gray-400 mb-1.5 font-mono bg-gray-900 rounded px-1.5 py-1 overflow-x-auto">
+                    {JSON.stringify(tool.args, null, 2)}
+                  </div>
+                )}
+                {tool.result && (
+                  <div className="text-xs text-gray-300 bg-gray-900 rounded px-1.5 py-1">
+                    <span className="text-gray-500">→ </span>
+                    {tool.result}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-900 border-t border-gray-700">
       {/* Header */}
@@ -1253,45 +1344,28 @@ IMPORTANT GUIDELINES:
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
+        {groupedMessages.length === 0 && (
           <div className="text-center text-gray-500 text-sm mt-8">
             Start a conversation with the AI assistant
           </div>
         )}
-        {messages.filter(m => m.content || m.toolName).map((message, index) => (
+        {groupedMessages.map((message, index) => (
           <div
             key={index}
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            {message.role === 'tool' ? (
-              <div className="max-w-[80%] bg-purple-900/30 border border-purple-700 rounded-lg px-3 py-2 text-sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-purple-400 font-semibold">🔧 Using tool:</span>
-                  <span className="text-purple-300">{message.toolName}</span>
-                </div>
-                {message.toolArgs && (
-                  <div className="text-xs text-purple-300/70 mb-2">
-                    {JSON.stringify(message.toolArgs, null, 2)}
-                  </div>
-                )}
-                {message.content && (
-                  <div className="text-xs text-purple-200 mt-2 pt-2 border-t border-purple-700">
-                    <span className="font-semibold">Result: </span>
-                    {message.content}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div
-                className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-100 border border-gray-700'
-                }`}
-              >
-                <div className="whitespace-pre-wrap break-words">{message.content}</div>
-              </div>
-            )}
+            <div
+              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                message.role === 'user'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-100 border border-gray-700'
+              }`}
+            >
+              <div className="whitespace-pre-wrap break-words">{message.content}</div>
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <ToolCallsDisplay toolCalls={message.toolCalls} />
+              )}
+            </div>
           </div>
         ))}
         {streamingContent && (
