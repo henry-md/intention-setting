@@ -2,7 +2,6 @@ import "./firebase-config";
 import { format } from 'date-fns';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { normalizeHostname } from '../utils/urlNormalization';
 
 // Test imports
 const testDate = new Date();
@@ -41,7 +40,6 @@ let secondsCounter = 0;
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
-const FIRESTORE_SYNC_THRESHOLD = 5;  // seconds
 
 // ============================================================================
 // CORE TIMER FUNCTIONS
@@ -117,7 +115,7 @@ async function timerTick(): Promise<void> {
       stopCurrentTimer();
       return;
     }
-  } catch (error) {
+  } catch {
     console.log(`[Timer] Tab ${currentTimer.tabId} no longer exists, stopping timer`);
     stopCurrentTimer();
     return;
@@ -213,7 +211,7 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
       console.log(`[Timer] Tab ${tabId} is not active, aborting`);
       return;
     }
-  } catch (error) {
+  } catch {
     console.log(`[Timer] Tab ${tabId} no longer exists`);
     return;
   }
@@ -280,7 +278,7 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // Handle requests to close a success or cancel tab (tab created after Stripe payment)
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
   console.log('Background message received:', message);
 
   if (message.action === 'close-success-tab' || message.action === 'close-cancel-tab') {
@@ -410,13 +408,14 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     if (response?.siteKey && response?.hasSiteLimit) {
       startTimerForTab(activeInfo.tabId, response.siteKey);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Content script may not be loaded yet - this is expected
     // Timer will start when content script sends 'tab-focused' message
-    if (error.message?.includes('Receiving end does not exist')) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('Receiving end does not exist')) {
       console.log('[Timer] Content script not ready yet (tab still loading)');
     } else {
-      console.log('[Timer] Could not process tab activation:', error.message);
+      console.log('[Timer] Could not process tab activation:', msg);
     }
   }
 });
@@ -452,7 +451,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
           if (response?.siteKey && response?.hasSiteLimit) {
             startTimerForTab(tabs[0].id, response.siteKey);
           }
-        } catch (error: any) {
+        } catch {
           // Content script may not be loaded yet - this is normal
           console.log('[Timer] Content script not ready (window focus)');
         }
@@ -476,7 +475,7 @@ chrome.runtime.onStartup.addListener(async () => {
       if (response?.siteKey && response?.hasSiteLimit) {
         startTimerForTab(tabs[0].id, response.siteKey);
       }
-    } catch (error: any) {
+    } catch {
       // Content script may not be injected yet - this is normal on startup
       console.log('[Timer] Content script not ready (startup)');
     }
