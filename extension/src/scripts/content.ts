@@ -201,20 +201,147 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
     // Create shadow DOM
     const shadowRoot = container.attachShadow({ mode: 'open' });
-    const shadowContainer = document.createElement('div');
 
-    // Add flexbox styles to the shadow container
-    shadowContainer.style.cssText = `
+    // Create wrapper that will hold drag handle and content
+    const wrapper = document.createElement('div');
+
+    // Load saved position from storage
+    const storage = await chrome.storage.local.get(['timerPosition']);
+    let savedPosition = storage.timerPosition;
+
+    // Reset position if it's from old code version (no version field) or invalid
+    const POSITION_VERSION = 2; // Increment when position calculation changes
+
+    if (!savedPosition || savedPosition.version !== POSITION_VERSION) {
+      console.log('[Timer] Using fresh default position (v2)');
+      savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
+      await chrome.storage.local.set({ timerPosition: savedPosition });
+    }
+
+    // Additional validation (reset if out of reasonable bounds)
+    const maxTop = window.innerHeight - 100;
+    const maxRight = window.innerWidth - 100;
+
+    if (savedPosition.top < 0 || savedPosition.top > maxTop ||
+        savedPosition.right < 0 || savedPosition.right > maxRight) {
+      console.log('[Timer] Resetting out-of-bounds position');
+      savedPosition = { top: 0, right: 0, version: POSITION_VERSION };
+      await chrome.storage.local.set({ timerPosition: savedPosition });
+    }
+
+    // Add styles to wrapper (flush to edges, padding creates the 20px spacing)
+    wrapper.style.cssText = `
       position: fixed;
-      top: 16px;
-      right: 16px;
+      top: ${savedPosition.top}px;
+      right: ${savedPosition.right}px;
+      z-index: 999998;
+      cursor: grab;
+      user-select: none;
+      margin: 0;
+      padding: 20px;
+    `;
+
+    // Create drag handle
+    const dragHandle = document.createElement('div');
+    dragHandle.style.cssText = `
+      width: 32px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 3px;
+      margin: 0 auto 8px auto;
+      cursor: grab;
+      transition: background 0.2s ease;
+    `;
+    dragHandle.title = 'Drag to reposition';
+
+    // Add hover effect
+    dragHandle.addEventListener('mouseenter', () => {
+      dragHandle.style.background = 'rgba(255, 255, 255, 0.6)';
+    });
+    dragHandle.addEventListener('mouseleave', () => {
+      dragHandle.style.background = 'rgba(255, 255, 255, 0.4)';
+    });
+
+    // Create content container for React components
+    const shadowContainer = document.createElement('div');
+    shadowContainer.style.cssText = `
       display: flex;
       flex-direction: column;
       gap: 12px;
-      z-index: 999998;
     `;
 
-    shadowRoot.appendChild(shadowContainer);
+    // Make it draggable
+    let isDragging = false;
+    let currentX: number;
+    let currentY: number;
+    let initialX: number;
+    let initialY: number;
+
+    const onMouseDown = (e: MouseEvent) => {
+      // Get initial mouse position
+      initialX = e.clientX;
+      initialY = e.clientY;
+
+      // Get current position
+      const rect = wrapper.getBoundingClientRect();
+      currentX = rect.left;
+      currentY = rect.top;
+
+      isDragging = true;
+      wrapper.style.cursor = 'grabbing';
+      dragHandle.style.background = 'rgba(255, 255, 255, 0.8)';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+
+      e.preventDefault();
+
+      // Calculate new position
+      const deltaX = e.clientX - initialX;
+      const deltaY = e.clientY - initialY;
+
+      const newX = currentX + deltaX;
+      const newY = currentY + deltaY;
+
+      // Update position (keep as left/top for easier calculation)
+      wrapper.style.left = `${newX}px`;
+      wrapper.style.top = `${newY}px`;
+      wrapper.style.right = 'auto'; // Remove right positioning
+    };
+
+    const onMouseUp = async () => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      wrapper.style.cursor = 'grab';
+      dragHandle.style.background = 'rgba(255, 255, 255, 0.4)';
+
+      // Save position to storage
+      const rect = wrapper.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+
+      // Calculate right offset (distance from right edge)
+      const rightOffset = windowWidth - rect.right;
+
+      await chrome.storage.local.set({
+        timerPosition: {
+          top: rect.top,
+          right: rightOffset
+        }
+      });
+
+      console.log('[Timer] Position saved:', { top: rect.top, right: rightOffset });
+    };
+
+    wrapper.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+
+    // Build DOM structure: wrapper > [dragHandle, shadowContainer]
+    wrapper.appendChild(dragHandle);
+    wrapper.appendChild(shadowContainer);
+    shadowRoot.appendChild(wrapper);
     document.body.appendChild(container);
 
     // Create React root
