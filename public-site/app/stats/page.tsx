@@ -1,14 +1,12 @@
 'use client';
 
 import ProtectedRoute from '@/components/ProtectedRoute';
+import StatsOverview from '@/components/StatsOverview';
+import SiteBreakdown from '@/components/SiteBreakdown';
+import SharingToggle from '@/components/SharingToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
-import {
-  buildSiteStats,
-  calculateOverallStats,
-  formatTime,
-  getProgressColor,
-} from '@/lib/statsHelpers';
+import { buildSiteStats, calculateOverallStats } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 export default function StatsPage() {
@@ -99,116 +97,18 @@ export default function StatsPage() {
             </p>
           </div>
 
+          {/* Sharing Toggle */}
+          <div className="mb-8">
+            <SharingToggle />
+          </div>
+
           {/* Overall Stats Cards */}
-          <div className="mb-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                Sites Tracked
-              </div>
-              <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                {overallStats.totalSitesTracked}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                Total Time Spent
-              </div>
-              <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                {formatTime(overallStats.totalTimeSpent)}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                Average Progress
-              </div>
-              <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                {overallStats.averageProgress}%
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                Sites Over Limit
-              </div>
-              <div className="text-3xl font-bold text-red-600 dark:text-red-400">
-                {overallStats.sitesOverLimit}
-              </div>
-            </div>
+          <div className="mb-8">
+            <StatsOverview stats={overallStats} />
           </div>
 
           {/* Sites List */}
-          {sortedStats.length > 0 ? (
-            <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-                <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  Site Breakdown
-                </h2>
-              </div>
-              <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {sortedStats.map((stat, index) => (
-                  <div key={`${stat.siteKey}-${index}`} className="px-6 py-4">
-                    <div className="mb-3 flex items-start justify-between">
-                      <div>
-                        <div className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {stat.displayName}
-                        </div>
-                        <div className="mt-1 flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-                          <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-                            {stat.rule.type}
-                          </span>
-                          {stat.rule.name && <span>{stat.rule.name}</span>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                          {formatTime(stat.timeSpent)} / {formatTime(stat.timeLimit)}
-                        </div>
-                        <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                          {stat.remaining > 0
-                            ? `${formatTime(stat.remaining)} remaining`
-                            : 'Limit reached'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-                      <div
-                        className={`h-full transition-all ${stat.color}`}
-                        style={{ width: `${stat.percentage}%` }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <span
-                        className={`font-medium ${
-                          stat.percentage >= 90
-                            ? 'text-red-600 dark:text-red-400'
-                            : stat.percentage >= 75
-                              ? 'text-orange-600 dark:text-orange-400'
-                              : 'text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        {stat.status}
-                      </span>
-                      <span className="text-zinc-600 dark:text-zinc-400">
-                        {stat.percentage}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-zinc-600 dark:text-zinc-400">
-                No rules configured yet. Set up rules in your Chrome extension to start tracking
-                your usage.
-              </p>
-            </div>
-          )}
+          <SiteBreakdown stats={sortedStats} />
 
           {/* Last Reset Info */}
           {userData.lastDailyResetTimestamp && (
