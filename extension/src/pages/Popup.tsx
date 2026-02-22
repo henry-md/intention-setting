@@ -4,6 +4,7 @@ import Home from './Home';
 import Rules from './Rules';
 import Groups from './Groups';
 import GroupEdit from './GroupEdit';
+import Settings from './Settings';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
@@ -11,7 +12,7 @@ import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { MessageSquare } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
-type TabType = 'home' | 'rules';
+type TabType = 'home' | 'rules' | 'settings';
 type RulesView = 'rules' | 'groups' | 'groupEdit';
 
 /**
@@ -24,6 +25,8 @@ const Popup: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<TabType>('home');
   const [rulesView, setRulesView] = useState<RulesView>('rules');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingFromRules, setEditingFromRules] = useState(false);
+  const [editingRuleIdBeforeGroupEdit, setEditingRuleIdBeforeGroupEdit] = useState<string | null>(null);
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
 
@@ -59,7 +62,10 @@ const Popup: React.FC = () => {
             {/* Tabs */}
             <div className="flex border-b border-gray-700 bg-gray-900">
                 <button
-                  onClick={() => setCurrentTab('home')}
+                  onClick={() => {
+                    setCurrentTab('home');
+                    setEditingRuleIdBeforeGroupEdit(null);
+                  }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     currentTab === 'home'
                       ? 'text-white border-b-2 border-blue-500 bg-gray-800'
@@ -72,6 +78,7 @@ const Popup: React.FC = () => {
                   onClick={() => {
                     setCurrentTab('rules');
                     setRulesView('rules');
+                    // Don't clear editingRuleIdBeforeGroupEdit here - it's needed for Rules view
                   }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     currentTab === 'rules'
@@ -80,6 +87,19 @@ const Popup: React.FC = () => {
                   }`}
                 >
                   Rules
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentTab('settings');
+                    setEditingRuleIdBeforeGroupEdit(null);
+                  }}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    currentTab === 'settings'
+                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Settings
                 </button>
             </div>
 
@@ -91,7 +111,18 @@ const Popup: React.FC = () => {
               {currentTab === 'rules' && rulesView === 'rules' && (
                 <Rules
                   user={user}
-                  onNavigateToGroups={() => setRulesView('groups')}
+                  onNavigateToGroups={() => {
+                    setEditingFromRules(false);
+                    setEditingRuleIdBeforeGroupEdit(null);
+                    setRulesView('groups');
+                  }}
+                  onEditGroup={(groupId, currentlyEditingRuleId) => {
+                    setEditingGroupId(groupId);
+                    setEditingFromRules(true);
+                    setEditingRuleIdBeforeGroupEdit(currentlyEditingRuleId || null);
+                    setRulesView('groupEdit');
+                  }}
+                  initialEditingRuleId={editingRuleIdBeforeGroupEdit}
                 />
               )}
               {currentTab === 'rules' && rulesView === 'groups' && (
@@ -99,9 +130,14 @@ const Popup: React.FC = () => {
                   user={user}
                   onEditGroup={(groupId) => {
                     setEditingGroupId(groupId);
+                    setEditingFromRules(false);
+                    setEditingRuleIdBeforeGroupEdit(null);
                     setRulesView('groupEdit');
                   }}
-                  onBack={() => setRulesView('rules')}
+                  onBack={() => {
+                    setEditingRuleIdBeforeGroupEdit(null);
+                    setRulesView('rules');
+                  }}
                 />
               )}
               {currentTab === 'rules' && rulesView === 'groupEdit' && editingGroupId && (
@@ -110,15 +146,25 @@ const Popup: React.FC = () => {
                   groupId={editingGroupId}
                   onBack={() => {
                     setEditingGroupId(null);
-                    setRulesView('groups');
+                    if (editingFromRules) {
+                      setEditingFromRules(false);
+                      setRulesView('rules');
+                      // Keep editingRuleIdBeforeGroupEdit so Rules can restore the form
+                    } else {
+                      setEditingRuleIdBeforeGroupEdit(null);
+                      setRulesView('groups');
+                    }
                   }}
                 />
+              )}
+              {currentTab === 'settings' && (
+                <Settings user={user} />
               )}
             </div>
           </div>
         </ResizablePanel>
 
-        <ResizableHandle withHandle />
+        {!isAIPanelCollapsed && <ResizableHandle withHandle />}
 
         {/* Bottom panel with LLM */}
         <ResizablePanel

@@ -26,6 +26,7 @@ interface RuleFormProps {
     plusOneDuration?: number
   ) => Promise<void>;
   onCancel: () => void;
+  onEditGroup?: (groupId: string) => void;
 }
 
 /**
@@ -44,6 +45,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   groups,
   onSave,
   onCancel,
+  onEditGroup,
 }) => {
   const [ruleName, setRuleName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
@@ -295,9 +297,19 @@ export const RuleForm: React.FC<RuleFormProps> = ({
               if (!item) return null;
 
               const group = item.type === 'group' ? groups.find(g => g.id === item.id) : null;
+              const isClickableGroup = item.type === 'group' && onEditGroup;
 
               return (
-                <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
+                <div
+                  className={`flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg ${
+                    isClickableGroup ? 'cursor-pointer hover:bg-slate-500 transition-colors' : ''
+                  }`}
+                  onClick={() => {
+                    if (isClickableGroup) {
+                      onEditGroup(item.id);
+                    }
+                  }}
+                >
                   {item.type === 'url' ? (
                     <img
                       src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item.id)}&sz=32`}
@@ -314,7 +326,10 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                     {getTargetDisplayName(item.id, item.type)}
                   </span>
                   <button
-                    onClick={() => handleRemoveTargetFromList(item.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveTargetFromList(item.id);
+                    }}
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     <span className="text-xs">✕</span>

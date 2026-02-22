@@ -22,6 +22,8 @@ import {
 interface RulesProps {
   user: User | null;
   onNavigateToGroups: () => void;
+  onEditGroup: (groupId: string, currentlyEditingRuleId?: string | null) => void;
+  initialEditingRuleId?: string | null;
 }
 
 /**
@@ -29,7 +31,7 @@ interface RulesProps {
  * Manages hard, soft, and session time limits on URLs and groups.
  * Includes Groups modal for managing URL groups.
  */
-const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups }) => {
+const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, initialEditingRuleId }) => {
   const [rules, setRules] = useState<Rule[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,15 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups }) => {
       window.removeEventListener('groupsOrRulesUpdated', handleDataUpdate);
     };
   }, [fetchData]);
+
+  // Handle initialEditingRuleId prop (for returning from group edit)
+  useEffect(() => {
+    // Only auto-open if we have an initialEditingRuleId and the form is not already open
+    if (initialEditingRuleId && rules.length > 0 && !showCreateForm) {
+      setEditingRuleId(initialEditingRuleId);
+      setShowCreateForm(true);
+    }
+  }, [initialEditingRuleId, rules]);
 
   // Save rules to Firestore
   const saveRulesToFirestore = async (newRules: Rule[]) => {
@@ -250,6 +261,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups }) => {
             setShowCreateForm(false);
             setEditingRuleId(null);
           }}
+          onEditGroup={(groupId) => onEditGroup(groupId, editingRuleId)}
         />
       )}
 

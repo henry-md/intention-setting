@@ -2,6 +2,7 @@ import "./firebase-config";
 import { format } from 'date-fns';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
 
 // Test imports
 const testDate = new Date();
@@ -37,9 +38,91 @@ interface SiteRules {
 let activeTimer: ActiveTimerState | null = null;
 let syncIntervalId: NodeJS.Timeout | null = null;
 let secondsCounter = 0;
+let lastTickTimestamp: number | null = null; // Track last tick time for reset boundary detection
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
+
+// ============================================================================
+// DAILY RESET LOGIC
+// ============================================================================
+
+/**
+ * Calculates the most recent reset boundary timestamp for a given time.
+ *
+ * @param timestamp - The timestamp to check
+ * @param resetHour - Hour of day for reset (0-23)
+ * @param resetMinute - Minute of hour for reset (0-59)
+ * @returns The timestamp of the most recent reset boundary
+ */
+function getMostRecentResetBoundary(timestamp: number, resetHour: number, resetMinute: number): number {
+  const date = new Date(timestamp);
+
+  // Create today's reset time
+  const todayReset = new Date(date);
+  todayReset.setHours(resetHour, resetMinute, 0, 0);
+
+  // If current time is before today's reset, the boundary is yesterday's reset
+  if (date < todayReset) {
+    const yesterdayReset = new Date(todayReset);
+    yesterdayReset.setDate(yesterdayReset.getDate() - 1);
+    return yesterdayReset.getTime();
+  }
+
+  // Otherwise, the boundary is today's reset
+  return todayReset.getTime();
+}
+
+/**
+ * Resets all site time tracking to 0.
+ * Called when we cross a daily reset boundary.
+ */
+async function resetAllSiteTime(userId: string | null): Promise<void> {
+  console.log('[DailyReset] ✓✓✓ CROSSING RESET BOUNDARY - Resetting all site time to 0 ✓✓✓');
+
+  try {
+    const storage = await chrome.storage.local.get(['siteTimeData']);
+    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+
+    // Reset all time spent values to 0
+    const resetSiteTimeData: Record<string, SiteTimeData> = {};
+    for (const siteKey in siteTimeData) {
+      resetSiteTimeData[siteKey] = {
+        ...siteTimeData[siteKey],
+        timeSpent: 0,
+        lastUpdated: Date.now()
+      };
+    }
+
+    // Save to chrome storage
+    await chrome.storage.local.set({
+      siteTimeData: resetSiteTimeData,
+      lastResetTimestamp: Date.now()
+    });
+
+    console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
+
+    // Also sync to Firestore if user is logged in
+    if (userId) {
+      const userDocRef = doc(db, 'users', userId);
+      const timeTrackingData: Record<string, SiteTimeData> = {};
+      for (const siteKey in resetSiteTimeData) {
+        timeTrackingData[siteKey] = resetSiteTimeData[siteKey];
+      }
+
+      setDoc(userDocRef, {
+        timeTracking: timeTrackingData,
+        lastDailyResetTimestamp: Date.now()
+      }, { merge: true }).catch((error) => {
+        console.error('[DailyReset] Error syncing reset to Firestore:', error);
+      });
+
+      console.log('[DailyReset] ✓ Reset synced to Firestore');
+    }
+  } catch (error) {
+    console.error('[DailyReset] Error resetting site time:', error);
+  }
+}
 
 // ============================================================================
 // CORE TIMER FUNCTIONS
@@ -92,6 +175,7 @@ async function syncToFirestore(): Promise<void> {
 /**
  * Called every second by the timer interval.
  * This is the ONLY place where time is incremented.
+ * Also checks for daily reset boundary crossing on each tick.
  */
 async function timerTick(): Promise<void> {
   // Capture current timer state at start of tick to avoid race conditions
@@ -103,6 +187,7 @@ async function timerTick(): Promise<void> {
   }
 
   const tickStartTime = Date.now();
+  const currentTickTimestamp = Date.now();
   console.log(`[Timer] Tick for tab ${currentTimer.tabId}, site ${currentTimer.siteKey}, interval ID: ${currentTimer.intervalId}`);
 
   // Verify tab still exists and is active
@@ -129,7 +214,44 @@ async function timerTick(): Promise<void> {
 
   const { siteKey } = currentTimer;
 
-  // Increment time in storage
+  // ============================================================================
+  // CHECK FOR DAILY RESET BOUNDARY CROSSING
+  // ============================================================================
+  if (lastTickTimestamp !== null) {
+    try {
+      const storage = await chrome.storage.local.get(['dailyResetTime', 'user']);
+      const resetTime = storage.dailyResetTime || '03:00';
+      const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+      const userId = storage.user?.uid || null;
+
+      // Calculate the most recent reset boundary for both timestamps
+      const previousBoundary = getMostRecentResetBoundary(lastTickTimestamp, resetHour, resetMinute);
+      const currentBoundary = getMostRecentResetBoundary(currentTickTimestamp, resetHour, resetMinute);
+
+      // If boundaries are different, we crossed a reset point
+      if (previousBoundary !== currentBoundary) {
+        console.log('[Timer] ====== DAILY RESET BOUNDARY CROSSED ======');
+        console.log('[Timer] Previous tick:', formatDateWithTimezone(new Date(lastTickTimestamp)));
+        console.log('[Timer] Current tick:', formatDateWithTimezone(new Date(currentTickTimestamp)));
+        console.log('[Timer] Previous boundary:', formatDateWithTimezone(new Date(previousBoundary)));
+        console.log('[Timer] Current boundary:', formatDateWithTimezone(new Date(currentBoundary)));
+
+        // Reset all site time immediately
+        await resetAllSiteTime(userId);
+
+        console.log('[Timer] ============================================');
+      }
+    } catch (error) {
+      console.error('[Timer] Error checking reset boundary:', error);
+    }
+  }
+
+  // Update last tick timestamp
+  lastTickTimestamp = currentTickTimestamp;
+
+  // ============================================================================
+  // INCREMENT TIME
+  // ============================================================================
   const storage = await chrome.storage.local.get(['siteTimeData']);
   const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
 
@@ -172,6 +294,7 @@ function stopCurrentTimer(): void {
   }
 
   activeTimer = null;
+  lastTickTimestamp = null; // Reset tick timestamp
 
   // Clear sync interval (no timers running)
   if (syncIntervalId) {
@@ -243,6 +366,9 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
     clearInterval(activeTimer.intervalId);
   }
 
+  // Initialize last tick timestamp for reset boundary detection
+  lastTickTimestamp = Date.now();
+
   // Create timer state with NEW interval
   activeTimer = {
     tabId,
@@ -256,6 +382,21 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
   // Start Firestore sync interval (only ONE for entire extension)
   if (!syncIntervalId) {
     syncIntervalId = setInterval(() => syncToFirestore(), FIRESTORE_SYNC_INTERVAL);
+  }
+
+  // Log next reset time for debugging
+  try {
+    const resetStorage = await chrome.storage.local.get(['dailyResetTime']);
+    const resetTime = resetStorage.dailyResetTime || '03:00';
+    const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+    const now = new Date();
+    const todayReset = new Date();
+    todayReset.setHours(resetHour, resetMinute, 0, 0);
+    const nextReset = now >= todayReset ? new Date(todayReset.getTime() + 24 * 60 * 60 * 1000) : todayReset;
+    const tzAbbr = getTimezoneAbbreviation();
+    console.log(`[Timer] Next daily reset: ${formatDateWithTimezone(nextReset)} (${tzAbbr})`);
+  } catch (error) {
+    console.log('[Timer] Could not calculate next reset time:', error);
   }
 
   console.log(`[Timer] ✓ Started timer for tab ${tabId}, site ${siteKey}`);
