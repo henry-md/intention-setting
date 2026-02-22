@@ -52,16 +52,22 @@ export default function Home() {
               </div>
             </div>
             <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-              You are successfully signed in with Google OAuth! This is a demonstration of
-              Firebase Authentication integration in a Next.js app.
+              You are successfully signed in! View your usage statistics to see how you're doing
+              with your time limits.
             </p>
-            <div className="mt-4 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-              <h3 className="font-semibold mb-2 text-zinc-900 dark:text-zinc-50">User Details:</h3>
-              <ul className="space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
-                <li>UID: {user.uid}</li>
-                <li>Email Verified: {user.emailVerified ? 'Yes' : 'No'}</li>
-                <li>Provider: Google</li>
-              </ul>
+            <div className="flex gap-4">
+              <Link
+                href="/stats"
+                className="flex h-12 items-center justify-center gap-2 rounded-full bg-zinc-900 px-8 text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                View Statistics
+              </Link>
+              <Link
+                href="/dashboard"
+                className="flex h-12 items-center justify-center gap-2 rounded-full border border-zinc-300 px-8 text-zinc-900 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-800"
+              >
+                Dashboard
+              </Link>
             </div>
           </div>
         ) : (
@@ -73,12 +79,14 @@ export default function Home() {
               This Next.js app demonstrates Firebase Authentication with Google OAuth.
               Sign in to see your profile information.
             </p>
-            <Link
-              href="/login"
-              className="flex h-12 items-center justify-center gap-2 rounded-full bg-zinc-900 px-8 text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Sign in with Google
-            </Link>
+            <div className="flex gap-4">
+              <Link
+                href="/login"
+                className="flex h-12 items-center justify-center gap-2 rounded-full bg-zinc-900 px-8 text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Sign in with Google
+              </Link>
+            </div>
           </div>
         )}
       </main>

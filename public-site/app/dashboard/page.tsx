@@ -12,9 +12,25 @@ export default function DashboardPage() {
       <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              Intention Setter
-            </Link>
+            <div className="flex items-center gap-6">
+              <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+                Intention Setter
+              </Link>
+              <nav className="flex gap-4">
+                <Link
+                  href="/dashboard"
+                  className="text-sm font-medium text-zinc-900 dark:text-zinc-50"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/stats"
+                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                >
+                  Statistics
+                </Link>
+              </nav>
+            </div>
             <button
               onClick={signOut}
               className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
