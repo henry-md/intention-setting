@@ -7,9 +7,9 @@ import { getNormalizedHostname } from './urlNormalization';
 
 interface SiteRuleData {
   ruleType: 'hard' | 'soft' | 'session';
-  timeLimit: number;
+  timeLimit: number; // in seconds (converted from Rule.timeLimit which is in minutes)
   plusOnes?: number;
-  plusOneDuration?: number;
+  plusOneDuration?: number; // in seconds
   ruleId: string;
 }
 
@@ -19,8 +19,8 @@ interface SiteRuleData {
  *
  * Stores data as a map of normalized hostnames to rule data:
  * {
- *   "snapchat.com": { ruleType: "hard", timeLimit: 60, ruleId: "..." },
- *   "instagram.com": { ruleType: "soft", timeLimit: 90, plusOnes: 3, ... }
+ *   "snapchat.com": { ruleType: "hard", timeLimit: 3600, ruleId: "..." },  // timeLimit in seconds (converted from minutes)
+ *   "instagram.com": { ruleType: "soft", timeLimit: 5400, plusOnes: 3, ... }
  * }
  */
 export async function syncRulesToStorage(userId: string): Promise<void> {
@@ -66,7 +66,7 @@ export async function syncRulesToStorage(userId: string): Promise<void> {
         if (!siteRules[hostname]) {
           siteRules[hostname] = {
             ruleType: rule.type,
-            timeLimit: rule.timeLimit,
+            timeLimit: rule.timeLimit * 60, // Convert minutes to seconds for content script
             ruleId: rule.id
           };
 
