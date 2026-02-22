@@ -78,30 +78,31 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
       <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
         <div>
           <h4 className="text-sm font-medium text-gray-200 mb-2">Daily Reset Time</h4>
-          <p className="text-xs text-gray-400 mb-2">
+          <p className="text-xs text-gray-400 mb-4">
             Set the time when your daily time tracking should reset. All time limits are "per day"
             and will reset at this time.
           </p>
-          {timezoneAbbr && (
-            <p className="text-xs text-blue-400 mb-4">
-              Your timezone: <span className="font-mono font-medium">{timezoneAbbr}</span>
-            </p>
-          )}
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
+        <div className="flex items-center gap-3">
+          <div>
             <label htmlFor="reset-time" className="text-sm text-gray-300 mb-1 block">
-              Reset at (your local time):
+              Reset at:
             </label>
             <input
               id="reset-time"
               type="time"
               value={resetTime}
               onChange={(e) => setResetTime(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
+              className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
             />
           </div>
+
+          {timezoneAbbr && (
+            <div className="text-gray-300 font-medium mt-6">
+              {timezoneAbbr}
+            </div>
+          )}
 
           <button
             onClick={handleSave}
@@ -112,8 +113,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           </button>
         </div>
 
-        <div className="text-xs text-gray-500 mt-2">
-          Example: Setting "03:00" means your daily limits reset at 3:00 AM {timezoneAbbr} each day.
+        <div className="text-xs text-gray-500">
+          Example: Setting "03:00" means your daily limits reset at 3:00 AM each day.
         </div>
       </div>
 

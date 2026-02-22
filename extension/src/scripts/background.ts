@@ -152,20 +152,18 @@ async function syncToFirestore(): Promise<void> {
       return;
     }
 
-    // Send to Firestore using existing updateTimeTracking handler
-    // Fire-and-forget - don't await since we don't need the response
-    chrome.runtime.sendMessage({
-      action: 'updateTimeTracking',
-      userId: user.uid,
-      siteKey: siteKey,
-      timeData: siteTimeData[siteKey]
-    }).catch(error => {
-      // Service worker might be restarting - this is expected occasionally
-      console.log('[Timer] Firestore sync message failed (will retry):', error.message);
-    });
+    // Write directly to Firestore
+    const userDocRef = doc(db, 'users', user.uid);
+    console.log(`[Timer] Writing to Firestore: users/${user.uid}/timeTracking/${siteKey}`, siteTimeData[siteKey]);
+
+    await setDoc(userDocRef, {
+      timeTracking: {
+        [siteKey]: siteTimeData[siteKey]
+      }
+    }, { merge: true });
 
     secondsCounter = 0;
-    console.log('[Timer] ✓ Firestore sync initiated');
+    console.log('[Timer] ✓ Firestore sync complete - data written successfully');
   } catch (error) {
     console.error('[Timer] Firestore sync failed (will retry):', error);
     // Don't reset counter - will retry on next interval
@@ -499,29 +497,6 @@ chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
     });
   }
 
-  // Handle time tracking updates to Firestore
-  if (message.action === 'updateTimeTracking') {
-    const { userId, siteKey, timeData } = message;
-
-    console.log('Updating time tracking:', { userId, siteKey, timeData });
-
-    // Update Firestore
-    const userDocRef = doc(db, 'users', userId);
-
-    setDoc(userDocRef, {
-      timeTracking: {
-        [siteKey]: timeData
-      }
-    }, { merge: true })
-      .then(() => {
-        console.log('Time tracking updated in Firestore');
-      })
-      .catch((error) => {
-        console.error('Error updating time tracking:', error);
-      });
-
-    return false; // No async response needed
-  }
 });
 
 // ============================================================================
