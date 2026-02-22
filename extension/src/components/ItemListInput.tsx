@@ -1,6 +1,6 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
-import { getNormalizedHostname } from '../utils/urlNormalization';
+import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 
 interface ItemListInputProps {
   items: string[];
@@ -44,15 +44,15 @@ export const ItemListInput: React.FC<ItemListInputProps> = ({
   const defaultRenderItem = (item: string) => (
     <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
       <img
-        src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item)}&sz=32`}
+        src={getFaviconUrl(item)}
         alt=""
         className="w-4 h-4"
         onError={(e) => {
-          e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+          e.currentTarget.src = FAVICON_FALLBACK;
         }}
       />
       <span className="flex-1 text-white text-sm">
-        {item.replace(/^https?:\/\//, '')}
+        {formatUrlForDisplay(item)}
       </span>
       <button
         onClick={() => onRemoveItem(item)}

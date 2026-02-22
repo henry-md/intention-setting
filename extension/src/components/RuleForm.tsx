@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { Group } from '../types/Group';
 import type { RuleTarget } from '../types/Rule';
-import { getNormalizedHostname, normalizeUrl } from '../utils/urlNormalization';
+import { normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import { expandTargetsToUrls, isUrlInTargets } from '../utils/ruleHelpers';
 import { ItemListInput } from './ItemListInput';
 import { GroupIcons } from './GroupIcons';
+import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 
 interface RuleFormProps {
   ruleId?: string; // If provided, we're editing; if not, we're creating
@@ -179,7 +180,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   // Get display name for a target
   const getTargetDisplayName = (targetId: string, targetType: 'url' | 'group'): string => {
     if (targetType === 'url') {
-      return targetId.replace(/^https?:\/\//, '');
+      return formatUrlForDisplay(targetId);
     } else {
       const group = groups.find(g => g.id === targetId);
       return group?.name || 'Unknown group';
@@ -312,11 +313,11 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                 >
                   {item.type === 'url' ? (
                     <img
-                      src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item.id)}&sz=32`}
+                      src={getFaviconUrl(item.id)}
                       alt=""
                       className="w-4 h-4"
                       onError={(e) => {
-                        e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                        e.currentTarget.src = FAVICON_FALLBACK;
                       }}
                     />
                   ) : group ? (
@@ -397,7 +398,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                     Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
                   </p>
                   <p className="text-yellow-300 text-xs mt-1">
-                    You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
+                    You entered: {formatUrlForDisplay(typosquattingWarning.url)}
                   </p>
                 </div>
               </div>

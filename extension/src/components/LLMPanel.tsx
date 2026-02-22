@@ -8,6 +8,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { formatUrlForDisplay } from '../utils/urlDisplay';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -374,7 +375,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       if (groups.length > 0) {
         result += '**GROUPS:**\n';
         groups.forEach((group, index) => {
-          const urls = group.items.map(url => url.replace(/^https?:\/\//, '')).join(', ');
+          const urls = group.items.map(url => formatUrlForDisplay(url)).join(', ');
           result += `${index + 1}. ${group.name}: ${urls}\n`;
         });
         result += '\n';
@@ -392,7 +393,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
           const targetNames: string[] = [];
           rule.targets.forEach(target => {
             if (target.type === 'url') {
-              targetNames.push(target.id.replace(/^https?:\/\//, ''));
+              targetNames.push(formatUrlForDisplay(target.id));
             } else {
               const group = groups.find(g => g.id === target.id);
               if (group) {

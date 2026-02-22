@@ -7,7 +7,7 @@ interface TimerBadgeProps {
 }
 
 const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
-  const [displayMode, setDisplayMode] = useState<'complex' | 'simple' | 'compact'>('complex');
+  const [displayMode, setDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
   const percentage = timeLimit > 0 ? (timeSpent / timeLimit) * 100 : 0;
   const isOverLimit = timeSpent >= timeLimit;
 

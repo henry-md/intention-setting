@@ -5,6 +5,7 @@ import { normalizeUrl, getNormalizedHostname } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import { ReorderList } from './ui/reorder-list';
+import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 
 interface GroupFormProps {
   groupId?: string; // If provided, we're editing; if not, we're creating
@@ -297,15 +298,15 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                   className="flex items-center gap-2 py-2 px-3"
                 >
                   <img
-                    src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item)}&sz=32`}
+                    src={getFaviconUrl(item)}
                     alt=""
                     className="w-4 h-4"
                     onError={(e) => {
-                      e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                      e.currentTarget.src = FAVICON_FALLBACK;
                     }}
                   />
                   <span className="flex-1 text-white text-sm">
-                    {item.replace(/^https?:\/\//, '')}
+                    {formatUrlForDisplay(item)}
                   </span>
                   <button
                     onClick={() => handleRemoveItem(item)}
@@ -321,15 +322,15 @@ export const GroupForm: React.FC<GroupFormProps> = ({
               {items.map((item, index) => (
                 <div key={index} className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
                   <img
-                    src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(item)}&sz=32`}
+                    src={getFaviconUrl(item)}
                     alt=""
                     className="w-4 h-4"
                     onError={(e) => {
-                      e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                      e.currentTarget.src = FAVICON_FALLBACK;
                     }}
                   />
                   <span className="flex-1 text-white text-sm">
-                    {item.replace(/^https?:\/\//, '')}
+                    {formatUrlForDisplay(item)}
                   </span>
                   <button
                     onClick={() => handleRemoveItem(item)}
@@ -361,7 +362,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                   Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
                 </p>
                 <p className="text-yellow-300 text-xs mt-1">
-                  You entered: {typosquattingWarning.url.replace(/^https?:\/\//, '')}
+                  You entered: {formatUrlForDisplay(typosquattingWarning.url)}
                 </p>
               </div>
             </div>

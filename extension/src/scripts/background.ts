@@ -265,6 +265,39 @@ async function timerTick(): Promise<void> {
 
     // Increment Firestore sync counter
     secondsCounter += 1;
+
+    // ============================================================================
+    // CHECK TIME LIMIT AND REDIRECT IF EXCEEDED
+    // ============================================================================
+    const { timeSpent, timeLimit } = siteTimeData[siteKey];
+    if (timeLimit > 0 && timeSpent >= timeLimit) {
+      console.log(`[Timer] ⚠️ Time limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
+
+      // Get redirect URLs from storage
+      const redirectStorage = await chrome.storage.local.get(['redirectUrls']);
+      const redirectUrls: string[] = redirectStorage.redirectUrls || [];
+
+      if (redirectUrls.length > 0) {
+        // Pick a random redirect URL
+        const randomIndex = Math.floor(Math.random() * redirectUrls.length);
+        const redirectUrl = redirectUrls[randomIndex];
+
+        console.log(`[Timer] Redirecting to: ${redirectUrl}`);
+
+        // Stop the timer
+        stopCurrentTimer();
+
+        // Redirect the tab
+        try {
+          await chrome.tabs.update(currentTimer.tabId, { url: redirectUrl });
+          console.log(`[Timer] ✓ Redirected tab ${currentTimer.tabId} to ${redirectUrl}`);
+        } catch (error) {
+          console.error('[Timer] Failed to redirect tab:', error);
+        }
+      } else {
+        console.log('[Timer] No redirect URLs configured - time limit exceeded but not redirecting');
+      }
+    }
   } else {
     console.error(`[Timer] No time data for ${siteKey}!`);
   }

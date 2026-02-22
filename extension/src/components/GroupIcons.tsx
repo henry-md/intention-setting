@@ -1,6 +1,6 @@
 import React from 'react';
-import { getNormalizedHostname } from '../utils/urlNormalization';
 import type { Group } from '../types/Group';
+import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 
 interface GroupIconsProps {
   group: Group;
@@ -37,11 +37,11 @@ export const GroupIcons: React.FC<GroupIconsProps> = ({
       {displayUrls.map((url, idx) => (
         <img
           key={idx}
-          src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(url)}&sz=32`}
+          src={getFaviconUrl(url)}
           alt=""
           className={sizeClasses[iconSize]}
           onError={(e) => {
-            e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+            e.currentTarget.src = FAVICON_FALLBACK;
           }}
         />
       ))}

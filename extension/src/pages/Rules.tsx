@@ -5,11 +5,11 @@ import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Rule, RuleTarget } from '../types/Rule';
 import type { Group } from '../types/Group';
-import { getNormalizedHostname } from '../utils/urlNormalization';
 import Spinner from '../components/Spinner';
 import { RuleForm } from '../components/RuleForm';
 import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 import {
   Dialog,
   DialogContent,
@@ -333,11 +333,11 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                               {urlTargets.map((target, idx) => (
                                 <img
                                   key={idx}
-                                  src={`https://www.google.com/s2/favicons?domain=${getNormalizedHostname(target.id)}&sz=32`}
+                                  src={getFaviconUrl(target.id)}
                                   alt=""
                                   className="w-4 h-4"
                                   onError={(e) => {
-                                    e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="%23666"/></svg>';
+                                    e.currentTarget.src = FAVICON_FALLBACK;
                                   }}
                                 />
                               ))}
