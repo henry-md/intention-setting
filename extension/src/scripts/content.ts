@@ -156,13 +156,14 @@ const checkAndShowIntentionPopup = async () => {
     const ruleData = siteRules[currentDomain];
 
     if (ruleData) {
-      // Check if we've already visited this site today (after 4am)
-      const result = await safeStorageGet(['siteTimeData']);
+      // Check if we've already visited this site in the current reset window
+      const result = await safeStorageGet(['siteTimeData', 'dailyResetTime']);
       if (!result) return; // Extension reloaded
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
+      const dailyResetTime = result.dailyResetTime;
 
-      const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated);
+      const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated, dailyResetTime);
 
       if (hasVisitedToday) {
         // Same day revisit - for hard/soft rules, just show the timer badge
@@ -215,27 +216,50 @@ const getCurrentSiteKey = (): string => {
   return normalizeHostname(hostname);
 };
 
-// Get the start of the current "day" (4am today or 4am yesterday if before 4am)
-const getDayStart = (): number => {
-  const now = new Date();
-  const currentHour = now.getHours();
+/**
+ * Calculates the most recent reset boundary for a timestamp.
+ */
+const getMostRecentResetBoundary = (timestamp: number, resetHour: number, resetMinute: number): number => {
+  const date = new Date(timestamp);
+  const todayReset = new Date(date);
+  todayReset.setHours(resetHour, resetMinute, 0, 0);
 
-  // Create a date for 4am today
-  const dayStart = new Date(now);
-  dayStart.setHours(4, 0, 0, 0);
-
-  // If it's currently before 4am, use 4am yesterday as the day start
-  if (currentHour < 4) {
-    dayStart.setDate(dayStart.getDate() - 1);
+  if (date < todayReset) {
+    const yesterdayReset = new Date(todayReset);
+    yesterdayReset.setDate(yesterdayReset.getDate() - 1);
+    return yesterdayReset.getTime();
   }
 
-  return dayStart.getTime();
+  return todayReset.getTime();
 };
 
-// Check if lastUpdated was in the current day (after 4am)
-const isNewDay = (lastUpdated: number): boolean => {
-  const dayStart = getDayStart();
-  return lastUpdated < dayStart;
+const parseResetTime = (resetTime: unknown): { resetHour: number; resetMinute: number } => {
+  const fallback = { resetHour: 3, resetMinute: 0 };
+  if (typeof resetTime !== 'string') return fallback;
+
+  const [hourStr, minuteStr] = resetTime.split(':');
+  const resetHour = Number(hourStr);
+  const resetMinute = Number(minuteStr);
+
+  if (
+    Number.isNaN(resetHour) ||
+    Number.isNaN(resetMinute) ||
+    resetHour < 0 ||
+    resetHour > 23 ||
+    resetMinute < 0 ||
+    resetMinute > 59
+  ) {
+    return fallback;
+  }
+
+  return { resetHour, resetMinute };
+};
+
+// Check if lastUpdated falls before the current reset boundary.
+const isNewDay = (lastUpdated: number, resetTime: unknown): boolean => {
+  const { resetHour, resetMinute } = parseResetTime(resetTime);
+  const currentBoundary = getMostRecentResetBoundary(Date.now(), resetHour, resetMinute);
+  return lastUpdated < currentBoundary;
 };
 
 // Start tracking time for current site (simplified - notifies background worker)
