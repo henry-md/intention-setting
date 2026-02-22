@@ -1,6 +1,7 @@
 import "./firebase-config";
 import { format } from 'date-fns';
 import { doc, setDoc } from 'firebase/firestore';
+import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 import { db } from '../utils/firebase';
 import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
 
@@ -218,7 +219,9 @@ async function timerTick(): Promise<void> {
   if (lastTickTimestamp !== null) {
     try {
       const storage = await chrome.storage.local.get(['dailyResetTime', 'user']);
-      const resetTime = storage.dailyResetTime || '03:00';
+      const resetTime = ALLOW_CUSTOM_RESET_TIME
+        ? storage.dailyResetTime || DEFAULT_DAILY_RESET_TIME
+        : DEFAULT_DAILY_RESET_TIME;
       const [resetHour, resetMinute] = resetTime.split(':').map(Number);
       const userId = storage.user?.uid || null;
 
@@ -418,7 +421,9 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
   // Log next reset time for debugging
   try {
     const resetStorage = await chrome.storage.local.get(['dailyResetTime']);
-    const resetTime = resetStorage.dailyResetTime || '03:00';
+    const resetTime = ALLOW_CUSTOM_RESET_TIME
+      ? resetStorage.dailyResetTime || DEFAULT_DAILY_RESET_TIME
+      : DEFAULT_DAILY_RESET_TIME;
     const [resetHour, resetMinute] = resetTime.split(':').map(Number);
     const now = new Date();
     const todayReset = new Date();

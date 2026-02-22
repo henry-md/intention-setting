@@ -3,6 +3,7 @@ import type { User } from '../types/User';
 import Spinner from '../components/Spinner';
 import { getTimezoneInfo } from '../utils/timezone';
 import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
+import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 
 interface SettingsProps {
   user: User | null;
@@ -13,7 +14,7 @@ interface SettingsProps {
  * Child of Popup.tsx, renders inside the Settings tab.
  */
 const Settings: React.FC<SettingsProps> = ({ user }) => {
-  const [resetTime, setResetTime] = useState<string>('03:00');
+  const [resetTime, setResetTime] = useState<string>(DEFAULT_DAILY_RESET_TIME);
   const [timezone, setTimezone] = useState<string>('');
   const [timezoneAbbr, setTimezoneAbbr] = useState<string>('');
   const [timerDisplayMode, setTimerDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
@@ -31,12 +32,16 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
 
   // Load current settings from storage
   useEffect(() => {
-    chrome.storage.local.get(['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'redirectUrls'], (result) => {
-      if (result.dailyResetTime) {
+    const keys = ALLOW_CUSTOM_RESET_TIME
+      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'redirectUrls']
+      : ['timerDisplayMode', 'simpleTimerDisplay', 'redirectUrls'];
+
+    chrome.storage.local.get(keys, (result) => {
+      if (ALLOW_CUSTOM_RESET_TIME && result.dailyResetTime) {
         setResetTime(result.dailyResetTime);
       }
       // If timezone was stored, use it; otherwise use detected timezone
-      if (result.dailyResetTimezone) {
+      if (ALLOW_CUSTOM_RESET_TIME && result.dailyResetTimezone) {
         setTimezone(result.dailyResetTimezone);
       }
       // Load timer display mode with backwards compatibility
@@ -119,49 +124,50 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         <h3 className="text-lg font-semibold">Settings</h3>
       </div>
 
-      {/* Daily Reset Time Setting */}
-      <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
-        <div>
-          <h4 className="text-sm font-medium text-gray-200 mb-2">Daily Reset Time</h4>
-          <p className="text-xs text-gray-400 mb-4">
-            Set the time when your daily time tracking should reset. All time limits are "per day"
-            and will reset at this time.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+      {ALLOW_CUSTOM_RESET_TIME && (
+        <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
           <div>
-            <label htmlFor="reset-time" className="text-sm text-gray-300 mb-1 block">
-              Reset at:
-            </label>
-            <input
-              id="reset-time"
-              type="time"
-              value={resetTime}
-              onChange={(e) => setResetTime(e.target.value)}
-              className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
-            />
+            <h4 className="text-sm font-medium text-gray-200 mb-2">Daily Reset Time</h4>
+            <p className="text-xs text-gray-400 mb-4">
+              Set the time when your daily time tracking should reset. All time limits are "per day"
+              and will reset at this time.
+            </p>
           </div>
 
-          {timezoneAbbr && (
-            <div className="text-gray-300 font-medium mt-6">
-              {timezoneAbbr}
+          <div className="flex items-center gap-3">
+            <div>
+              <label htmlFor="reset-time" className="text-sm text-gray-300 mb-1 block">
+                Reset at:
+              </label>
+              <input
+                id="reset-time"
+                type="time"
+                value={resetTime}
+                onChange={(e) => setResetTime(e.target.value)}
+                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
+              />
             </div>
-          )}
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="purple-button mt-6"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+            {timezoneAbbr && (
+              <div className="text-gray-300 font-medium mt-6">
+                {timezoneAbbr}
+              </div>
+            )}
 
-        <div className="text-xs text-gray-500">
-          Example: Setting "03:00" means your daily limits reset at 3:00 AM each day.
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="purple-button mt-6"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            {`Example: Setting "${DEFAULT_DAILY_RESET_TIME}" means your daily limits reset at that time each day.`}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Timer Display Setting */}
       <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">

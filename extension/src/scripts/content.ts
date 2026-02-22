@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import IntentionPopup from '../components/IntentionPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
+import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 import { normalizeHostname } from '../utils/urlNormalization';
 
 /** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
@@ -157,11 +158,13 @@ const checkAndShowIntentionPopup = async () => {
 
     if (ruleData) {
       // Check if we've already visited this site in the current reset window
-      const result = await safeStorageGet(['siteTimeData', 'dailyResetTime']);
+      const result = await safeStorageGet(
+        ALLOW_CUSTOM_RESET_TIME ? ['siteTimeData', 'dailyResetTime'] : ['siteTimeData']
+      );
       if (!result) return; // Extension reloaded
       const siteTimeData = result.siteTimeData || {};
       const siteData = siteTimeData[currentDomain];
-      const dailyResetTime = result.dailyResetTime;
+      const dailyResetTime = ALLOW_CUSTOM_RESET_TIME ? result.dailyResetTime : DEFAULT_DAILY_RESET_TIME;
 
       const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated, dailyResetTime);
 
@@ -234,7 +237,8 @@ const getMostRecentResetBoundary = (timestamp: number, resetHour: number, resetM
 };
 
 const parseResetTime = (resetTime: unknown): { resetHour: number; resetMinute: number } => {
-  const fallback = { resetHour: 3, resetMinute: 0 };
+  const [fallbackHour, fallbackMinute] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
+  const fallback = { resetHour: fallbackHour, resetMinute: fallbackMinute };
   if (typeof resetTime !== 'string') return fallback;
 
   const [hourStr, minuteStr] = resetTime.split(':');
