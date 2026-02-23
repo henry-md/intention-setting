@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -44,16 +44,16 @@ export interface UserData {
 export function useUserData() {
   const { user } = useAuth();
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [hasUserDocument, setHasUserDocument] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!user?.uid) {
-      setUserData(null);
-      setLoading(false);
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- start loading immediately for a new authenticated user
     setLoading(true);
 
     // Set up real-time listener
@@ -62,6 +62,7 @@ export function useUserData() {
       userDocRef,
       (docSnapshot) => {
         if (docSnapshot.exists()) {
+          setHasUserDocument(true);
           const data = docSnapshot.data();
           setUserData({
             rules: data.rules || [],
@@ -70,6 +71,7 @@ export function useUserData() {
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {
+          setHasUserDocument(false);
           setUserData({
             rules: [],
             groups: [],
@@ -82,6 +84,7 @@ export function useUserData() {
       (err) => {
         console.error('Error fetching user data:', err);
         setError(err as Error);
+        setHasUserDocument(null);
         setLoading(false);
       }
     );
@@ -89,5 +92,9 @@ export function useUserData() {
     return () => unsubscribe();
   }, [user?.uid]);
 
-  return { userData, loading, error };
+  if (!user?.uid) {
+    return { userData: null, hasUserDocument: null, loading: false, error: null };
+  }
+
+  return { userData, hasUserDocument, loading, error };
 }

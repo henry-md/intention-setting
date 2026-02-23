@@ -1,16 +1,48 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import RuleProgressList from '@/components/RuleProgressList';
 import SharingToggle from '@/components/SharingToggle';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
 import { buildRuleProgressStats } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
+type ThemeMode = 'light' | 'dark';
+const THEME_STORAGE_KEY = 'intention-site-theme';
+
 export default function StatsPage() {
   const { user, signOut } = useAuth();
-  const { userData, loading, error } = useUserData();
+  const { userData, hasUserDocument, loading, error } = useUserData();
+  const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'dark';
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', themeMode === 'dark');
+  }, [themeMode]);
+
+  const handleThemeToggle = () => {
+    const nextTheme: ThemeMode = themeMode === 'dark' ? 'light' : 'dark';
+    setThemeMode(nextTheme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+  };
 
   if (loading) {
     return (
@@ -77,6 +109,30 @@ export default function StatsPage() {
             </div>
             <div className="flex items-center gap-3">
               <button
+                onClick={handleThemeToggle}
+                aria-label={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                {themeMode === 'dark' ? (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M12 2v2" />
+                    <path d="M12 20v2" />
+                    <path d="m4.93 4.93 1.41 1.41" />
+                    <path d="m17.66 17.66 1.41 1.41" />
+                    <path d="M2 12h2" />
+                    <path d="M20 12h2" />
+                    <path d="m6.34 17.66-1.41 1.41" />
+                    <path d="m19.07 4.93-1.41 1.41" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 3a7.5 7.5 0 1 0 9 9A9 9 0 1 1 12 3z" />
+                  </svg>
+                )}
+              </button>
+              <button
                 onClick={signOut}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
               >
@@ -104,20 +160,61 @@ export default function StatsPage() {
             </p>
           </div>
 
-          {/* Sharing Toggle */}
-          <div className="mb-8">
-            <SharingToggle />
-          </div>
-
-          {/* Rule Progress List */}
-          <RuleProgressList rules={ruleStats} />
-
-          {/* Last Reset Info */}
-          {userData.lastDailyResetTimestamp && (
-            <div className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
-              Last daily reset:{' '}
-              {new Date(userData.lastDailyResetTimestamp).toLocaleString()}
+          {hasUserDocument === false ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="w-full max-w-2xl rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+                <h2 className="mb-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  No Synced Data Yet
+                </h2>
+                <p className="mb-6 text-zinc-600 dark:text-zinc-400">
+                  We could not find usage data for this account yet. Download the Chrome extension that syncs data to this page{' '}
+                  <AlertDialog open={showPendingReviewModal} onOpenChange={setShowPendingReviewModal}>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-blue-600 underline transition-colors hover:text-blue-500 dark:text-blue-400"
+                      >
+                        here
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Hod up..
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          The Chrome extension is currently pending review.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction>
+                          OK
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>.
+                </p>
+              </div>
             </div>
+          ) : (
+            <>
+              {/* Sharing Toggle */}
+              <div className="mb-8">
+                <SharingToggle />
+              </div>
+
+              {/* Rule Progress List */}
+              <RuleProgressList rules={ruleStats} />
+
+              {/* Last Reset Info */}
+              {userData.lastDailyResetTimestamp && (
+                <div className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+                  Last daily reset:{' '}
+                  {new Date(userData.lastDailyResetTimestamp).toLocaleString()}
+                </div>
+              )}
+            </>
           )}
         </main>
 
