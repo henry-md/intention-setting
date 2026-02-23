@@ -308,13 +308,52 @@ const startTimeTracking = async (timeLimit: number) => {
 const getDebugInfo = async () => {
   const isVisible = !document.hidden && document.visibilityState === 'visible';
   const isStale = !isExtensionContextValid();
+  const normalizedHostname = currentSiteKey || getCurrentSiteKey();
+  const storage = await safeStorageGet(['siteRuleIds', 'compiledRules', 'siteTimeData']);
+  const siteRuleIds: Record<string, string[]> = storage?.siteRuleIds || {};
+  const compiledRules: Record<string, {
+    ruleType: 'hard' | 'soft' | 'session';
+    timeLimit: number;
+    siteKeys: string[];
+  }> = storage?.compiledRules || {};
+  const siteTimeData: Record<string, { timeSpent: number }> = storage?.siteTimeData || {};
+
+  const applicableLimits = (siteRuleIds[normalizedHostname] || [])
+    .map((ruleId) => {
+      const rule = compiledRules[ruleId];
+      if (!rule) return null;
+      const siteBreakdown = rule.siteKeys
+        .map((siteKey) => ({
+          siteKey,
+          timeSpent: siteTimeData[siteKey]?.timeSpent || 0
+        }))
+        .sort((a, b) => b.timeSpent - a.timeSpent);
+      const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);
+      return {
+        ruleId,
+        ruleType: rule.ruleType,
+        timeLimit: rule.timeLimit,
+        timeSpent,
+        siteBreakdown,
+      };
+    })
+    .filter((rule): rule is {
+      ruleId: string;
+      ruleType: 'hard' | 'soft' | 'session';
+      timeLimit: number;
+      timeSpent: number;
+      siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
+    } => rule !== null)
+    .sort((a, b) => b.timeSpent - a.timeSpent);
+
   return {
     currentUrl: window.location.href,
-    normalizedHostname: currentSiteKey || getCurrentSiteKey(),
+    normalizedHostname,
     instanceId: 'N/A (managed by background)',
     isActiveTimer: false, // Timer managed by background worker now
     isTabVisible: isVisible,
-    isStaleTab: isStale
+    isStaleTab: isStale,
+    applicableLimits
   };
 };
 
@@ -604,9 +643,15 @@ chrome.storage.onChanged.addListener(async (changes) => {
     // Site rules updated, could trigger re-check if needed
   }
 
+  const shouldRefreshForDebug = !!(
+    changes.siteRuleIds ||
+    changes.compiledRules ||
+    changes.ruleUsageData
+  );
+
   // If siteTimeData changes and we're not the active tab, update our display
-  if (changes.siteTimeData && currentSiteKey && !document.hidden) {
-    const newData = changes.siteTimeData.newValue || {};
+  if ((changes.siteTimeData || shouldRefreshForDebug) && currentSiteKey && !document.hidden) {
+    const newData = changes.siteTimeData?.newValue || {};
     const siteData = newData[currentSiteKey];
     if (siteData && containerRoot) {
       await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);

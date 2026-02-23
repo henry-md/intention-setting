@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { doc, setDoc } from 'firebase/firestore';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 import { db } from '../utils/firebase';
+import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
 
 // Test imports
@@ -36,6 +37,27 @@ interface SiteRules {
   };
 }
 
+interface SiteRuleIds {
+  [siteKey: string]: string[];
+}
+
+interface CompiledRules {
+  [ruleId: string]: {
+    ruleType: 'hard' | 'soft' | 'session';
+    timeLimit: number;
+    plusOnes?: number;
+    plusOneDuration?: number;
+    siteKeys: string[];
+  };
+}
+
+interface RuleUsageData {
+  [ruleId: string]: {
+    timeSpent: number;
+    lastUpdated: number;
+  };
+}
+
 let activeTimer: ActiveTimerState | null = null;
 let syncIntervalId: NodeJS.Timeout | null = null;
 let secondsCounter = 0;
@@ -43,6 +65,23 @@ let lastTickTimestamp: number | null = null; // Track last tick time for reset b
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
+
+async function hydrateCompiledRuleIndexes(): Promise<void> {
+  try {
+    const storage = await chrome.storage.local.get(['user']);
+    const userId = storage.user?.uid;
+
+    if (!userId) {
+      console.log('[Timer] No user found - skipping rule index hydration');
+      return;
+    }
+
+    await syncRulesToStorage(userId);
+    console.log('[Timer] ✓ Rule indexes hydrated');
+  } catch (error) {
+    console.error('[Timer] Failed to hydrate rule indexes:', error);
+  }
+}
 
 // ============================================================================
 // DAILY RESET LOGIC
@@ -82,8 +121,10 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
   console.log('[DailyReset] ✓✓✓ CROSSING RESET BOUNDARY - Resetting all site time to 0 ✓✓✓');
 
   try {
-    const storage = await chrome.storage.local.get(['siteTimeData']);
+    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData']);
     const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+    const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
+    const now = Date.now();
 
     // Reset all time spent values to 0
     const resetSiteTimeData: Record<string, SiteTimeData> = {};
@@ -91,14 +132,24 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
       resetSiteTimeData[siteKey] = {
         ...siteTimeData[siteKey],
         timeSpent: 0,
-        lastUpdated: Date.now()
+        lastUpdated: now
+      };
+    }
+
+    const resetRuleUsageData: RuleUsageData = {};
+    for (const ruleId in ruleUsageData) {
+      resetRuleUsageData[ruleId] = {
+        ...ruleUsageData[ruleId],
+        timeSpent: 0,
+        lastUpdated: now
       };
     }
 
     // Save to chrome storage
     await chrome.storage.local.set({
       siteTimeData: resetSiteTimeData,
-      lastResetTimestamp: Date.now()
+      ruleUsageData: resetRuleUsageData,
+      lastResetTimestamp: now
     });
 
     console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
@@ -113,7 +164,7 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
 
       setDoc(userDocRef, {
         timeTracking: timeTrackingData,
-        lastDailyResetTimestamp: Date.now()
+        lastDailyResetTimestamp: now
       }, { merge: true }).catch((error) => {
         console.error('[DailyReset] Error syncing reset to Firestore:', error);
       });
@@ -253,15 +304,38 @@ async function timerTick(): Promise<void> {
   // ============================================================================
   // INCREMENT TIME
   // ============================================================================
-  const storage = await chrome.storage.local.get(['siteTimeData']);
+  const storage = await chrome.storage.local.get(['siteTimeData', 'siteRuleIds', 'compiledRules', 'ruleUsageData']);
   const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+  const siteRuleIds: SiteRuleIds = storage.siteRuleIds || {};
+  const compiledRules: CompiledRules = storage.compiledRules || {};
+  const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
 
   if (siteTimeData[siteKey]) {
     const oldTime = siteTimeData[siteKey].timeSpent;
     siteTimeData[siteKey].timeSpent += 1;
-    siteTimeData[siteKey].lastUpdated = Date.now();
+    siteTimeData[siteKey].lastUpdated = currentTickTimestamp;
 
-    await chrome.storage.local.set({ siteTimeData });
+    const applicableRuleIds = siteRuleIds[siteKey] || [];
+    const exceededRuleIds: string[] = [];
+
+    for (const ruleId of applicableRuleIds) {
+      const rule = compiledRules[ruleId];
+      if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
+
+      const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
+        return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
+      }, 0);
+      ruleUsageData[ruleId] = {
+        timeSpent: totalTimeSpent,
+        lastUpdated: currentTickTimestamp
+      };
+
+      if (totalTimeSpent >= rule.timeLimit) {
+        exceededRuleIds.push(ruleId);
+      }
+    }
+
+    await chrome.storage.local.set({ siteTimeData, ruleUsageData });
 
     const tickDuration = Date.now() - tickStartTime;
     console.log(`[Timer] ✓ Incremented ${siteKey}: ${oldTime} → ${siteTimeData[siteKey].timeSpent}s (tick took ${tickDuration}ms)`);
@@ -273,8 +347,21 @@ async function timerTick(): Promise<void> {
     // CHECK TIME LIMIT AND REDIRECT IF EXCEEDED
     // ============================================================================
     const { timeSpent, timeLimit } = siteTimeData[siteKey];
-    if (timeLimit > 0 && timeSpent >= timeLimit) {
-      console.log(`[Timer] ⚠️ Time limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
+    const siteLimitExceeded = timeLimit > 0 && timeSpent >= timeLimit;
+    const shouldRedirect = siteLimitExceeded || exceededRuleIds.length > 0;
+
+    if (shouldRedirect) {
+      if (exceededRuleIds.length > 0) {
+        const exceededDetails = exceededRuleIds.map((ruleId) => {
+          const rule = compiledRules[ruleId];
+          const usage = ruleUsageData[ruleId];
+          if (!rule || !usage) return `${ruleId} (unknown)`;
+          return `${ruleId}: ${usage.timeSpent}s / ${rule.timeLimit}s`;
+        });
+        console.log(`[Timer] ⚠️ Aggregated limit exceeded for ${siteKey}:`, exceededDetails.join(', '));
+      } else {
+        console.log(`[Timer] ⚠️ Site limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
+      }
 
       // Get redirect URLs from storage
       const redirectStorage = await chrome.storage.local.get(['redirectUrls']);
@@ -445,6 +532,7 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
 // Listen for when extension is installed or updated
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
+  hydrateCompiledRuleIndexes();
 });
 
 // Open side panel when extension icon is clicked
@@ -617,6 +705,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // Service worker startup - recover timer state
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Timer] Service worker starting up');
+  await hydrateCompiledRuleIndexes();
 
   // Find active tab and restart timer if applicable
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });

@@ -188,7 +188,7 @@ const Popup: React.FC = () => {
       </ResizablePanelGroup>
 
       {/* Floating chat button when collapsed */}
-      {isAIPanelCollapsed && (
+      {isAIPanelCollapsed && currentTab === 'rules' && (
         <button
           onClick={() => {
             aiPanelRef.current?.expand();

@@ -8,11 +8,26 @@ interface DebugPanelProps {
     isActiveTimer: boolean;
     isTabVisible: boolean;
     isStaleTab: boolean;
+    applicableLimits: Array<{
+      ruleId: string;
+      ruleType: 'hard' | 'soft' | 'session';
+      timeLimit: number;
+      timeSpent: number;
+      siteBreakdown: Array<{
+        siteKey: string;
+        timeSpent: number;
+      }>;
+    }>;
   };
 }
 
 const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <div
@@ -88,6 +103,35 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
             <div style={{ color: debugInfo.isStaleTab ? '#f87171' : '#4ade80' }}>
               {debugInfo.isStaleTab ? 'Yes (will reload)' : 'No'}
             </div>
+          </div>
+
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ opacity: 0.6, marginBottom: '4px' }}>Applicable Limits:</div>
+            {debugInfo.applicableLimits.length === 0 ? (
+              <div style={{ opacity: 0.7 }}>None</div>
+            ) : (
+              debugInfo.applicableLimits.map((limit) => (
+                <div key={limit.ruleId} style={{ marginBottom: '6px' }}>
+                  <div>{limit.ruleId} ({limit.ruleType})</div>
+                  <div>
+                    Total: {formatTime(limit.timeSpent)} / {formatTime(limit.timeLimit)}
+                  </div>
+                  <details style={{ marginTop: '4px' }}>
+                    <summary style={{ cursor: 'pointer', opacity: 0.8 }}>
+                      Sites in this limit ({limit.siteBreakdown.length})
+                    </summary>
+                    <div style={{ marginTop: '4px', paddingLeft: '8px' }}>
+                      {limit.siteBreakdown.map((site) => (
+                        <div key={site.siteKey} style={{ marginBottom: '3px' }}>
+                          <div>{site.siteKey}</div>
+                          <div style={{ opacity: 0.8 }}>Time: {formatTime(site.timeSpent)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
