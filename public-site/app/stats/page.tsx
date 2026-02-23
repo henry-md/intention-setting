@@ -129,6 +129,12 @@ export default function StatsPage() {
               {new Date(userData.lastDailyResetTimestamp).toLocaleString()}
             </div>
           )}
+
+          <div className="mt-2 text-center text-sm">
+            <Link href="/privacy" className="text-blue-600 hover:text-blue-500 dark:text-blue-400">
+              Privacy Policy
+            </Link>
+          </div>
         </main>
       </div>
     </ProtectedRoute>

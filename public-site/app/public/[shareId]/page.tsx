@@ -164,7 +164,7 @@ export default function PublicStatsPage() {
             </svg>
             <div>
               <div className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                You're viewing someone's shared statistics
+                You&apos;re viewing someone&apos;s shared statistics
               </div>
               <div className="mt-1 text-xs text-blue-800 dark:text-blue-200">
                 This user has chosen to publicly share their usage data. Want to track your own?{' '}
@@ -194,8 +194,14 @@ export default function PublicStatsPage() {
 
       {/* Footer */}
       <footer className="border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-7xl px-6 py-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
-          Powered by <span className="font-semibold">Intention Setter</span>
+        <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-6 py-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
+          <span>
+            Powered by <span className="font-semibold">Intention Setter</span> chrome extension
+          </span>
+          <span className="text-zinc-400 dark:text-zinc-500">•</span>
+          <Link href="/privacy" className="text-blue-600 hover:text-blue-500 dark:text-blue-400">
+            Privacy Policy
+          </Link>
         </div>
       </footer>
     </div>
