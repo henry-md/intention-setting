@@ -9,7 +9,7 @@ export interface CompiledRuleForSelection {
 export type CompiledRulesForSelection = Record<string, CompiledRuleForSelection>;
 export type SiteRuleIdsForSelection = Record<string, string[]>;
 
-const getTotalAllowedSeconds = (rule: CompiledRuleForSelection): number => {
+export const getTotalAllowedSeconds = (rule: CompiledRuleForSelection): number => {
   if (rule.ruleType === 'soft') {
     const plusOnes = Math.max(0, rule.plusOnes || 0);
     const plusOneDuration = Math.max(0, rule.plusOneDuration || 0);

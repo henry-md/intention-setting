@@ -20,6 +20,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   const [timerDisplayMode, setTimerDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
   const [timerBadgeWidthScale, setTimerBadgeWidthScale] = useState<number>(0.65);
   const [timerBadgeTextScale, setTimerBadgeTextScale] = useState<number>(1);
+  const [upcomingLimitReminderSeconds, setUpcomingLimitReminderSeconds] = useState<number>(10);
   const [redirectUrls, setRedirectUrls] = useState<string[]>([]);
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -35,8 +36,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   // Load current settings from storage
   useEffect(() => {
     const keys = ALLOW_CUSTOM_RESET_TIME
-      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'redirectUrls']
-      : ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'redirectUrls'];
+      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls']
+      : ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls'];
 
     chrome.storage.local.get(keys, (result) => {
       if (ALLOW_CUSTOM_RESET_TIME && result.dailyResetTime) {
@@ -73,6 +74,12 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         const scale = Math.min(1.8, Math.max(0.7, result.timerBadgeScale));
         setTimerBadgeTextScale(scale);
       }
+      if (typeof result.upcomingLimitReminderSeconds === 'number') {
+        const reminder = Math.min(60, Math.max(3, Math.round(result.upcomingLimitReminderSeconds)));
+        setUpcomingLimitReminderSeconds(reminder);
+      } else {
+        setUpcomingLimitReminderSeconds(10);
+      }
       setLoading(false);
     });
   }, []);
@@ -87,6 +94,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         timerDisplayMode: timerDisplayMode,
         timerBadgeWidthScale: timerBadgeWidthScale,
         timerBadgeTextScale: timerBadgeTextScale,
+        upcomingLimitReminderSeconds: upcomingLimitReminderSeconds,
         redirectUrls: redirectUrls
       });
 
@@ -307,6 +315,36 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           />
           <div className="mt-1 text-xs text-gray-500">
             Width and text scale are controlled independently. Timer text remains larger than labels.
+          </div>
+        </div>
+
+        <div className="mt-2 border-t border-gray-700 pt-4">
+          <div className="mb-2 flex items-center justify-between">
+            <label htmlFor="upcoming-limit-reminder-seconds" className="text-sm font-medium text-gray-200">
+              Length of time for reminder of upcoming limit
+            </label>
+            <span className="text-xs text-gray-400">{upcomingLimitReminderSeconds}s</span>
+          </div>
+          <input
+            id="upcoming-limit-reminder-seconds"
+            type="range"
+            min="3"
+            max="60"
+            step="1"
+            value={upcomingLimitReminderSeconds}
+            onChange={async (e) => {
+              const reminder = Math.min(60, Math.max(3, Math.round(Number(e.target.value))));
+              setUpcomingLimitReminderSeconds(reminder);
+              await chrome.storage.local.set({ upcomingLimitReminderSeconds: reminder });
+            }}
+            className="w-full accent-blue-500"
+          />
+          <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
+            <span>3s</span>
+            <span>60s</span>
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Shows red warning flashes on screen and badge before the active limit is reached.
           </div>
         </div>
       </div>

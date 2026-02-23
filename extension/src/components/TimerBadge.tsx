@@ -4,6 +4,7 @@ import { formatTime } from '../utils/timeFormat';
 interface TimerBadgeProps {
   timeSpent: number; // in seconds
   timeLimit: number; // in seconds
+  isNearLimit?: boolean;
   currentSiteKey?: string;
   relevantLimit?: {
     ruleId: string;
@@ -30,11 +31,18 @@ const clampWidthScale = (value: number): number => {
   return Math.min(1.2, Math.max(0.35, value));
 };
 
-const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSiteKey, relevantLimit }) => {
+const TimerBadge: React.FC<TimerBadgeProps> = ({
+  timeSpent,
+  timeLimit,
+  isNearLimit = false,
+  currentSiteKey,
+  relevantLimit,
+}) => {
   const [displayMode, setDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
   const [widthScale, setWidthScale] = useState(0.65);
   const [textScale, setTextScale] = useState(1);
   const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
+  const [isNearLimitFlashOn, setIsNearLimitFlashOn] = useState(false);
 
   const displayedTimeSpent = relevantLimit?.timeSpent ?? timeSpent;
   const displayedTimeLimit = relevantLimit?.timeLimit ?? timeLimit;
@@ -134,7 +142,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSi
               justifyContent: 'space-between',
               gap: `${dims.gapSmall}px`,
               backgroundColor: site.siteKey === currentSiteKey ? 'rgba(255,255,255,0.08)' : 'transparent',
-              borderRadius: `${Math.max(3, 4 * dims.scale)}px`,
+              borderRadius: `${Math.max(3, 4 * dims.widthScale)}px`,
               padding: `${dims.rowPaddingY}px ${dims.rowPaddingX}px`,
             }}
           >
@@ -159,25 +167,25 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSi
     chrome.storage.local.get(
       ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale'],
       (result) => {
-      if (result.timerDisplayMode) {
-        setDisplayMode(result.timerDisplayMode);
-      } else if (result.simpleTimerDisplay !== undefined) {
-        setDisplayMode(result.simpleTimerDisplay ? 'simple' : 'complex');
-      }
+        if (result.timerDisplayMode) {
+          setDisplayMode(result.timerDisplayMode);
+        } else if (result.simpleTimerDisplay !== undefined) {
+          setDisplayMode(result.simpleTimerDisplay ? 'simple' : 'complex');
+        }
 
-      if (typeof result.timerBadgeWidthScale === 'number') {
-        setWidthScale(clampWidthScale(result.timerBadgeWidthScale));
-      } else if (typeof result.timerBadgeScale === 'number') {
-        // Backward compatibility with old combined slider.
-        setWidthScale(clampWidthScale(result.timerBadgeScale));
-      }
+        if (typeof result.timerBadgeWidthScale === 'number') {
+          setWidthScale(clampWidthScale(result.timerBadgeWidthScale));
+        } else if (typeof result.timerBadgeScale === 'number') {
+          // Backward compatibility with old combined slider.
+          setWidthScale(clampWidthScale(result.timerBadgeScale));
+        }
 
-      if (typeof result.timerBadgeTextScale === 'number') {
-        setTextScale(clampScale(result.timerBadgeTextScale));
-      } else if (typeof result.timerBadgeScale === 'number') {
-        // Backward compatibility with old combined slider.
-        setTextScale(clampScale(result.timerBadgeScale));
-      }
+        if (typeof result.timerBadgeTextScale === 'number') {
+          setTextScale(clampScale(result.timerBadgeTextScale));
+        } else if (typeof result.timerBadgeScale === 'number') {
+          // Backward compatibility with old combined slider.
+          setTextScale(clampScale(result.timerBadgeScale));
+        }
       }
     );
 
@@ -197,13 +205,37 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSi
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
 
+  useEffect(() => {
+    if (!isNearLimit) {
+      setIsNearLimitFlashOn(false);
+      return;
+    }
+
+    setIsNearLimitFlashOn(false);
+    const intervalId = window.setInterval(() => {
+      setIsNearLimitFlashOn((prev) => !prev);
+    }, 280);
+
+    return () => window.clearInterval(intervalId);
+  }, [isNearLimit]);
+
   const showRuleName = displayMode !== 'complex';
   const showLimitLine = displayMode === 'compact';
+  const backgroundColor = isNearLimit
+    ? (isNearLimitFlashOn ? '#47272d' : '#3a1f24')
+    : isOverLimit
+      ? '#3b171d'
+      : '#1a1a1a';
+  const borderColor = isNearLimit
+    ? (isNearLimitFlashOn ? '#a05b66' : '#8b4b55')
+    : isOverLimit
+      ? '#b56a76'
+      : '#404040';
 
   return (
     <div
       style={{
-        backgroundColor: isOverLimit ? '#dc2626' : '#1a1a1a',
+        backgroundColor,
         color: 'white',
         width: `${dims.width}px`,
         padding: `${dims.paddingY}px ${dims.paddingX}px`,
@@ -211,7 +243,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSi
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontWeight: 600,
-        border: `${dims.borderWidth}px solid ${isOverLimit ? '#ef4444' : '#404040'}`,
+        border: `${dims.borderWidth}px solid ${borderColor}`,
         transition: 'all 0.3s ease',
         cursor: hasBreakdown ? 'pointer' : 'default',
       }}
@@ -223,7 +255,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSi
       {showRuleName && relevantRuleLabel && (
         <div
           style={{
-            marginBottom: `${dims.gapSmall}px`,
+            marginBottom: `${Math.max(2, dims.gapXSmall)}px`,
             fontSize: `${dims.labelSize}px`,
             textAlign: 'center',
             opacity: 0.9,

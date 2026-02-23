@@ -6,7 +6,7 @@ import SoftLimitPopup from '../components/SoftLimitPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
-import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
+import { getMostRestrictiveRuleIdForSite, getTotalAllowedSeconds } from '../utils/ruleSelection';
 import { normalizeHostname } from '../utils/urlNormalization';
 
 /** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
@@ -148,7 +148,15 @@ let currentSiteKey: string | null = null;
 let containerRoot: Root | null = null; // Root for the flex container holding both components
 let softLimitRoot: Root | null = null;
 let softLimitContainer: HTMLElement | null = null;
+let nearLimitOverlay: HTMLElement | null = null;
+let nearLimitOverlayStyle: HTMLStyleElement | null = null;
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
+const DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS = 10;
+const clampReminderSeconds = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS;
+  return Math.min(60, Math.max(3, Math.round(parsed)));
+};
 
 // Check if current URL matches user's saved URLs
 const checkAndShowIntentionPopup = async () => {
@@ -348,6 +356,7 @@ const getDebugInfo = async () => {
     ruleType: 'hard' | 'soft' | 'session';
     plusOnes?: number;
     plusOneDuration?: number;
+    totalAllowedTime: number;
     timeLimit: number;
     timeSpent: number;
     siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
@@ -370,6 +379,7 @@ const getDebugInfo = async () => {
         ruleType: rule.ruleType,
         plusOnes: rule.plusOnes,
         plusOneDuration: rule.plusOneDuration,
+        totalAllowedTime: getTotalAllowedSeconds(rule),
         timeLimit: rule.timeLimit,
         timeSpent,
         siteBreakdown,
@@ -387,6 +397,44 @@ const getDebugInfo = async () => {
     isStaleTab: isStale,
     applicableLimits
   };
+};
+
+const setNearLimitOverlayVisible = (isVisible: boolean) => {
+  if (isVisible) {
+    if (!nearLimitOverlayStyle) {
+      nearLimitOverlayStyle = document.createElement('style');
+      nearLimitOverlayStyle.id = 'near-limit-overlay-style';
+      nearLimitOverlayStyle.textContent = `
+        @keyframes near-limit-edge-pulse {
+          0% { opacity: 0.35; }
+          100% { opacity: 0.85; }
+        }
+      `;
+      document.head.appendChild(nearLimitOverlayStyle);
+    }
+
+    if (!nearLimitOverlay) {
+      nearLimitOverlay = document.createElement('div');
+      nearLimitOverlay.id = 'near-limit-overlay';
+      nearLimitOverlay.style.position = 'fixed';
+      nearLimitOverlay.style.inset = '0';
+      nearLimitOverlay.style.pointerEvents = 'none';
+      nearLimitOverlay.style.zIndex = '999995';
+      nearLimitOverlay.style.background = `
+        radial-gradient(120% 70% at 50% -20%, rgba(239,68,68,0.45) 0%, rgba(239,68,68,0) 60%),
+        radial-gradient(120% 70% at 50% 120%, rgba(239,68,68,0.45) 0%, rgba(239,68,68,0) 60%),
+        linear-gradient(to right, rgba(239,68,68,0.38) 0%, rgba(239,68,68,0) 20%, rgba(239,68,68,0) 80%, rgba(239,68,68,0.38) 100%)
+      `;
+      nearLimitOverlay.style.animation = 'near-limit-edge-pulse 280ms ease-in-out infinite alternate';
+      document.body.appendChild(nearLimitOverlay);
+    }
+    return;
+  }
+
+  if (nearLimitOverlay) {
+    nearLimitOverlay.remove();
+    nearLimitOverlay = null;
+  }
 };
 
 // Render the container with both timer badge and debug panel
@@ -559,10 +607,40 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
   // Get debug info
   const debugInfo = await getDebugInfo();
+  const relevantLimit = debugInfo.applicableLimits[0];
+
+  const reminderStorage = await safeStorageGet(['upcomingLimitReminderSeconds']);
+  const reminderSeconds = clampReminderSeconds(reminderStorage?.upcomingLimitReminderSeconds);
+
+  const operativeSpent = relevantLimit?.timeSpent ?? timeSpent ?? 0;
+  let reminderTarget = relevantLimit?.timeLimit ?? timeLimit ?? 0;
+
+  // Soft rules should warn before the NEXT soft boundary (base limit, then each extension step).
+  if (relevantLimit?.ruleType === 'soft') {
+    const baseLimit = relevantLimit.timeLimit;
+    const plusOneDuration = relevantLimit.plusOneDuration || 0;
+    const plusOnes = Math.max(0, relevantLimit.plusOnes || 0);
+
+    if (plusOneDuration > 0 && plusOnes > 0) {
+      if (operativeSpent < baseLimit) {
+        reminderTarget = baseLimit;
+      } else {
+        const elapsedAfterBase = operativeSpent - baseLimit;
+        const usedExtensions = Math.max(0, Math.floor(elapsedAfterBase / plusOneDuration));
+        const nextBoundaryStep = Math.min(usedExtensions + 1, plusOnes);
+        reminderTarget = baseLimit + (nextBoundaryStep * plusOneDuration);
+      }
+    } else {
+      reminderTarget = baseLimit;
+    }
+  }
+
+  const remaining = reminderTarget - operativeSpent;
+  const isNearLimit = reminderTarget > 0 && remaining > 0 && remaining <= reminderSeconds;
+  setNearLimitOverlayVisible(isNearLimit);
 
   // Render both components
   const components = [];
-  const relevantLimit = debugInfo.applicableLimits[0];
 
   // Add timer badge if we have time data
   if (timeSpent !== undefined && timeLimit !== undefined) {
@@ -571,6 +649,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
         key: 'timer',
         timeSpent: timeSpent,
         timeLimit: timeLimit,
+        isNearLimit,
         currentSiteKey: debugInfo.normalizedHostname,
         relevantLimit
       })
@@ -606,6 +685,7 @@ const updateTimerBadge = async (timeSpent: number, timeLimit: number) => {
 // Show debug panel on its own (when there's no timer)
 const showDebugPanel = async () => {
   if (DEBUG_UI) {
+    setNearLimitOverlayVisible(false);
     await renderContainer();
   }
 };
