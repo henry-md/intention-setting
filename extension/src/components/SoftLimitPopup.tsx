@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface SoftLimitPopupProps {
-  remainingOneMores: number;
+  derivedRemainingSnoozes: number;
   plusOneDuration: number;
   onSnooze: () => void;
   onLeave: () => void;
@@ -16,7 +16,7 @@ const formatDuration = (seconds: number): string => {
 };
 
 const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
-  remainingOneMores,
+  derivedRemainingSnoozes,
   plusOneDuration,
   onSnooze,
   onLeave
@@ -78,7 +78,7 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
             fontSize: '14px'
           }}
         >
-          <div>One-mores left: <strong>{remainingOneMores}</strong></div>
+          <div>One-mores left: <strong>{derivedRemainingSnoozes}</strong></div>
           <div style={{ marginTop: '4px', opacity: 0.8 }}>
             Each snooze adds {formatDuration(plusOneDuration)}.
           </div>
@@ -101,19 +101,19 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
           </button>
           <button
             onClick={onSnooze}
-            disabled={remainingOneMores <= 0}
+            disabled={derivedRemainingSnoozes <= 0}
             style={{
               padding: '11px 14px',
               borderRadius: '9px',
               border: '1px solid transparent',
-              background: remainingOneMores > 0 ? '#2563eb' : '#4b5563',
+              background: derivedRemainingSnoozes > 0 ? '#2563eb' : '#4b5563',
               color: 'white',
               fontWeight: 700,
-              cursor: remainingOneMores > 0 ? 'pointer' : 'not-allowed',
-              opacity: remainingOneMores > 0 ? 1 : 0.7
+              cursor: derivedRemainingSnoozes > 0 ? 'pointer' : 'not-allowed',
+              opacity: derivedRemainingSnoozes > 0 ? 1 : 0.7
             }}
           >
-            Snooze ({remainingOneMores})
+            Snooze ({derivedRemainingSnoozes})
           </button>
         </div>
       </div>

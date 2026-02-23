@@ -348,8 +348,13 @@ const getDebugInfo = async () => {
     siteKeys: string[];
   }> = storage?.compiledRules || {};
   const siteTimeData: Record<string, { timeSpent: number }> = storage?.siteTimeData || {};
+  const mappedRuleIds = siteRuleIds[normalizedHostname] || [];
+  const fallbackRuleIds = Object.entries(compiledRules)
+    .filter(([, rule]) => rule.ruleType !== 'session' && rule.siteKeys.includes(normalizedHostname))
+    .map(([ruleId]) => ruleId);
+  const applicableRuleIds = mappedRuleIds.length > 0 ? mappedRuleIds : fallbackRuleIds;
 
-  const applicableLimits = (siteRuleIds[normalizedHostname] || [])
+  const applicableLimits = applicableRuleIds
     .map((ruleId) => {
       const rule = compiledRules[ruleId];
       if (!rule) return null;
@@ -680,7 +685,11 @@ const closeSoftLimitPopup = () => {
   }
 };
 
-const showSoftLimitPopup = (ruleId: string, remainingOneMores: number, plusOneDuration: number) => {
+const showSoftLimitPopup = (
+  ruleId: string,
+  derivedRemainingSnoozes: number,
+  plusOneDuration: number
+) => {
   closeSoftLimitPopup();
   pauseAllMedia();
 
@@ -717,7 +726,7 @@ const showSoftLimitPopup = (ruleId: string, remainingOneMores: number, plusOneDu
   softLimitRoot = createRoot(shadowContainer);
   softLimitRoot.render(
     React.createElement(SoftLimitPopup, {
-      remainingOneMores,
+      derivedRemainingSnoozes,
       plusOneDuration,
       onSnooze: () => {
         void handleSnooze();
@@ -766,7 +775,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.action === 'show-soft-limit-popup') {
     const ruleId = message.ruleId as string | undefined;
-    const remainingOneMores = Number(message.remainingOneMores || 0);
+    const derivedRemainingSnoozes = Number(message.derivedRemainingSnoozes || 0);
     const plusOneDuration = Number(message.plusOneDuration || 0);
 
     if (!ruleId) {
@@ -774,7 +783,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
-    showSoftLimitPopup(ruleId, remainingOneMores, plusOneDuration);
+    showSoftLimitPopup(ruleId, derivedRemainingSnoozes, plusOneDuration);
     sendResponse({ handled: true });
     return false;
   }

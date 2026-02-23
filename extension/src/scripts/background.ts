@@ -55,7 +55,6 @@ interface RuleUsageData {
   [ruleId: string]: {
     timeSpent: number;
     lastUpdated: number;
-    snoozesUsed: number;
   };
 }
 
@@ -71,10 +70,33 @@ interface ExceededRuleInfo {
   usage: {
     timeSpent: number;
     lastUpdated: number;
-    snoozesUsed: number;
   };
   effectiveLimit: number;
-  remainingOneMores: number;
+  consumedOneMores: number;
+  derivedRemainingSnoozes: number;
+  shouldShowPopup: boolean;
+  shouldBlock: boolean;
+}
+
+function getApplicableRuleIdsForSite(
+  siteKey: string,
+  siteRuleIds: SiteRuleIds,
+  compiledRules: CompiledRules
+): string[] {
+  const mappedRuleIds = siteRuleIds[siteKey] || [];
+  if (mappedRuleIds.length > 0) {
+    return mappedRuleIds;
+  }
+
+  const fallbackRuleIds = Object.entries(compiledRules)
+    .filter(([, rule]) => rule.ruleType !== 'session' && rule.siteKeys.includes(siteKey))
+    .map(([ruleId]) => ruleId);
+
+  if (fallbackRuleIds.length > 0) {
+    console.log(`[Timer] Using compiledRules fallback for ${siteKey}:`, fallbackRuleIds);
+  }
+
+  return fallbackRuleIds;
 }
 
 let activeTimer: ActiveTimerState | null = null;
@@ -133,7 +155,7 @@ async function showSoftLimitPopup(tabId: number, siteKey: string, exceededRule: 
       action: 'show-soft-limit-popup',
       siteKey,
       ruleId: exceededRule.ruleId,
-      remainingOneMores: exceededRule.remainingOneMores,
+      derivedRemainingSnoozes: exceededRule.derivedRemainingSnoozes,
       plusOneDuration: exceededRule.rule.plusOneDuration || 0
     });
 
@@ -202,8 +224,7 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
       resetRuleUsageData[ruleId] = {
         ...ruleUsageData[ruleId],
         timeSpent: 0,
-        lastUpdated: now,
-        snoozesUsed: 0
+        lastUpdated: now
       };
     }
 
@@ -377,35 +398,87 @@ async function timerTick(): Promise<void> {
     siteTimeData[siteKey].timeSpent += 1;
     siteTimeData[siteKey].lastUpdated = currentTickTimestamp;
 
-    const applicableRuleIds = siteRuleIds[siteKey] || [];
+    const applicableRuleIds = getApplicableRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
     const exceededRules: ExceededRuleInfo[] = [];
 
     for (const ruleId of applicableRuleIds) {
       const rule = compiledRules[ruleId];
       if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
 
-      const existingUsage = ruleUsageData[ruleId];
-      const snoozesUsed = existingUsage?.snoozesUsed || 0;
-      const remainingOneMores = Math.max((rule.plusOnes || 0) - snoozesUsed, 0);
-      const effectiveLimit = rule.ruleType === 'soft'
-        ? rule.timeLimit + (snoozesUsed * (rule.plusOneDuration || 0))
-        : rule.timeLimit;
       const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
         return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
       }, 0);
+      const safeTotalTimeSpent = Math.max(0, Math.floor(totalTimeSpent));
+
       ruleUsageData[ruleId] = {
-        timeSpent: totalTimeSpent,
-        lastUpdated: currentTickTimestamp,
-        snoozesUsed
+        timeSpent: safeTotalTimeSpent,
+        lastUpdated: currentTickTimestamp
       };
 
-      if (totalTimeSpent >= effectiveLimit) {
+      if (rule.ruleType === 'hard') {
+        if (safeTotalTimeSpent >= rule.timeLimit) {
+          exceededRules.push({
+            ruleId,
+            rule,
+            usage: ruleUsageData[ruleId],
+            effectiveLimit: rule.timeLimit,
+            consumedOneMores: 0,
+            derivedRemainingSnoozes: 0,
+            shouldShowPopup: false,
+            shouldBlock: true
+          });
+        }
+        continue;
+      }
+
+      const plusOneDuration = rule.plusOneDuration || 0;
+      const plusOnes = rule.plusOnes || 0;
+
+      if (plusOneDuration <= 0 || plusOnes <= 0) {
+        if (safeTotalTimeSpent >= rule.timeLimit) {
+          exceededRules.push({
+            ruleId,
+            rule,
+            usage: ruleUsageData[ruleId],
+            effectiveLimit: rule.timeLimit,
+            consumedOneMores: 0,
+            derivedRemainingSnoozes: 0,
+            shouldShowPopup: false,
+            shouldBlock: true
+          });
+        }
+        continue;
+      }
+
+      const previousTotalTimeSpent = Math.max(safeTotalTimeSpent - 1, 0);
+      const rawPreviousConsumedOneMores = previousTotalTimeSpent >= rule.timeLimit
+        ? 1 + Math.floor((previousTotalTimeSpent - rule.timeLimit) / plusOneDuration)
+        : 0;
+      const rawCurrentConsumedOneMores = safeTotalTimeSpent >= rule.timeLimit
+        ? 1 + Math.floor((safeTotalTimeSpent - rule.timeLimit) / plusOneDuration)
+        : 0;
+      const rawUsedExtensions = safeTotalTimeSpent > rule.timeLimit
+        ? Math.floor((safeTotalTimeSpent - rule.timeLimit) / plusOneDuration)
+        : 0;
+      const previousConsumedOneMores = Math.max(0, Math.min(rawPreviousConsumedOneMores, plusOnes));
+      const consumedOneMores = Math.max(0, Math.min(rawCurrentConsumedOneMores, plusOnes));
+      const usedExtensions = Math.max(0, Math.min(rawUsedExtensions, plusOnes));
+      const derivedRemainingSnoozes = Math.max(plusOnes - usedExtensions, 0);
+      const effectiveLimit = rule.timeLimit + (consumedOneMores * plusOneDuration);
+      const maxSoftLimit = rule.timeLimit + (plusOnes * plusOneDuration);
+      const shouldShowPopup = consumedOneMores > previousConsumedOneMores;
+      const shouldBlock = safeTotalTimeSpent >= maxSoftLimit;
+
+      if (shouldShowPopup || shouldBlock) {
         exceededRules.push({
           ruleId,
           rule,
           usage: ruleUsageData[ruleId],
           effectiveLimit,
-          remainingOneMores
+          consumedOneMores,
+          derivedRemainingSnoozes,
+          shouldShowPopup,
+          shouldBlock
         });
       }
     }
@@ -425,19 +498,19 @@ async function timerTick(): Promise<void> {
     const siteLimitExceeded = timeLimit > 0 && timeSpent >= timeLimit;
     if (exceededRules.length > 0) {
       const exceededDetails = exceededRules.map((exceeded) => {
-        return `${exceeded.ruleId}: ${exceeded.usage.timeSpent}s / ${exceeded.effectiveLimit}s (remaining one-mores: ${exceeded.remainingOneMores})`;
+        return `${exceeded.ruleId}: ${exceeded.usage.timeSpent}s / ${exceeded.effectiveLimit}s (consumed one-mores: ${exceeded.consumedOneMores}, remaining: ${exceeded.derivedRemainingSnoozes})`;
       });
       console.log(`[Timer] ⚠️ Aggregated limit exceeded for ${siteKey}:`, exceededDetails.join(', '));
     } else if (siteLimitExceeded && applicableRuleIds.length === 0) {
       console.log(`[Timer] ⚠️ Site limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
     }
 
-    const hardExceeded = exceededRules.find((exceeded) => exceeded.rule.ruleType === 'hard');
+    const hardExceeded = exceededRules.find((exceeded) => exceeded.rule.ruleType === 'hard' && exceeded.shouldBlock);
     const softExceededWithSnooze = exceededRules.find((exceeded) =>
-      exceeded.rule.ruleType === 'soft' && exceeded.remainingOneMores > 0
+      exceeded.rule.ruleType === 'soft' && exceeded.shouldShowPopup
     );
     const softExceededWithoutSnooze = exceededRules.find((exceeded) =>
-      exceeded.rule.ruleType === 'soft' && exceeded.remainingOneMores <= 0
+      exceeded.rule.ruleType === 'soft' && exceeded.shouldBlock
     );
 
     if (hardExceeded || softExceededWithoutSnooze || (siteLimitExceeded && applicableRuleIds.length === 0)) {
@@ -497,7 +570,11 @@ function stopCurrentTimer(): void {
  * This is the ONLY function that creates timer intervals.
  * Race-condition safety: Immediately clears any existing interval BEFORE async operations.
  */
-async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
+async function startTimerForTab(
+  tabId: number,
+  siteKey: string,
+  options: { skipImmediateSoftBoundaryCheck?: boolean } = {}
+): Promise<void> {
   console.log(`[Timer] Request to start timer - tabId: ${tabId}, site: ${siteKey}`);
 
   // CRITICAL: IMMEDIATELY clear any existing interval SYNCHRONOUSLY before ANY async operations
@@ -527,8 +604,17 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
   }
 
   // Check if site has a rule
-  const storage = await chrome.storage.local.get(['siteRules', 'siteTimeData']);
+  const storage = await chrome.storage.local.get([
+    'siteRules',
+    'siteTimeData',
+    'siteRuleIds',
+    'compiledRules',
+    'ruleUsageData'
+  ]);
   const siteRules: SiteRules = storage.siteRules || {};
+  const siteRuleIds: SiteRuleIds = storage.siteRuleIds || {};
+  const compiledRules: CompiledRules = storage.compiledRules || {};
+  const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
 
   if (!siteRules[siteKey]) {
     console.log(`[Timer] Site ${siteKey} has no rule, not starting timer`);
@@ -543,7 +629,111 @@ async function startTimerForTab(tabId: number, siteKey: string): Promise<void> {
       timeLimit: siteRules[siteKey].timeLimit,
       lastUpdated: Date.now()
     };
-    await chrome.storage.local.set({ siteTimeData });
+  }
+
+  // Evaluate limits immediately when a tab becomes active so interval-boundary
+  // soft popups can appear on newly focused tabs without waiting for the next tick.
+  const now = Date.now();
+  const applicableRuleIds = getApplicableRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
+  let shouldRedirectImmediately = false;
+  let softBoundaryRule: ExceededRuleInfo | null = null;
+
+  for (const ruleId of applicableRuleIds) {
+    const rule = compiledRules[ruleId];
+    if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
+
+    const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
+      return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
+    }, 0);
+    const safeTotalTimeSpent = Math.max(0, Math.floor(totalTimeSpent));
+
+    ruleUsageData[ruleId] = {
+      timeSpent: safeTotalTimeSpent,
+      lastUpdated: now
+    };
+
+    if (rule.ruleType === 'hard') {
+      if (safeTotalTimeSpent >= rule.timeLimit) {
+        shouldRedirectImmediately = true;
+        break;
+      }
+      continue;
+    }
+
+    const plusOneDuration = rule.plusOneDuration || 0;
+    const plusOnes = rule.plusOnes || 0;
+
+    if (plusOneDuration <= 0 || plusOnes <= 0) {
+      if (safeTotalTimeSpent >= rule.timeLimit) {
+        shouldRedirectImmediately = true;
+        break;
+      }
+      continue;
+    }
+
+    const maxSoftLimit = rule.timeLimit + (plusOnes * plusOneDuration);
+    if (safeTotalTimeSpent >= maxSoftLimit) {
+      shouldRedirectImmediately = true;
+      break;
+    }
+
+    if (safeTotalTimeSpent >= rule.timeLimit) {
+      const delta = safeTotalTimeSpent - rule.timeLimit;
+      if (delta % plusOneDuration === 0 && !options.skipImmediateSoftBoundaryCheck) {
+        const rawConsumedOneMores = 1 + Math.floor(delta / plusOneDuration);
+        const consumedOneMores = Math.max(0, Math.min(rawConsumedOneMores, plusOnes));
+        const rawUsedExtensions = safeTotalTimeSpent > rule.timeLimit
+          ? Math.floor((safeTotalTimeSpent - rule.timeLimit) / plusOneDuration)
+          : 0;
+        const usedExtensions = Math.max(0, Math.min(rawUsedExtensions, plusOnes));
+        const derivedRemainingSnoozes = Math.max(plusOnes - usedExtensions, 0);
+
+        const candidate: ExceededRuleInfo = {
+          ruleId,
+          rule,
+          usage: ruleUsageData[ruleId],
+          effectiveLimit: rule.timeLimit + (consumedOneMores * plusOneDuration),
+          consumedOneMores,
+          derivedRemainingSnoozes,
+          shouldShowPopup: true,
+          shouldBlock: false
+        };
+
+        if (
+          !softBoundaryRule ||
+          candidate.derivedRemainingSnoozes < softBoundaryRule.derivedRemainingSnoozes
+        ) {
+          softBoundaryRule = candidate;
+        }
+      }
+    }
+  }
+
+  // Fallback for direct site limit checks when no compiled rules apply.
+  if (!shouldRedirectImmediately && !softBoundaryRule && applicableRuleIds.length === 0) {
+    const directLimit = siteTimeData[siteKey].timeLimit;
+    if (directLimit > 0 && siteTimeData[siteKey].timeSpent >= directLimit) {
+      shouldRedirectImmediately = true;
+    }
+  }
+
+  await chrome.storage.local.set({ siteTimeData, ruleUsageData });
+
+  if (shouldRedirectImmediately) {
+    console.log(`[Timer] Immediate limit enforcement for ${siteKey} on tab focus`);
+    await redirectTabToRandomUrl(tabId);
+    return;
+  }
+
+  if (softBoundaryRule) {
+    console.log(
+      `[Timer] Immediate soft boundary for ${siteKey}: ${softBoundaryRule.ruleId} (${softBoundaryRule.usage.timeSpent}s)`
+    );
+    const didShowPopup = await showSoftLimitPopup(tabId, siteKey, softBoundaryRule);
+    if (!didShowPopup) {
+      await redirectTabToRandomUrl(tabId);
+    }
+    return;
   }
 
   // Double-check: One more defensive clear before creating new interval
@@ -649,30 +839,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'soft-limit-snooze') {
     (async () => {
       try {
-        const ruleId = message.ruleId as string | undefined;
         const siteKey = message.siteKey as string | undefined;
         const tabId = sender.tab?.id;
 
-        if (!ruleId || !siteKey || !tabId) {
+        if (!siteKey || !tabId) {
           sendResponse({ success: false, error: 'Missing snooze payload' });
           return;
         }
 
-        const storage = await chrome.storage.local.get(['ruleUsageData']);
-        const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
-        const now = Date.now();
-        const previous = ruleUsageData[ruleId];
-
-        ruleUsageData[ruleId] = {
-          timeSpent: previous?.timeSpent || 0,
-          lastUpdated: now,
-          snoozesUsed: (previous?.snoozesUsed || 0) + 1
-        };
-
-        await chrome.storage.local.set({ ruleUsageData });
-        console.log(`[Timer] Snooze accepted for ${ruleId}. Snoozes used: ${ruleUsageData[ruleId].snoozesUsed}`);
-
-        await startTimerForTab(tabId, siteKey);
+        await startTimerForTab(tabId, siteKey, { skipImmediateSoftBoundaryCheck: true });
         sendResponse({ success: true });
       } catch (error) {
         console.error('[Timer] Failed to process soft-limit snooze:', error);
