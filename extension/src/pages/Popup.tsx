@@ -9,7 +9,7 @@ import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
-import { MessageSquare } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 type TabType = 'home' | 'rules' | 'settings';
@@ -27,7 +27,7 @@ const Popup: React.FC = () => {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingFromRules, setEditingFromRules] = useState(false);
   const [editingRuleIdBeforeGroupEdit, setEditingRuleIdBeforeGroupEdit] = useState<string | null>(null);
-  const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(false);
+  const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(true);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
 
   // Sync rules to chrome.storage on app initialization
@@ -38,6 +38,15 @@ const Popup: React.FC = () => {
       });
     }
   }, [user?.uid]);
+
+  // Start with AI panel collapsed by default.
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      aiPanelRef.current?.collapse();
+      setIsAIPanelCollapsed(true);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   if (authLoading) {
     return (
@@ -196,7 +205,7 @@ const Popup: React.FC = () => {
           className="fixed bottom-4 right-4 w-14 h-14 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-50"
           title="Open AI Assistant"
         >
-          <MessageSquare className="w-6 h-6" />
+          <Bot className="w-6 h-6" />
         </button>
       )}
     </div>
