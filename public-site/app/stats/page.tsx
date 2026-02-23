@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import RuleProgressList from '@/components/RuleProgressList';
 import SharingToggle from '@/components/SharingToggle';
+import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
-import { buildRuleProgressStats } from '@/lib/statsHelpers';
+import { buildRuleProgressStats, buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 type ThemeMode = 'light' | 'dark';
@@ -26,7 +27,7 @@ export default function StatsPage() {
   const { user, loading: authLoading, signOut, signInWithGoogle } = useAuth();
   const { userData, hasUserDocument, loading, error } = useUserData();
   const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
-  const [isGodTabHidden, setIsGodTabHidden] = useState(false);
+  const [isGodTabHidden, setIsGodTabHidden] = useState(true);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'dark';
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -80,6 +81,7 @@ export default function StatsPage() {
 
   const isStatsLoading = !!user && loading;
   const ruleStats = userData ? buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking) : [];
+  const usageTimeline = userData ? buildTotalTrackedUsageTimeline(userData.rules, userData.groups, userData.timeTracking) : [];
 
   return (
       <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
@@ -249,6 +251,8 @@ export default function StatsPage() {
               <div className="mb-8">
                 <SharingToggle />
               </div>
+
+              <TotalUsageTimelineChart points={usageTimeline} />
 
               {/* Rule Progress List */}
               <RuleProgressList rules={ruleStats} />

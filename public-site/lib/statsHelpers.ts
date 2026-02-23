@@ -142,6 +142,11 @@ export interface RuleProgressStats {
   siteBreakdown: RuleProgressSiteBreakdownItem[];
 }
 
+export interface UsageTimelinePoint {
+  timestamp: number;
+  totalTimeSpent: number;
+}
+
 /**
  * Build comprehensive site statistics from user data
  */
@@ -224,6 +229,50 @@ export function buildRuleProgressStats(
       if (b.percentage !== a.percentage) return b.percentage - a.percentage;
       return b.timeSpent - a.timeSpent;
     });
+}
+
+/**
+ * Build timeline points using tracked sites that belong to at least one rule.
+ * Each point represents cumulative total tracked seconds at a timestamp.
+ */
+export function buildTotalTrackedUsageTimeline(
+  rules: Rule[],
+  groups: Group[],
+  timeTracking: Record<string, SiteTimeData>
+): UsageTimelinePoint[] {
+  const trackedSiteKeys = new Set<string>();
+  for (const rule of rules) {
+    const urls = expandTargetsToUrls(rule.targets, groups);
+    for (const url of urls) {
+      trackedSiteKeys.add(getNormalizedHostname(url));
+    }
+  }
+
+  if (trackedSiteKeys.size === 0) {
+    return [];
+  }
+
+  const now = Date.now();
+  const timeByTimestamp = new Map<number, number>();
+
+  trackedSiteKeys.forEach((siteKey) => {
+    const tracking = timeTracking[siteKey];
+    if (!tracking) return;
+
+    const seconds = Math.max(0, Number(tracking.timeSpent) || 0);
+    if (seconds <= 0) return;
+
+    const rawTimestamp = Number(tracking.lastUpdated);
+    const timestamp = Number.isFinite(rawTimestamp) ? rawTimestamp : now;
+    timeByTimestamp.set(timestamp, (timeByTimestamp.get(timestamp) || 0) + seconds);
+  });
+
+  const sortedTimestamps = Array.from(timeByTimestamp.keys()).sort((a, b) => a - b);
+  let cumulative = 0;
+  return sortedTimestamps.map((timestamp) => {
+    cumulative += timeByTimestamp.get(timestamp) || 0;
+    return { timestamp, totalTimeSpent: cumulative };
+  });
 }
 
 /**
