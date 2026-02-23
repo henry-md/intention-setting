@@ -5,7 +5,13 @@ import IntentionPopup from '../components/IntentionPopup';
 import SoftLimitPopup from '../components/SoftLimitPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
-import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
+import {
+  ALLOW_CUSTOM_RESET_TIME,
+  DEFAULT_DAILY_RESET_TIME,
+  DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS,
+  MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
+  MIN_UPCOMING_LIMIT_REMINDER_SECONDS,
+} from '../constants';
 import { getMostRestrictiveRuleIdForSite, getTotalAllowedSeconds } from '../utils/ruleSelection';
 import { normalizeHostname } from '../utils/urlNormalization';
 
@@ -151,11 +157,13 @@ let softLimitContainer: HTMLElement | null = null;
 let nearLimitOverlay: HTMLElement | null = null;
 let nearLimitOverlayStyle: HTMLStyleElement | null = null;
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
-const DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS = 10;
 const clampReminderSeconds = (value: unknown): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS;
-  return Math.min(60, Math.max(3, Math.round(parsed)));
+  return Math.min(
+    MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
+    Math.max(MIN_UPCOMING_LIMIT_REMINDER_SECONDS, Math.round(parsed))
+  );
 };
 
 // Check if current URL matches user's saved URLs

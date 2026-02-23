@@ -1,4 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  DEFAULT_TIMER_BADGE_TEXT_SCALE,
+  DEFAULT_TIMER_BADGE_WIDTH_SCALE,
+  MAX_TIMER_BADGE_TEXT_SCALE,
+  MAX_TIMER_BADGE_WIDTH_SCALE,
+  MIN_TIMER_BADGE_TEXT_SCALE,
+  MIN_TIMER_BADGE_WIDTH_SCALE,
+} from '../constants';
 import { formatTime } from '../utils/timeFormat';
 
 interface TimerBadgeProps {
@@ -22,13 +30,13 @@ interface TimerBadgeProps {
 }
 
 const clampScale = (value: number): number => {
-  if (!Number.isFinite(value)) return 1;
-  return Math.min(1.8, Math.max(0.7, value));
+  if (!Number.isFinite(value)) return DEFAULT_TIMER_BADGE_TEXT_SCALE;
+  return Math.min(MAX_TIMER_BADGE_TEXT_SCALE, Math.max(MIN_TIMER_BADGE_TEXT_SCALE, value));
 };
 
 const clampWidthScale = (value: number): number => {
-  if (!Number.isFinite(value)) return 0.65;
-  return Math.min(1.2, Math.max(0.35, value));
+  if (!Number.isFinite(value)) return DEFAULT_TIMER_BADGE_WIDTH_SCALE;
+  return Math.min(MAX_TIMER_BADGE_WIDTH_SCALE, Math.max(MIN_TIMER_BADGE_WIDTH_SCALE, value));
 };
 
 const TimerBadge: React.FC<TimerBadgeProps> = ({
@@ -39,8 +47,8 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
   relevantLimit,
 }) => {
   const [displayMode, setDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
-  const [widthScale, setWidthScale] = useState(0.65);
-  const [textScale, setTextScale] = useState(1);
+  const [widthScale, setWidthScale] = useState(DEFAULT_TIMER_BADGE_WIDTH_SCALE);
+  const [textScale, setTextScale] = useState(DEFAULT_TIMER_BADGE_TEXT_SCALE);
   const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
   const [isNearLimitFlashOn, setIsNearLimitFlashOn] = useState(false);
 

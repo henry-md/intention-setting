@@ -3,7 +3,19 @@ import type { User } from '../types/User';
 import Spinner from '../components/Spinner';
 import { getTimezoneInfo } from '../utils/timezone';
 import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
-import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
+import {
+  ALLOW_CUSTOM_RESET_TIME,
+  DEFAULT_DAILY_RESET_TIME,
+  DEFAULT_TIMER_BADGE_TEXT_SCALE,
+  DEFAULT_TIMER_BADGE_WIDTH_SCALE,
+  DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS,
+  MAX_TIMER_BADGE_TEXT_SCALE,
+  MAX_TIMER_BADGE_WIDTH_SCALE,
+  MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
+  MIN_TIMER_BADGE_TEXT_SCALE,
+  MIN_TIMER_BADGE_WIDTH_SCALE,
+  MIN_UPCOMING_LIMIT_REMINDER_SECONDS,
+} from '../constants';
 
 interface SettingsProps {
   user: User | null;
@@ -18,9 +30,9 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   const [timezone, setTimezone] = useState<string>('');
   const [timezoneAbbr, setTimezoneAbbr] = useState<string>('');
   const [timerDisplayMode, setTimerDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
-  const [timerBadgeWidthScale, setTimerBadgeWidthScale] = useState<number>(0.65);
-  const [timerBadgeTextScale, setTimerBadgeTextScale] = useState<number>(1);
-  const [upcomingLimitReminderSeconds, setUpcomingLimitReminderSeconds] = useState<number>(10);
+  const [timerBadgeWidthScale, setTimerBadgeWidthScale] = useState<number>(DEFAULT_TIMER_BADGE_WIDTH_SCALE);
+  const [timerBadgeTextScale, setTimerBadgeTextScale] = useState<number>(DEFAULT_TIMER_BADGE_TEXT_SCALE);
+  const [upcomingLimitReminderSeconds, setUpcomingLimitReminderSeconds] = useState<number>(DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS);
   const [redirectUrls, setRedirectUrls] = useState<string[]>([]);
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -61,24 +73,27 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         setRedirectUrls(result.redirectUrls);
       }
       if (typeof result.timerBadgeWidthScale === 'number') {
-        const scale = Math.min(1.2, Math.max(0.35, result.timerBadgeWidthScale));
+        const scale = Math.min(MAX_TIMER_BADGE_WIDTH_SCALE, Math.max(MIN_TIMER_BADGE_WIDTH_SCALE, result.timerBadgeWidthScale));
         setTimerBadgeWidthScale(scale);
       } else if (typeof result.timerBadgeScale === 'number') {
-        const scale = Math.min(1.2, Math.max(0.35, result.timerBadgeScale));
+        const scale = Math.min(MAX_TIMER_BADGE_WIDTH_SCALE, Math.max(MIN_TIMER_BADGE_WIDTH_SCALE, result.timerBadgeScale));
         setTimerBadgeWidthScale(scale);
       }
       if (typeof result.timerBadgeTextScale === 'number') {
-        const scale = Math.min(1.8, Math.max(0.7, result.timerBadgeTextScale));
+        const scale = Math.min(MAX_TIMER_BADGE_TEXT_SCALE, Math.max(MIN_TIMER_BADGE_TEXT_SCALE, result.timerBadgeTextScale));
         setTimerBadgeTextScale(scale);
       } else if (typeof result.timerBadgeScale === 'number') {
-        const scale = Math.min(1.8, Math.max(0.7, result.timerBadgeScale));
+        const scale = Math.min(MAX_TIMER_BADGE_TEXT_SCALE, Math.max(MIN_TIMER_BADGE_TEXT_SCALE, result.timerBadgeScale));
         setTimerBadgeTextScale(scale);
       }
       if (typeof result.upcomingLimitReminderSeconds === 'number') {
-        const reminder = Math.min(60, Math.max(3, Math.round(result.upcomingLimitReminderSeconds)));
+        const reminder = Math.min(
+          MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
+          Math.max(MIN_UPCOMING_LIMIT_REMINDER_SECONDS, Math.round(result.upcomingLimitReminderSeconds))
+        );
         setUpcomingLimitReminderSeconds(reminder);
       } else {
-        setUpcomingLimitReminderSeconds(10);
+        setUpcomingLimitReminderSeconds(DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS);
       }
       setLoading(false);
     });
@@ -282,12 +297,12 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           <input
             id="timer-badge-width-scale"
             type="range"
-            min="0.35"
-            max="1.2"
+            min={String(MIN_TIMER_BADGE_WIDTH_SCALE)}
+            max={String(MAX_TIMER_BADGE_WIDTH_SCALE)}
             step="0.05"
             value={timerBadgeWidthScale}
             onChange={async (e) => {
-              const nextScale = Math.min(1.2, Math.max(0.35, Number(e.target.value)));
+              const nextScale = Math.min(MAX_TIMER_BADGE_WIDTH_SCALE, Math.max(MIN_TIMER_BADGE_WIDTH_SCALE, Number(e.target.value)));
               setTimerBadgeWidthScale(nextScale);
               await chrome.storage.local.set({ timerBadgeWidthScale: nextScale });
             }}
@@ -302,12 +317,12 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           <input
             id="timer-badge-text-scale"
             type="range"
-            min="0.7"
-            max="1.8"
+            min={String(MIN_TIMER_BADGE_TEXT_SCALE)}
+            max={String(MAX_TIMER_BADGE_TEXT_SCALE)}
             step="0.05"
             value={timerBadgeTextScale}
             onChange={async (e) => {
-              const nextScale = Math.min(1.8, Math.max(0.7, Number(e.target.value)));
+              const nextScale = Math.min(MAX_TIMER_BADGE_TEXT_SCALE, Math.max(MIN_TIMER_BADGE_TEXT_SCALE, Number(e.target.value)));
               setTimerBadgeTextScale(nextScale);
               await chrome.storage.local.set({ timerBadgeTextScale: nextScale });
             }}
@@ -328,20 +343,23 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           <input
             id="upcoming-limit-reminder-seconds"
             type="range"
-            min="3"
-            max="60"
+            min={String(MIN_UPCOMING_LIMIT_REMINDER_SECONDS)}
+            max={String(MAX_UPCOMING_LIMIT_REMINDER_SECONDS)}
             step="1"
             value={upcomingLimitReminderSeconds}
             onChange={async (e) => {
-              const reminder = Math.min(60, Math.max(3, Math.round(Number(e.target.value))));
+              const reminder = Math.min(
+                MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
+                Math.max(MIN_UPCOMING_LIMIT_REMINDER_SECONDS, Math.round(Number(e.target.value)))
+              );
               setUpcomingLimitReminderSeconds(reminder);
               await chrome.storage.local.set({ upcomingLimitReminderSeconds: reminder });
             }}
             className="w-full accent-blue-500"
           />
           <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
-            <span>3s</span>
-            <span>60s</span>
+            <span>{MIN_UPCOMING_LIMIT_REMINDER_SECONDS}s</span>
+            <span>{MAX_UPCOMING_LIMIT_REMINDER_SECONDS}s</span>
           </div>
           <div className="mt-1 text-xs text-gray-500">
             Shows red warning flashes on screen and badge before the active limit is reached.
