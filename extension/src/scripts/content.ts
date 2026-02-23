@@ -456,6 +456,8 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
     // Make it draggable
     let isDragging = false;
+    let didDrag = false;
+    let suppressClickUntil = 0;
     let currentX: number;
     let currentY: number;
     let initialX: number;
@@ -465,6 +467,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       // Get initial mouse position
       initialX = e.clientX;
       initialY = e.clientY;
+      didDrag = false;
 
       // Get current position
       const rect = wrapper.getBoundingClientRect();
@@ -483,6 +486,9 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       // Calculate new position
       const deltaX = e.clientX - initialX;
       const deltaY = e.clientY - initialY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        didDrag = true;
+      }
 
       const newX = currentX + deltaX;
       const newY = currentY + deltaY;
@@ -498,17 +504,26 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
       isDragging = false;
       wrapper.style.cursor = 'grab';
+      if (didDrag) {
+        suppressClickUntil = Date.now() + 250;
+      }
 
       // Save position to storage
       const rect = wrapper.getBoundingClientRect();
-      const windowWidth = window.innerWidth;
+      const viewportWidth = document.documentElement.clientWidth;
 
       // Calculate right offset (distance from right edge)
-      const rightOffset = windowWidth - rect.right;
+      const rightOffset = viewportWidth - rect.right;
+      const topOffset = rect.top;
+
+      // Re-anchor to right so future width expansion grows leftward.
+      wrapper.style.left = 'auto';
+      wrapper.style.right = `${rightOffset}px`;
+      wrapper.style.top = `${topOffset}px`;
 
       const success = await safeStorageSet({
         timerPosition: {
-          top: rect.top,
+          top: topOffset,
           right: rightOffset
         }
       });
@@ -518,7 +533,15 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       }
     };
 
+    const onClickCapture = (e: MouseEvent) => {
+      if (Date.now() <= suppressClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     wrapper.addEventListener('mousedown', onMouseDown);
+    wrapper.addEventListener('click', onClickCapture, true);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
 
