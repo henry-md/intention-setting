@@ -12,7 +12,7 @@ import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { MessageSquare } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
-type TabType = 'home' | 'rules' | 'settings' | 'god';
+type TabType = 'home' | 'rules' | 'settings';
 type RulesView = 'rules' | 'groups' | 'groupEdit';
 
 /**
@@ -29,7 +29,6 @@ const Popup: React.FC = () => {
   const [editingRuleIdBeforeGroupEdit, setEditingRuleIdBeforeGroupEdit] = useState<string | null>(null);
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
-  const canAccessGodTab = user?.email === 'henrymdeutsch@gmail.com';
 
   // Sync rules to chrome.storage on app initialization
   useEffect(() => {
@@ -39,12 +38,6 @@ const Popup: React.FC = () => {
       });
     }
   }, [user?.uid]);
-
-  useEffect(() => {
-    if (!canAccessGodTab && currentTab === 'god') {
-      setCurrentTab('home');
-    }
-  }, [canAccessGodTab, currentTab]);
 
   if (authLoading) {
     return (
@@ -70,19 +63,6 @@ const Popup: React.FC = () => {
             <div className="flex border-b border-gray-700 bg-gray-900">
                 <button
                   onClick={() => {
-                    setCurrentTab('home');
-                    setEditingRuleIdBeforeGroupEdit(null);
-                  }}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    currentTab === 'home'
-                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                  }`}
-                >
-                  Account
-                </button>
-                <button
-                  onClick={() => {
                     setCurrentTab('rules');
                     setRulesView('rules');
                     // Don't clear editingRuleIdBeforeGroupEdit here - it's needed for Rules view
@@ -97,6 +77,19 @@ const Popup: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
+                    setCurrentTab('home');
+                    setEditingRuleIdBeforeGroupEdit(null);
+                  }}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    currentTab === 'home'
+                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Account
+                </button>
+                <button
+                  onClick={() => {
                     setCurrentTab('settings');
                     setEditingRuleIdBeforeGroupEdit(null);
                   }}
@@ -108,21 +101,6 @@ const Popup: React.FC = () => {
                 >
                   Settings
                 </button>
-                {canAccessGodTab && (
-                  <button
-                    onClick={() => {
-                      setCurrentTab('god');
-                      setEditingRuleIdBeforeGroupEdit(null);
-                    }}
-                    className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                      currentTab === 'god'
-                        ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                    }`}
-                  >
-                    God
-                  </button>
-                )}
             </div>
 
             {/* Content */}
@@ -181,9 +159,6 @@ const Popup: React.FC = () => {
               )}
               {currentTab === 'settings' && (
                 <Settings user={user} />
-              )}
-              {currentTab === 'god' && (
-                <div className="h-full w-full" />
               )}
             </div>
           </div>

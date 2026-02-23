@@ -3,7 +3,6 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import Link from 'next/link';
 
 export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
@@ -32,9 +31,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
-      <div className="flex flex-1 items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+      <div className="w-full px-4">
+        <div className="mx-auto w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
           <h1 className="mb-6 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
             Sign In
           </h1>
@@ -67,13 +66,6 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
-      <footer className="border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="px-6 py-4 text-center text-sm">
-          <Link href="/privacy" className="text-blue-600 hover:text-blue-500 dark:text-blue-400">
-            Privacy Policy
-          </Link>
-        </div>
-      </footer>
     </div>
   );
 }
