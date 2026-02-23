@@ -185,13 +185,10 @@ export default function PublicStatsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-6 py-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
-          <span>
-            Powered by <span className="font-semibold">Intention Setter</span> chrome extension
-          </span>
-          <span className="text-zinc-400 dark:text-zinc-500">•</span>
-          <Link href="/privacy" className="text-blue-600 hover:text-blue-500 dark:text-blue-400">
+      <footer>
+        <div className="mx-auto max-w-7xl px-6 pb-4 pt-3 text-center text-sm">
+          <div className="mx-auto mb-3 h-px w-full max-w-xs bg-gradient-to-r from-transparent via-zinc-300/70 to-transparent dark:via-zinc-700/70" />
+          <Link href="/privacy" className="text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
             Privacy Policy
           </Link>
         </div>
