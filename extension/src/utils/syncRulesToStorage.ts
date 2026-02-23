@@ -24,6 +24,7 @@ interface CompiledRuleData {
 interface RuleUsageEntry {
   timeSpent: number;
   lastUpdated: number;
+  snoozesUsed: number;
 }
 
 function shouldReplacePrimaryRule(existing: SiteRuleData, nextRule: Rule): boolean {
@@ -162,7 +163,8 @@ export async function syncRulesToStorage(userId: string): Promise<void> {
         : 0;
       ruleUsageData[rule.id] = {
         timeSpent: computedTimeSpent,
-        lastUpdated: existingRuleUsageData[rule.id]?.lastUpdated || now
+        lastUpdated: existingRuleUsageData[rule.id]?.lastUpdated || now,
+        snoozesUsed: existingRuleUsageData[rule.id]?.snoozesUsed || 0
       };
     }
 

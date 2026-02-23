@@ -2,6 +2,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import IntentionPopup from '../components/IntentionPopup';
+import SoftLimitPopup from '../components/SoftLimitPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
@@ -132,6 +133,8 @@ console.log('[Timer] Initial state - document.hidden:', document.hidden, 'visibi
 // Content script state (timer management moved to background service worker)
 let currentSiteKey: string | null = null;
 let containerRoot: Root | null = null; // Root for the flex container holding both components
+let softLimitRoot: Root | null = null;
+let softLimitContainer: HTMLElement | null = null;
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
 
 // Check if current URL matches user's saved URLs
@@ -182,7 +185,7 @@ const checkAndShowIntentionPopup = async () => {
       // New day or first visit
       // Only show intention popup for session rules
       if (ruleData.ruleType === 'session') {
-        pauseAllVideos();
+        pauseAllMedia();
         showIntentionPopup();
       } else if (ruleData.timeLimit != null) {
         // For hard/soft rules, start timer immediately with the configured time limit
@@ -195,22 +198,50 @@ const checkAndShowIntentionPopup = async () => {
   }
 };
 
-// Pause all video elements on the page
-const pauseAllVideos = () => {
-  const videos = document.querySelectorAll('video');
-  videos.forEach(video => {
-    video.pause();
-  });
+const runMediaControlInPageContext = (action: 'pause' | 'play') => {
+  const script = document.createElement('script');
+  script.textContent = `
+    (() => {
+      const media = Array.from(document.querySelectorAll('video, audio'));
+      for (const el of media) {
+        try {
+          if (${JSON.stringify(action)} === 'pause') {
+            el.pause();
+          } else {
+            const p = el.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          }
+        } catch {}
+      }
+    })();
+  `;
+
+  (document.documentElement || document.head).appendChild(script);
+  script.remove();
 };
 
-// Resume all video elements on the page
-const resumeAllVideos = () => {
-  const videos = document.querySelectorAll('video');
-  videos.forEach(video => {
-    video.play().catch(() => {
+// Pause all video/audio players on the page.
+const pauseAllMedia = () => {
+  const mediaElements = document.querySelectorAll<HTMLMediaElement>('video, audio');
+  mediaElements.forEach((mediaEl) => {
+    try {
+      mediaEl.pause();
+    } catch {
+      // Ignore player pause errors
+    }
+  });
+  runMediaControlInPageContext('pause');
+};
+
+// Resume all video/audio players on the page.
+const resumeAllMedia = () => {
+  const mediaElements = document.querySelectorAll<HTMLMediaElement>('video, audio');
+  mediaElements.forEach((mediaEl) => {
+    mediaEl.play().catch(() => {
       // Ignore autoplay errors
     });
   });
+  runMediaControlInPageContext('play');
 };
 
 // Get the current site key (normalized hostname)
@@ -613,7 +644,7 @@ const showIntentionPopup = () => {
     // Remove popup and resume videos
     root.unmount();
     container.remove();
-    resumeAllVideos();
+    resumeAllMedia();
 
     // Start time tracking
     await startTimeTracking(timeLimit);
@@ -633,6 +664,67 @@ const showIntentionPopup = () => {
     React.createElement(IntentionPopup, {
       onContinue: handleContinue,
       onCancel: handleCancel
+    })
+  );
+};
+
+const closeSoftLimitPopup = () => {
+  if (softLimitRoot) {
+    softLimitRoot.unmount();
+    softLimitRoot = null;
+  }
+
+  if (softLimitContainer) {
+    softLimitContainer.remove();
+    softLimitContainer = null;
+  }
+};
+
+const showSoftLimitPopup = (ruleId: string, remainingOneMores: number, plusOneDuration: number) => {
+  closeSoftLimitPopup();
+  pauseAllMedia();
+
+  softLimitContainer = document.createElement('div');
+  softLimitContainer.id = 'soft-limit-popup-container';
+
+  const shadowRoot = softLimitContainer.attachShadow({ mode: 'open' });
+  const shadowContainer = document.createElement('div');
+  shadowRoot.appendChild(shadowContainer);
+  document.body.appendChild(softLimitContainer);
+
+  const handleSnooze = async () => {
+    const siteKey = currentSiteKey || getCurrentSiteKey();
+    const result = await safeSendMessage({
+      action: 'soft-limit-snooze',
+      ruleId,
+      siteKey
+    });
+
+    if (result?.success) {
+      closeSoftLimitPopup();
+      resumeAllMedia();
+      return;
+    }
+
+    console.error('[SoftLimit] Snooze failed:', result?.error || 'Unknown error');
+  };
+
+  const handleLeave = async () => {
+    await safeSendMessage({ action: 'soft-limit-leave' });
+    closeSoftLimitPopup();
+  };
+
+  softLimitRoot = createRoot(shadowContainer);
+  softLimitRoot.render(
+    React.createElement(SoftLimitPopup, {
+      remainingOneMores,
+      plusOneDuration,
+      onSnooze: () => {
+        void handleSnooze();
+      },
+      onLeave: () => {
+        void handleLeave();
+      }
     })
   );
 };
@@ -671,6 +763,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   console.log('[Content] Message received:', message);
+
+  if (message.action === 'show-soft-limit-popup') {
+    const ruleId = message.ruleId as string | undefined;
+    const remainingOneMores = Number(message.remainingOneMores || 0);
+    const plusOneDuration = Number(message.plusOneDuration || 0);
+
+    if (!ruleId) {
+      sendResponse({ handled: false, error: 'Missing ruleId' });
+      return false;
+    }
+
+    showSoftLimitPopup(ruleId, remainingOneMores, plusOneDuration);
+    sendResponse({ handled: true });
+    return false;
+  }
 
   if (message.action === 'get-current-site') {
     (async () => {

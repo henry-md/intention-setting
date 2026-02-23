@@ -55,7 +55,26 @@ interface RuleUsageData {
   [ruleId: string]: {
     timeSpent: number;
     lastUpdated: number;
+    snoozesUsed: number;
   };
+}
+
+interface ExceededRuleInfo {
+  ruleId: string;
+  rule: {
+    ruleType: 'hard' | 'soft' | 'session';
+    timeLimit: number;
+    plusOnes?: number;
+    plusOneDuration?: number;
+    siteKeys: string[];
+  };
+  usage: {
+    timeSpent: number;
+    lastUpdated: number;
+    snoozesUsed: number;
+  };
+  effectiveLimit: number;
+  remainingOneMores: number;
 }
 
 let activeTimer: ActiveTimerState | null = null;
@@ -80,6 +99,48 @@ async function hydrateCompiledRuleIndexes(): Promise<void> {
     console.log('[Timer] ✓ Rule indexes hydrated');
   } catch (error) {
     console.error('[Timer] Failed to hydrate rule indexes:', error);
+  }
+}
+
+async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
+  const redirectStorage = await chrome.storage.local.get(['redirectUrls']);
+  const redirectUrls: string[] = redirectStorage.redirectUrls || [];
+
+  if (redirectUrls.length === 0) {
+    console.log('[Timer] No redirect URLs configured - limit exceeded but not redirecting');
+    return false;
+  }
+
+  const randomIndex = Math.floor(Math.random() * redirectUrls.length);
+  const redirectUrl = redirectUrls[randomIndex];
+  console.log(`[Timer] Redirecting to: ${redirectUrl}`);
+
+  try {
+    await chrome.tabs.update(tabId, { url: redirectUrl });
+    console.log(`[Timer] ✓ Redirected tab ${tabId} to ${redirectUrl}`);
+    return true;
+  } catch (error) {
+    console.error('[Timer] Failed to redirect tab:', error);
+    return false;
+  }
+}
+
+async function showSoftLimitPopup(tabId: number, siteKey: string, exceededRule: ExceededRuleInfo): Promise<boolean> {
+  if (exceededRule.rule.ruleType !== 'soft') return false;
+
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: 'show-soft-limit-popup',
+      siteKey,
+      ruleId: exceededRule.ruleId,
+      remainingOneMores: exceededRule.remainingOneMores,
+      plusOneDuration: exceededRule.rule.plusOneDuration || 0
+    });
+
+    return !!response?.handled;
+  } catch (error) {
+    console.error('[Timer] Failed to show soft-limit popup in content script:', error);
+    return false;
   }
 }
 
@@ -141,7 +202,8 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
       resetRuleUsageData[ruleId] = {
         ...ruleUsageData[ruleId],
         timeSpent: 0,
-        lastUpdated: now
+        lastUpdated: now,
+        snoozesUsed: 0
       };
     }
 
@@ -316,22 +378,35 @@ async function timerTick(): Promise<void> {
     siteTimeData[siteKey].lastUpdated = currentTickTimestamp;
 
     const applicableRuleIds = siteRuleIds[siteKey] || [];
-    const exceededRuleIds: string[] = [];
+    const exceededRules: ExceededRuleInfo[] = [];
 
     for (const ruleId of applicableRuleIds) {
       const rule = compiledRules[ruleId];
       if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
 
+      const existingUsage = ruleUsageData[ruleId];
+      const snoozesUsed = existingUsage?.snoozesUsed || 0;
+      const remainingOneMores = Math.max((rule.plusOnes || 0) - snoozesUsed, 0);
+      const effectiveLimit = rule.ruleType === 'soft'
+        ? rule.timeLimit + (snoozesUsed * (rule.plusOneDuration || 0))
+        : rule.timeLimit;
       const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
         return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
       }, 0);
       ruleUsageData[ruleId] = {
         timeSpent: totalTimeSpent,
-        lastUpdated: currentTickTimestamp
+        lastUpdated: currentTickTimestamp,
+        snoozesUsed
       };
 
-      if (totalTimeSpent >= rule.timeLimit) {
-        exceededRuleIds.push(ruleId);
+      if (totalTimeSpent >= effectiveLimit) {
+        exceededRules.push({
+          ruleId,
+          rule,
+          usage: ruleUsageData[ruleId],
+          effectiveLimit,
+          remainingOneMores
+        });
       }
     }
 
@@ -348,45 +423,36 @@ async function timerTick(): Promise<void> {
     // ============================================================================
     const { timeSpent, timeLimit } = siteTimeData[siteKey];
     const siteLimitExceeded = timeLimit > 0 && timeSpent >= timeLimit;
-    const shouldRedirect = siteLimitExceeded || exceededRuleIds.length > 0;
+    if (exceededRules.length > 0) {
+      const exceededDetails = exceededRules.map((exceeded) => {
+        return `${exceeded.ruleId}: ${exceeded.usage.timeSpent}s / ${exceeded.effectiveLimit}s (remaining one-mores: ${exceeded.remainingOneMores})`;
+      });
+      console.log(`[Timer] ⚠️ Aggregated limit exceeded for ${siteKey}:`, exceededDetails.join(', '));
+    } else if (siteLimitExceeded && applicableRuleIds.length === 0) {
+      console.log(`[Timer] ⚠️ Site limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
+    }
 
-    if (shouldRedirect) {
-      if (exceededRuleIds.length > 0) {
-        const exceededDetails = exceededRuleIds.map((ruleId) => {
-          const rule = compiledRules[ruleId];
-          const usage = ruleUsageData[ruleId];
-          if (!rule || !usage) return `${ruleId} (unknown)`;
-          return `${ruleId}: ${usage.timeSpent}s / ${rule.timeLimit}s`;
-        });
-        console.log(`[Timer] ⚠️ Aggregated limit exceeded for ${siteKey}:`, exceededDetails.join(', '));
-      } else {
-        console.log(`[Timer] ⚠️ Site limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
+    const hardExceeded = exceededRules.find((exceeded) => exceeded.rule.ruleType === 'hard');
+    const softExceededWithSnooze = exceededRules.find((exceeded) =>
+      exceeded.rule.ruleType === 'soft' && exceeded.remainingOneMores > 0
+    );
+    const softExceededWithoutSnooze = exceededRules.find((exceeded) =>
+      exceeded.rule.ruleType === 'soft' && exceeded.remainingOneMores <= 0
+    );
+
+    if (hardExceeded || softExceededWithoutSnooze || (siteLimitExceeded && applicableRuleIds.length === 0)) {
+      stopCurrentTimer();
+      await redirectTabToRandomUrl(currentTimer.tabId);
+      return;
+    }
+
+    if (softExceededWithSnooze) {
+      stopCurrentTimer();
+      const didShowPopup = await showSoftLimitPopup(currentTimer.tabId, siteKey, softExceededWithSnooze);
+      if (!didShowPopup) {
+        await redirectTabToRandomUrl(currentTimer.tabId);
       }
-
-      // Get redirect URLs from storage
-      const redirectStorage = await chrome.storage.local.get(['redirectUrls']);
-      const redirectUrls: string[] = redirectStorage.redirectUrls || [];
-
-      if (redirectUrls.length > 0) {
-        // Pick a random redirect URL
-        const randomIndex = Math.floor(Math.random() * redirectUrls.length);
-        const redirectUrl = redirectUrls[randomIndex];
-
-        console.log(`[Timer] Redirecting to: ${redirectUrl}`);
-
-        // Stop the timer
-        stopCurrentTimer();
-
-        // Redirect the tab
-        try {
-          await chrome.tabs.update(currentTimer.tabId, { url: redirectUrl });
-          console.log(`[Timer] ✓ Redirected tab ${currentTimer.tabId} to ${redirectUrl}`);
-        } catch (error) {
-          console.error('[Timer] Failed to redirect tab:', error);
-        }
-      } else {
-        console.log('[Timer] No redirect URLs configured - time limit exceeded but not redirecting');
-      }
+      return;
     }
   } else {
     console.error(`[Timer] No time data for ${siteKey}!`);
@@ -543,7 +609,7 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // Handle requests to close a success or cancel tab (tab created after Stripe payment)
-chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background message received:', message);
 
   if (message.action === 'close-success-tab' || message.action === 'close-cancel-tab') {
@@ -578,6 +644,64 @@ chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
       startTimerForTab(sender.tab.id, message.newSiteKey);
     }
     return false;
+  }
+
+  if (message.action === 'soft-limit-snooze') {
+    (async () => {
+      try {
+        const ruleId = message.ruleId as string | undefined;
+        const siteKey = message.siteKey as string | undefined;
+        const tabId = sender.tab?.id;
+
+        if (!ruleId || !siteKey || !tabId) {
+          sendResponse({ success: false, error: 'Missing snooze payload' });
+          return;
+        }
+
+        const storage = await chrome.storage.local.get(['ruleUsageData']);
+        const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
+        const now = Date.now();
+        const previous = ruleUsageData[ruleId];
+
+        ruleUsageData[ruleId] = {
+          timeSpent: previous?.timeSpent || 0,
+          lastUpdated: now,
+          snoozesUsed: (previous?.snoozesUsed || 0) + 1
+        };
+
+        await chrome.storage.local.set({ ruleUsageData });
+        console.log(`[Timer] Snooze accepted for ${ruleId}. Snoozes used: ${ruleUsageData[ruleId].snoozesUsed}`);
+
+        await startTimerForTab(tabId, siteKey);
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Timer] Failed to process soft-limit snooze:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'soft-limit-leave') {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        if (!tabId) {
+          sendResponse({ success: false, error: 'Missing tabId' });
+          return;
+        }
+
+        if (activeTimer?.tabId === tabId) {
+          stopCurrentTimer();
+        }
+        await redirectTabToRandomUrl(tabId);
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Timer] Failed to process soft-limit leave:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
   }
 
   if (message.action === 'get-current-site') {
