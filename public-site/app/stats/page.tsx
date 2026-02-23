@@ -26,6 +26,7 @@ export default function StatsPage() {
   const { user, loading: authLoading, signOut, signInWithGoogle } = useAuth();
   const { userData, hasUserDocument, loading, error } = useUserData();
   const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
+  const [isGodTabHidden, setIsGodTabHidden] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'dark';
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -35,6 +36,32 @@ export default function StatsPage() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', themeMode === 'dark');
   }, [themeMode]);
+
+  const isGodUser =
+    user?.email === 'henrymdeutsch@gmail.com';
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      if (isTypingTarget) return;
+      if (event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.code !== 'KeyH') return;
+      if (!isGodUser) return;
+
+      setIsGodTabHidden((prev) => !prev);
+    };
+
+    document.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => document.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [isGodUser]);
 
   const handleThemeToggle = () => {
     const nextTheme: ThemeMode = themeMode === 'dark' ? 'light' : 'dark';
@@ -70,7 +97,7 @@ export default function StatsPage() {
                 >
                   Statistics
                 </Link>
-                {user?.email === 'henrymdeutsch@gmail.com' && (
+                {isGodUser && !isGodTabHidden && (
                   <Link
                     href="/god"
                     className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50"
