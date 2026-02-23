@@ -4,12 +4,95 @@ import { formatTime } from '../utils/timeFormat';
 interface TimerBadgeProps {
   timeSpent: number; // in seconds
   timeLimit: number; // in seconds
+  currentSiteKey?: string;
+  relevantLimit?: {
+    ruleId: string;
+    ruleName?: string;
+    timeSpent: number;
+    timeLimit: number;
+    siteBreakdown: Array<{
+      siteKey: string;
+      timeSpent: number;
+    }>;
+  };
 }
 
-const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
+const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit, currentSiteKey, relevantLimit }) => {
   const [displayMode, setDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
-  const percentage = timeLimit > 0 ? (timeSpent / timeLimit) * 100 : 0;
-  const isOverLimit = timeSpent >= timeLimit;
+  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
+
+  const displayedTimeSpent = relevantLimit?.timeSpent ?? timeSpent;
+  const displayedTimeLimit = relevantLimit?.timeLimit ?? timeLimit;
+  const percentage = displayedTimeLimit > 0 ? (displayedTimeSpent / displayedTimeLimit) * 100 : 0;
+  const isOverLimit = displayedTimeSpent >= displayedTimeLimit;
+  const formatRuleLabel = (label: string): string =>
+    label
+      .replace(/\s+(hard|soft|session)\s+limit$/i, '')
+      .replace(/\s+limit$/i, '')
+      .trim();
+
+  const relevantRuleLabel = relevantLimit
+    ? formatRuleLabel(relevantLimit.ruleName || relevantLimit.ruleId)
+    : undefined;
+  const hasBreakdown = !!relevantLimit && relevantLimit.siteBreakdown.length > 0;
+
+  const toggleBreakdown = () => {
+    if (!hasBreakdown) return;
+    setIsBreakdownExpanded((prev) => !prev);
+  };
+
+  const handleBadgeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!hasBreakdown) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggleBreakdown();
+  };
+
+  const renderSiteBreakdown = () => {
+    if (!isBreakdownExpanded || !relevantLimit) return null;
+
+    return (
+      <div
+        style={{
+          marginTop: '6px',
+          marginBottom: '6px',
+          paddingTop: '6px',
+          borderTop: '1px solid rgba(255,255,255,0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          fontSize: '10px',
+          opacity: 0.9,
+        }}
+      >
+        {relevantLimit.siteBreakdown.map((site) => (
+          <div
+            key={site.siteKey}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: '8px',
+              backgroundColor: site.siteKey === currentSiteKey ? 'rgba(255,255,255,0.08)' : 'transparent',
+              borderRadius: '4px',
+              padding: '2px 4px',
+            }}
+          >
+            <span
+              style={{
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '120px',
+              }}
+            >
+              {site.siteKey}
+            </span>
+            <span>{formatTime(site.timeSpent)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // Load display mode setting
   useEffect(() => {
@@ -49,12 +132,33 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
           minWidth: '80px',
           border: isOverLimit ? '2px solid #ef4444' : '2px solid #404040',
           transition: 'all 0.3s ease',
+          cursor: hasBreakdown ? 'pointer' : 'default',
         }}
+        onClick={toggleBreakdown}
+        onKeyDown={handleBadgeKeyDown}
+        role={hasBreakdown ? 'button' : undefined}
+        tabIndex={hasBreakdown ? 0 : undefined}
       >
-        <div style={{ fontSize: '16px', marginBottom: '6px', textAlign: 'center' }}>
-          {formatTime(timeSpent)}
+        {relevantRuleLabel && (
+          <div
+            style={{
+              marginBottom: '6px',
+              fontSize: '11px',
+              textAlign: 'center',
+              opacity: 0.9,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {relevantRuleLabel}
+          </div>
+        )}
+        <div style={{ fontSize: '16px', lineHeight: 1, textAlign: 'center', marginBottom: '6px' }}>
+          {formatTime(displayedTimeSpent)}
         </div>
-        {timeLimit > 0 && (
+        {renderSiteBreakdown()}
+        {displayedTimeLimit > 0 && (
           <div
             style={{
               width: '100%',
@@ -94,12 +198,33 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
           minWidth: '100px',
           border: isOverLimit ? '2px solid #ef4444' : '2px solid #404040',
           transition: 'all 0.3s ease',
+          cursor: hasBreakdown ? 'pointer' : 'default',
         }}
+        onClick={toggleBreakdown}
+        onKeyDown={handleBadgeKeyDown}
+        role={hasBreakdown ? 'button' : undefined}
+        tabIndex={hasBreakdown ? 0 : undefined}
       >
-        <div style={{ fontSize: '14px', marginBottom: '6px', textAlign: 'center' }}>
-          {formatTime(timeSpent)} / {formatTime(timeLimit)}
+        {relevantRuleLabel && (
+          <div
+            style={{
+              marginBottom: '6px',
+              fontSize: '11px',
+              textAlign: 'center',
+              opacity: 0.9,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {relevantRuleLabel}
+          </div>
+        )}
+        <div style={{ fontSize: '14px', lineHeight: 1, textAlign: 'center', marginBottom: '6px' }}>
+          {formatTime(displayedTimeSpent)} / {formatTime(displayedTimeLimit)}
         </div>
-        {timeLimit > 0 && (
+        {renderSiteBreakdown()}
+        {displayedTimeLimit > 0 && (
           <div
             style={{
               width: '100%',
@@ -138,15 +263,36 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
         minWidth: '120px',
         border: isOverLimit ? '2px solid #ef4444' : '2px solid #404040',
         transition: 'all 0.3s ease',
+        cursor: hasBreakdown ? 'pointer' : 'default',
       }}
+      onClick={toggleBreakdown}
+      onKeyDown={handleBadgeKeyDown}
+      role={hasBreakdown ? 'button' : undefined}
+      tabIndex={hasBreakdown ? 0 : undefined}
     >
+      {relevantRuleLabel && (
+        <div
+          style={{
+            marginBottom: '8px',
+            fontSize: '11px',
+            textAlign: 'center',
+            opacity: 0.9,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {relevantRuleLabel}
+        </div>
+      )}
       <div style={{ marginBottom: '4px', fontSize: '12px', opacity: 0.7 }}>
-        Time Spent
+        {relevantRuleLabel ? 'Total Time' : 'Time Spent'}
       </div>
-      <div style={{ fontSize: '18px', marginBottom: '8px' }}>
-        {formatTime(timeSpent)}
+      <div style={{ fontSize: '18px', lineHeight: 1, textAlign: 'center', marginBottom: '8px' }}>
+        {formatTime(displayedTimeSpent)}
       </div>
-      {timeLimit > 0 && (
+      {renderSiteBreakdown()}
+      {displayedTimeLimit > 0 && (
         <>
           <div
             style={{
@@ -168,7 +314,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({ timeSpent, timeLimit }) => {
             />
           </div>
           <div style={{ fontSize: '11px', opacity: 0.6 }}>
-            Total: {formatTime(timeLimit)}
+            Limit: {formatTime(displayedTimeLimit)}
           </div>
         </>
       )}

@@ -45,6 +45,7 @@ interface CompiledRules {
   [ruleId: string]: {
     ruleType: 'hard' | 'soft' | 'session';
     timeLimit: number;
+    ruleName?: string;
     plusOnes?: number;
     plusOneDuration?: number;
     siteKeys: string[];

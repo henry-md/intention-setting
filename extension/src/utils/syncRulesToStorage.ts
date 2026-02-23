@@ -16,6 +16,7 @@ interface SiteRuleData {
 interface CompiledRuleData {
   ruleType: 'hard' | 'soft' | 'session';
   timeLimit: number;
+  ruleName?: string;
   plusOnes?: number;
   plusOneDuration?: number;
   siteKeys: string[];
@@ -139,6 +140,7 @@ export async function syncRulesToStorage(userId: string): Promise<void> {
       compiledRules[rule.id] = {
         ruleType: rule.type,
         timeLimit: rule.timeLimit * 60,
+        ruleName: rule.name,
         siteKeys: Array.from(uniqueSiteKeys)
       };
 

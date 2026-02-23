@@ -334,6 +334,7 @@ const getDebugInfo = async () => {
     ruleType: 'hard' | 'soft' | 'session';
     timeLimit: number;
     siteKeys: string[];
+    ruleName?: string;
   }> = storage?.compiledRules || {};
   const siteTimeData: Record<string, { timeSpent: number }> = storage?.siteTimeData || {};
   const mappedRuleIds = siteRuleIds[normalizedHostname] || [];
@@ -342,8 +343,17 @@ const getDebugInfo = async () => {
     .map(([ruleId]) => ruleId);
   const applicableRuleIds = mappedRuleIds.length > 0 ? mappedRuleIds : fallbackRuleIds;
 
-  const applicableLimits = applicableRuleIds
-    .map((ruleId) => {
+  type ApplicableLimitItem = {
+    ruleId: string;
+    ruleName?: string;
+    ruleType: 'hard' | 'soft' | 'session';
+    timeLimit: number;
+    timeSpent: number;
+    siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
+  };
+
+  const applicableLimits: ApplicableLimitItem[] = applicableRuleIds
+    .map((ruleId): ApplicableLimitItem | null => {
       const rule = compiledRules[ruleId];
       if (!rule) return null;
       const siteBreakdown = rule.siteKeys
@@ -355,19 +365,14 @@ const getDebugInfo = async () => {
       const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);
       return {
         ruleId,
+        ruleName: rule.ruleName,
         ruleType: rule.ruleType,
         timeLimit: rule.timeLimit,
         timeSpent,
         siteBreakdown,
       };
     })
-    .filter((rule): rule is {
-      ruleId: string;
-      ruleType: 'hard' | 'soft' | 'session';
-      timeLimit: number;
-      timeSpent: number;
-      siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
-    } => rule !== null)
+    .filter((rule): rule is ApplicableLimitItem => rule !== null)
     .sort((a, b) => b.timeSpent - a.timeSpent);
 
   return {
@@ -531,6 +536,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
 
   // Render both components
   const components = [];
+  const relevantLimit = debugInfo.applicableLimits[0];
 
   // Add timer badge if we have time data
   if (timeSpent !== undefined && timeLimit !== undefined) {
@@ -538,7 +544,9 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       React.createElement(TimerBadge, {
         key: 'timer',
         timeSpent: timeSpent,
-        timeLimit: timeLimit
+        timeLimit: timeLimit,
+        currentSiteKey: debugInfo.normalizedHostname,
+        relevantLimit
       })
     );
   }

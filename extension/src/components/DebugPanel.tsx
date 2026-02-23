@@ -10,6 +10,7 @@ interface DebugPanelProps {
     isStaleTab: boolean;
     applicableLimits: Array<{
       ruleId: string;
+      ruleName?: string;
       ruleType: 'hard' | 'soft' | 'session';
       timeLimit: number;
       timeSpent: number;
@@ -112,7 +113,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
             ) : (
               debugInfo.applicableLimits.map((limit) => (
                 <div key={limit.ruleId} style={{ marginBottom: '6px' }}>
-                  <div>{limit.ruleId} ({limit.ruleType})</div>
+                  <div>{limit.ruleName || limit.ruleId}</div>
                   <div>
                     Total: {formatTime(limit.timeSpent)} / {formatTime(limit.timeLimit)}
                   </div>
