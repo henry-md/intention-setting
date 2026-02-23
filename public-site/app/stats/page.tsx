@@ -81,7 +81,14 @@ export default function StatsPage() {
 
   const isStatsLoading = !!user && loading;
   const ruleStats = userData ? buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking) : [];
-  const usageTimeline = userData ? buildTotalTrackedUsageTimeline(userData.rules, userData.groups, userData.timeTracking) : [];
+  const usageTimeline = userData
+    ? buildTotalTrackedUsageTimeline(
+        userData.rules,
+        userData.groups,
+        userData.timeTracking,
+        userData.dailyUsageHistory
+      )
+    : [];
 
   return (
       <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">

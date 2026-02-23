@@ -60,6 +60,16 @@ interface RuleUsageData {
   };
 }
 
+interface DailyUsageHistoryEntry {
+  totalTimeSpent: number;
+  trackedSiteCount: number;
+  periodStart: number;
+  periodEnd: number;
+  capturedAt: number;
+}
+
+type DailyUsageHistory = Record<string, DailyUsageHistoryEntry>;
+
 interface ExceededRuleInfo {
   ruleId: string;
   rule: {
@@ -87,6 +97,7 @@ let lastTickTimestamp: number | null = null; // Track last tick time for reset b
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
+const MAX_DAILY_HISTORY_ENTRIES = 730;
 
 async function hydrateCompiledRuleIndexes(): Promise<void> {
   try {
@@ -103,6 +114,59 @@ async function hydrateCompiledRuleIndexes(): Promise<void> {
   } catch (error) {
     console.error('[Timer] Failed to hydrate rule indexes:', error);
   }
+}
+
+function getHistoryDateKey(periodEnd: number): string {
+  return format(new Date(periodEnd - 1), 'yyyy-MM-dd');
+}
+
+function collectTrackedSiteTotals(
+  siteTimeData: Record<string, SiteTimeData>,
+  compiledRules: CompiledRules
+): Record<string, number> {
+  const trackedSiteKeys = new Set<string>();
+
+  Object.values(compiledRules).forEach((rule) => {
+    rule.siteKeys.forEach((siteKey) => trackedSiteKeys.add(siteKey));
+  });
+
+  if (trackedSiteKeys.size === 0) {
+    Object.keys(siteTimeData).forEach((siteKey) => trackedSiteKeys.add(siteKey));
+  }
+
+  const siteTotals: Record<string, number> = {};
+  trackedSiteKeys.forEach((siteKey) => {
+    const seconds = Math.max(0, Math.floor(siteTimeData[siteKey]?.timeSpent || 0));
+    if (seconds > 0) {
+      siteTotals[siteKey] = seconds;
+    }
+  });
+
+  return siteTotals;
+}
+
+function appendHistoryEntry(
+  history: DailyUsageHistory,
+  historyKey: string,
+  entry: DailyUsageHistoryEntry
+): DailyUsageHistory {
+  const merged: DailyUsageHistory = {
+    ...history,
+    [historyKey]: entry
+  };
+
+  const sortedKeys = Object.keys(merged).sort();
+  if (sortedKeys.length <= MAX_DAILY_HISTORY_ENTRIES) {
+    return merged;
+  }
+
+  const keysToRemove = sortedKeys.slice(0, sortedKeys.length - MAX_DAILY_HISTORY_ENTRIES);
+  const trimmed: DailyUsageHistory = { ...merged };
+  keysToRemove.forEach((key) => {
+    delete trimmed[key];
+  });
+
+  return trimmed;
 }
 
 async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
@@ -181,14 +245,33 @@ function getMostRecentResetBoundary(timestamp: number, resetHour: number, resetM
  * Resets all site time tracking to 0.
  * Called when we cross a daily reset boundary.
  */
-async function resetAllSiteTime(userId: string | null): Promise<void> {
+async function resetAllSiteTime(
+  userId: string | null,
+  periodEndBoundary?: number,
+  periodStartBoundary?: number
+): Promise<void> {
   console.log('[DailyReset] ✓✓✓ CROSSING RESET BOUNDARY - Resetting all site time to 0 ✓✓✓');
 
   try {
-    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData']);
+    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData', 'compiledRules', 'dailyUsageHistory']);
     const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
     const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
+    const compiledRules: CompiledRules = storage.compiledRules || {};
+    const dailyUsageHistory: DailyUsageHistory = storage.dailyUsageHistory || {};
     const now = Date.now();
+    const periodEnd = periodEndBoundary ?? now;
+    const periodStart = periodStartBoundary ?? Math.max(periodEnd - (24 * 60 * 60 * 1000), 0);
+    const historyKey = getHistoryDateKey(periodEnd);
+    const siteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
+    const totalTimeSpent = Object.values(siteTotals).reduce((sum, value) => sum + value, 0);
+    const historyEntry: DailyUsageHistoryEntry = {
+      totalTimeSpent,
+      trackedSiteCount: Object.keys(siteTotals).length,
+      periodStart,
+      periodEnd,
+      capturedAt: now
+    };
+    const nextDailyUsageHistory = appendHistoryEntry(dailyUsageHistory, historyKey, historyEntry);
 
     // Reset all time spent values to 0
     const resetSiteTimeData: Record<string, SiteTimeData> = {};
@@ -213,10 +296,12 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
     await chrome.storage.local.set({
       siteTimeData: resetSiteTimeData,
       ruleUsageData: resetRuleUsageData,
+      dailyUsageHistory: nextDailyUsageHistory,
       lastResetTimestamp: now
     });
 
     console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
+    console.log(`[DailyReset] Stored snapshot ${historyKey}: ${totalTimeSpent}s across ${historyEntry.trackedSiteCount} sites`);
 
     // Also sync to Firestore if user is logged in
     if (userId) {
@@ -228,7 +313,10 @@ async function resetAllSiteTime(userId: string | null): Promise<void> {
 
       setDoc(userDocRef, {
         timeTracking: timeTrackingData,
-        lastDailyResetTimestamp: now
+        lastDailyResetTimestamp: now,
+        dailyUsageHistory: {
+          [historyKey]: historyEntry
+        }
       }, { merge: true }).catch((error) => {
         console.error('[DailyReset] Error syncing reset to Firestore:', error);
       });
@@ -353,7 +441,7 @@ async function timerTick(): Promise<void> {
         console.log('[Timer] Current boundary:', formatDateWithTimezone(new Date(currentBoundary)));
 
         // Reset all site time immediately
-        await resetAllSiteTime(userId);
+        await resetAllSiteTime(userId, currentBoundary, previousBoundary);
 
         console.log('[Timer] ============================================');
       }

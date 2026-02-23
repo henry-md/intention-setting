@@ -1,4 +1,10 @@
-import type { Rule, Group, SiteTimeData, RuleTarget } from '@/hooks/useUserData';
+import type {
+  DailyUsageHistoryEntry,
+  Group,
+  Rule,
+  RuleTarget,
+  SiteTimeData,
+} from '@/hooks/useUserData';
 
 /**
  * Get the normalized hostname from a URL
@@ -238,8 +244,39 @@ export function buildRuleProgressStats(
 export function buildTotalTrackedUsageTimeline(
   rules: Rule[],
   groups: Group[],
-  timeTracking: Record<string, SiteTimeData>
+  timeTracking: Record<string, SiteTimeData>,
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
 ): UsageTimelinePoint[] {
+  const now = Date.now();
+  const todayKey = new Date(now).toISOString().slice(0, 10);
+  const historyPoints: UsageTimelinePoint[] = Object.entries(dailyUsageHistory)
+    .map(([dayKey, entry]) => {
+      // Never render future calendar days, even if bad/old test data exists.
+      if (dayKey > todayKey) return null;
+
+      const fallbackPeriodEnd = new Date(`${dayKey}T23:59:59`).getTime();
+      const rawTimestamp = Number(
+        entry?.periodEnd != null
+          ? entry.periodEnd - 1
+          : (entry?.capturedAt ?? fallbackPeriodEnd)
+      );
+      // If today's period end points to a future reset boundary, clamp to now.
+      const safeTimestamp = Math.min(rawTimestamp, now);
+      const rawTotal = Number(entry?.totalTimeSpent ?? 0);
+      if (!Number.isFinite(safeTimestamp) || !Number.isFinite(rawTotal)) return null;
+      return {
+        timestamp: safeTimestamp,
+        totalTimeSpent: Math.max(0, Math.floor(rawTotal)),
+      };
+    })
+    .filter((point): point is UsageTimelinePoint => point !== null)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (historyPoints.length > 0) {
+    return historyPoints;
+  }
+
+  // Fallback only when no daily history exists yet: show a single current-day total point.
   const trackedSiteKeys = new Set<string>();
   for (const rule of rules) {
     const urls = expandTargetsToUrls(rule.targets, groups);
@@ -252,27 +289,36 @@ export function buildTotalTrackedUsageTimeline(
     return [];
   }
 
-  const now = Date.now();
-  const timeByTimestamp = new Map<number, number>();
-
+  let currentTotal = 0;
+  let latestCurrentTimestamp = 0;
   trackedSiteKeys.forEach((siteKey) => {
     const tracking = timeTracking[siteKey];
     if (!tracking) return;
-
-    const seconds = Math.max(0, Number(tracking.timeSpent) || 0);
-    if (seconds <= 0) return;
-
+    currentTotal += Math.max(0, Number(tracking.timeSpent) || 0);
     const rawTimestamp = Number(tracking.lastUpdated);
-    const timestamp = Number.isFinite(rawTimestamp) ? rawTimestamp : now;
-    timeByTimestamp.set(timestamp, (timeByTimestamp.get(timestamp) || 0) + seconds);
+    if (Number.isFinite(rawTimestamp) && rawTimestamp > latestCurrentTimestamp) {
+      latestCurrentTimestamp = rawTimestamp;
+    }
   });
 
-  const sortedTimestamps = Array.from(timeByTimestamp.keys()).sort((a, b) => a - b);
-  let cumulative = 0;
-  return sortedTimestamps.map((timestamp) => {
-    cumulative += timeByTimestamp.get(timestamp) || 0;
-    return { timestamp, totalTimeSpent: cumulative };
+  if (currentTotal <= 0) {
+    return [];
+  }
+
+  const todayOnlyPoint: UsageTimelinePoint[] = [
+    { timestamp: latestCurrentTimestamp || Date.now(), totalTimeSpent: Math.floor(currentTotal) },
+  ];
+
+  const byDateKey = new Map<string, UsageTimelinePoint>();
+  todayOnlyPoint.forEach((point) => {
+    const key = new Date(point.timestamp).toISOString().slice(0, 10);
+    const existing = byDateKey.get(key);
+    if (!existing || point.timestamp >= existing.timestamp) {
+      byDateKey.set(key, point);
+    }
   });
+
+  return Array.from(byDateKey.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 /**

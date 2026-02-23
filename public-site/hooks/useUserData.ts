@@ -34,10 +34,19 @@ export interface SiteTimeData {
   lastUpdated: number;
 }
 
+export interface DailyUsageHistoryEntry {
+  totalTimeSpent: number;
+  trackedSiteCount?: number;
+  periodStart: number;
+  periodEnd: number;
+  capturedAt: number;
+}
+
 export interface UserData {
   rules: Rule[];
   groups: Group[];
   timeTracking: Record<string, SiteTimeData>;
+  dailyUsageHistory?: Record<string, DailyUsageHistoryEntry>;
   lastDailyResetTimestamp?: number;
 }
 
@@ -68,6 +77,7 @@ export function useUserData() {
             rules: data.rules || [],
             groups: data.groups || [],
             timeTracking: data.timeTracking || {},
+            dailyUsageHistory: data.dailyUsageHistory || {},
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {

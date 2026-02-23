@@ -6,12 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:usage-history": "node ./scripts/seed-usage-history.mjs",
+    "clear:usage-history": "node ./scripts/clear-usage-history.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.9.0",
+    "firebase-admin": "^13.6.0",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "radix-ui": "^1.4.3",

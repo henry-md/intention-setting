@@ -36,6 +36,7 @@ export default function PublicStatsPage() {
             rules: data.rules || [],
             groups: data.groups || [],
             timeTracking: data.timeTracking || {},
+            dailyUsageHistory: data.dailyUsageHistory || {},
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {
@@ -117,7 +118,12 @@ export default function PublicStatsPage() {
   }
 
   const ruleStats = buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking);
-  const usageTimeline = buildTotalTrackedUsageTimeline(userData.rules, userData.groups, userData.timeTracking);
+  const usageTimeline = buildTotalTrackedUsageTimeline(
+    userData.rules,
+    userData.groups,
+    userData.timeTracking,
+    userData.dailyUsageHistory
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
