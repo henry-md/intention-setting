@@ -6,6 +6,7 @@ import SoftLimitPopup from '../components/SoftLimitPopup';
 import TimerBadge from '../components/TimerBadge';
 import DebugPanel from '../components/DebugPanel';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
+import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
 import { normalizeHostname } from '../utils/urlNormalization';
 
 /** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
@@ -339,11 +340,7 @@ const getDebugInfo = async () => {
     ruleName?: string;
   }> = storage?.compiledRules || {};
   const siteTimeData: Record<string, { timeSpent: number }> = storage?.siteTimeData || {};
-  const mappedRuleIds = siteRuleIds[normalizedHostname] || [];
-  const fallbackRuleIds = Object.entries(compiledRules)
-    .filter(([, rule]) => rule.ruleType !== 'session' && rule.siteKeys.includes(normalizedHostname))
-    .map(([ruleId]) => ruleId);
-  const applicableRuleIds = mappedRuleIds.length > 0 ? mappedRuleIds : fallbackRuleIds;
+  const selectedRuleId = getMostRestrictiveRuleIdForSite(normalizedHostname, siteRuleIds, compiledRules);
 
   type ApplicableLimitItem = {
     ruleId: string;
@@ -356,7 +353,7 @@ const getDebugInfo = async () => {
     siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
   };
 
-  const applicableLimits: ApplicableLimitItem[] = applicableRuleIds
+  const applicableLimits: ApplicableLimitItem[] = (selectedRuleId ? [selectedRuleId] : [])
     .map((ruleId): ApplicableLimitItem | null => {
       const rule = compiledRules[ruleId];
       if (!rule) return null;

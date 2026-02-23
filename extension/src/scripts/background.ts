@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { doc, setDoc } from 'firebase/firestore';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 import { db } from '../utils/firebase';
+import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
 
@@ -77,27 +78,6 @@ interface ExceededRuleInfo {
   derivedRemainingSnoozes: number;
   shouldShowPopup: boolean;
   shouldBlock: boolean;
-}
-
-function getApplicableRuleIdsForSite(
-  siteKey: string,
-  siteRuleIds: SiteRuleIds,
-  compiledRules: CompiledRules
-): string[] {
-  const mappedRuleIds = siteRuleIds[siteKey] || [];
-  if (mappedRuleIds.length > 0) {
-    return mappedRuleIds;
-  }
-
-  const fallbackRuleIds = Object.entries(compiledRules)
-    .filter(([, rule]) => rule.ruleType !== 'session' && rule.siteKeys.includes(siteKey))
-    .map(([ruleId]) => ruleId);
-
-  if (fallbackRuleIds.length > 0) {
-    console.log(`[Timer] Using compiledRules fallback for ${siteKey}:`, fallbackRuleIds);
-  }
-
-  return fallbackRuleIds;
 }
 
 let activeTimer: ActiveTimerState | null = null;
@@ -399,10 +379,10 @@ async function timerTick(): Promise<void> {
     siteTimeData[siteKey].timeSpent += 1;
     siteTimeData[siteKey].lastUpdated = currentTickTimestamp;
 
-    const applicableRuleIds = getApplicableRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
+    const selectedRuleId = getMostRestrictiveRuleIdForSite(siteKey, siteRuleIds, compiledRules);
     const exceededRules: ExceededRuleInfo[] = [];
 
-    for (const ruleId of applicableRuleIds) {
+    for (const ruleId of selectedRuleId ? [selectedRuleId] : []) {
       const rule = compiledRules[ruleId];
       if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
 
@@ -502,7 +482,7 @@ async function timerTick(): Promise<void> {
         return `${exceeded.ruleId}: ${exceeded.usage.timeSpent}s / ${exceeded.effectiveLimit}s (consumed one-mores: ${exceeded.consumedOneMores}, remaining: ${exceeded.derivedRemainingSnoozes})`;
       });
       console.log(`[Timer] ⚠️ Aggregated limit exceeded for ${siteKey}:`, exceededDetails.join(', '));
-    } else if (siteLimitExceeded && applicableRuleIds.length === 0) {
+    } else if (siteLimitExceeded && !selectedRuleId) {
       console.log(`[Timer] ⚠️ Site limit exceeded for ${siteKey}: ${timeSpent}s / ${timeLimit}s`);
     }
 
@@ -514,7 +494,7 @@ async function timerTick(): Promise<void> {
       exceeded.rule.ruleType === 'soft' && exceeded.shouldBlock
     );
 
-    if (hardExceeded || softExceededWithoutSnooze || (siteLimitExceeded && applicableRuleIds.length === 0)) {
+    if (hardExceeded || softExceededWithoutSnooze || (siteLimitExceeded && !selectedRuleId)) {
       stopCurrentTimer();
       await redirectTabToRandomUrl(currentTimer.tabId);
       return;
@@ -635,11 +615,11 @@ async function startTimerForTab(
   // Evaluate limits immediately when a tab becomes active so interval-boundary
   // soft popups can appear on newly focused tabs without waiting for the next tick.
   const now = Date.now();
-  const applicableRuleIds = getApplicableRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
+  const selectedRuleId = getMostRestrictiveRuleIdForSite(siteKey, siteRuleIds, compiledRules);
   let shouldRedirectImmediately = false;
   let softBoundaryRule: ExceededRuleInfo | null = null;
 
-  for (const ruleId of applicableRuleIds) {
+  for (const ruleId of selectedRuleId ? [selectedRuleId] : []) {
     const rule = compiledRules[ruleId];
     if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
 
@@ -711,7 +691,7 @@ async function startTimerForTab(
   }
 
   // Fallback for direct site limit checks when no compiled rules apply.
-  if (!shouldRedirectImmediately && !softBoundaryRule && applicableRuleIds.length === 0) {
+  if (!shouldRedirectImmediately && !softBoundaryRule && !selectedRuleId) {
     const directLimit = siteTimeData[siteKey].timeLimit;
     if (directLimit > 0 && siteTimeData[siteKey].timeSpent >= directLimit) {
       shouldRedirectImmediately = true;
