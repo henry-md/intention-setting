@@ -18,6 +18,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   const [timezone, setTimezone] = useState<string>('');
   const [timezoneAbbr, setTimezoneAbbr] = useState<string>('');
   const [timerDisplayMode, setTimerDisplayMode] = useState<'complex' | 'simple' | 'compact'>('simple');
+  const [timerBadgeWidthScale, setTimerBadgeWidthScale] = useState<number>(0.65);
+  const [timerBadgeTextScale, setTimerBadgeTextScale] = useState<number>(1);
   const [redirectUrls, setRedirectUrls] = useState<string[]>([]);
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -33,8 +35,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   // Load current settings from storage
   useEffect(() => {
     const keys = ALLOW_CUSTOM_RESET_TIME
-      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'redirectUrls']
-      : ['timerDisplayMode', 'simpleTimerDisplay', 'redirectUrls'];
+      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'redirectUrls']
+      : ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'redirectUrls'];
 
     chrome.storage.local.get(keys, (result) => {
       if (ALLOW_CUSTOM_RESET_TIME && result.dailyResetTime) {
@@ -57,6 +59,20 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
       if (result.redirectUrls && Array.isArray(result.redirectUrls)) {
         setRedirectUrls(result.redirectUrls);
       }
+      if (typeof result.timerBadgeWidthScale === 'number') {
+        const scale = Math.min(1.2, Math.max(0.35, result.timerBadgeWidthScale));
+        setTimerBadgeWidthScale(scale);
+      } else if (typeof result.timerBadgeScale === 'number') {
+        const scale = Math.min(1.2, Math.max(0.35, result.timerBadgeScale));
+        setTimerBadgeWidthScale(scale);
+      }
+      if (typeof result.timerBadgeTextScale === 'number') {
+        const scale = Math.min(1.8, Math.max(0.7, result.timerBadgeTextScale));
+        setTimerBadgeTextScale(scale);
+      } else if (typeof result.timerBadgeScale === 'number') {
+        const scale = Math.min(1.8, Math.max(0.7, result.timerBadgeScale));
+        setTimerBadgeTextScale(scale);
+      }
       setLoading(false);
     });
   }, []);
@@ -69,6 +85,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         dailyResetTime: resetTime,
         dailyResetTimezone: timezone,
         timerDisplayMode: timerDisplayMode,
+        timerBadgeWidthScale: timerBadgeWidthScale,
+        timerBadgeTextScale: timerBadgeTextScale,
         redirectUrls: redirectUrls
       });
 
@@ -179,7 +197,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         </div>
 
         <div className="flex flex-col space-y-1">
-          {/* Complex option */}
+          {/* Simple option */}
           <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-700 transition-colors">
             <input
               type="radio"
@@ -194,12 +212,14 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Complex Timer</div>
-              <div className="text-xs text-gray-400">Shows labels, time, progress bar, and total time</div>
+              <div className="text-sm text-gray-200 font-medium">Simple Timer</div>
+              <div className="text-xs text-gray-400">
+                Just the time and progress bar
+              </div>
             </div>
           </label>
 
-          {/* Simple option */}
+          {/* Complex option */}
           <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-700 transition-colors">
             <input
               type="radio"
@@ -214,8 +234,10 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Simple Timer</div>
-              <div className="text-xs text-gray-400">Shows time and progress bar only</div>
+              <div className="text-sm text-gray-200 font-medium">Complex Timer</div>
+              <div className="text-xs text-gray-400">
+                Rule name, time, and progress bar
+              </div>
             </div>
           </label>
 
@@ -234,10 +256,58 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Compact Timer</div>
-              <div className="text-xs text-gray-400">Shows "current / total" format with progress bar</div>
+              <div className="text-sm text-gray-200 font-medium">Complexer Timer</div>
+              <div className="text-xs text-gray-400">
+                Complex view plus explicit limit text below the bar
+              </div>
             </div>
           </label>
+        </div>
+
+        <div className="mt-2 border-t border-gray-700 pt-4">
+          <div className="mb-2 flex items-center justify-between">
+            <label htmlFor="timer-badge-width-scale" className="text-sm font-medium text-gray-200">
+              Badge Width
+            </label>
+            <span className="text-xs text-gray-400">{Math.round(timerBadgeWidthScale * 100)}%</span>
+          </div>
+          <input
+            id="timer-badge-width-scale"
+            type="range"
+            min="0.35"
+            max="1.2"
+            step="0.05"
+            value={timerBadgeWidthScale}
+            onChange={async (e) => {
+              const nextScale = Math.min(1.2, Math.max(0.35, Number(e.target.value)));
+              setTimerBadgeWidthScale(nextScale);
+              await chrome.storage.local.set({ timerBadgeWidthScale: nextScale });
+            }}
+            className="w-full accent-blue-500"
+          />
+          <div className="mt-4 mb-2 flex items-center justify-between">
+            <label htmlFor="timer-badge-text-scale" className="text-sm font-medium text-gray-200">
+              Text Size
+            </label>
+            <span className="text-xs text-gray-400">{Math.round(timerBadgeTextScale * 100)}%</span>
+          </div>
+          <input
+            id="timer-badge-text-scale"
+            type="range"
+            min="0.7"
+            max="1.8"
+            step="0.05"
+            value={timerBadgeTextScale}
+            onChange={async (e) => {
+              const nextScale = Math.min(1.8, Math.max(0.7, Number(e.target.value)));
+              setTimerBadgeTextScale(nextScale);
+              await chrome.storage.local.set({ timerBadgeTextScale: nextScale });
+            }}
+            className="w-full accent-blue-500"
+          />
+          <div className="mt-1 text-xs text-gray-500">
+            Width and text scale are controlled independently. Timer text remains larger than labels.
+          </div>
         </div>
       </div>
 

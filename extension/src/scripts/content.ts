@@ -333,6 +333,8 @@ const getDebugInfo = async () => {
   const compiledRules: Record<string, {
     ruleType: 'hard' | 'soft' | 'session';
     timeLimit: number;
+    plusOnes?: number;
+    plusOneDuration?: number;
     siteKeys: string[];
     ruleName?: string;
   }> = storage?.compiledRules || {};
@@ -347,6 +349,8 @@ const getDebugInfo = async () => {
     ruleId: string;
     ruleName?: string;
     ruleType: 'hard' | 'soft' | 'session';
+    plusOnes?: number;
+    plusOneDuration?: number;
     timeLimit: number;
     timeSpent: number;
     siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
@@ -367,6 +371,8 @@ const getDebugInfo = async () => {
         ruleId,
         ruleName: rule.ruleName,
         ruleType: rule.ruleType,
+        plusOnes: rule.plusOnes,
+        plusOneDuration: rule.plusOneDuration,
         timeLimit: rule.timeLimit,
         timeSpent,
         siteBreakdown,
