@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function HomePage() {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -13,13 +13,8 @@ export default function HomePage() {
       return;
     }
 
-    if (user) {
-      router.replace('/stats');
-      return;
-    }
-
-    router.replace('/login');
-  }, [user, loading, router]);
+    router.replace('/stats');
+  }, [loading, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">

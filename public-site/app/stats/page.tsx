@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import ProtectedRoute from '@/components/ProtectedRoute';
 import RuleProgressList from '@/components/RuleProgressList';
 import SharingToggle from '@/components/SharingToggle';
 import {
@@ -24,7 +23,7 @@ type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'intention-site-theme';
 
 export default function StatsPage() {
-  const { user, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, signInWithGoogle } = useAuth();
   const { userData, hasUserDocument, loading, error } = useUserData();
   const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -44,44 +43,18 @@ export default function StatsPage() {
     document.documentElement.classList.toggle('dark', nextTheme === 'dark');
   };
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-          <div className="text-lg text-zinc-600 dark:text-zinc-400">
-            Loading your statistics...
-          </div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
+  const handleSignIn = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Sign in failed:', error);
+    }
+  };
 
-  if (error) {
-    return (
-      <ProtectedRoute>
-        <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-          <div className="rounded-lg bg-red-50 p-6 text-red-800 dark:bg-red-900/20 dark:text-red-400">
-            Error loading statistics: {error.message}
-          </div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
-
-  if (!userData) {
-    return (
-      <ProtectedRoute>
-        <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-          <div className="text-lg text-zinc-600 dark:text-zinc-400">No data available</div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
-
-  const ruleStats = buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking);
+  const isStatsLoading = !!user && loading;
+  const ruleStats = userData ? buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking) : [];
 
   return (
-    <ProtectedRoute>
       <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
         {/* Header */}
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -132,19 +105,31 @@ export default function StatsPage() {
                   </svg>
                 )}
               </button>
-              <button
-                onClick={signOut}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-              >
-                Sign Out
-              </button>
-              {user?.photoURL && (
-                <img
-                  src={user.photoURL}
-                  alt="Profile"
-                  title={user.email || undefined}
-                  className="h-8 w-8 rounded-full border border-zinc-300 dark:border-zinc-700"
-                />
+              {user ? (
+                <>
+                  <button
+                    onClick={signOut}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                  >
+                    Sign Out
+                  </button>
+                  {user.photoURL && (
+                    <img
+                      src={user.photoURL}
+                      alt="Profile"
+                      title={user.email || undefined}
+                      className="h-8 w-8 rounded-full border border-zinc-300 dark:border-zinc-700"
+                    />
+                  )}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSignIn}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                >
+                  Sign In
+                </button>
               )}
             </div>
           </div>
@@ -160,7 +145,37 @@ export default function StatsPage() {
             </p>
           </div>
 
-          {hasUserDocument === false ? (
+          {!user && !authLoading ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="w-full max-w-2xl rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+                <h2 className="mb-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  Sign In Required
+                </h2>
+                <p className="text-zinc-600 dark:text-zinc-400">
+                  You need to sign in to see stats about yourself.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSignIn}
+                  className="mt-5 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  Sign In with Google
+                </button>
+              </div>
+            </div>
+          ) : isStatsLoading || authLoading ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="text-lg text-zinc-600 dark:text-zinc-400">
+                Loading your statistics...
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="rounded-lg bg-red-50 p-6 text-red-800 dark:bg-red-900/20 dark:text-red-400">
+                Error loading statistics: {error.message}
+              </div>
+            </div>
+          ) : hasUserDocument === false ? (
             <div className="flex min-h-[55vh] items-center justify-center">
               <div className="w-full max-w-2xl rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <h2 className="mb-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
@@ -197,6 +212,10 @@ export default function StatsPage() {
                 </p>
               </div>
             </div>
+          ) : !userData ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="text-lg text-zinc-600 dark:text-zinc-400">No data available</div>
+            </div>
           ) : (
             <>
               {/* Sharing Toggle */}
@@ -227,6 +246,5 @@ export default function StatsPage() {
           </div>
         </footer>
       </div>
-    </ProtectedRoute>
   );
 }
