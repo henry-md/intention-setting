@@ -22,6 +22,12 @@ interface StoredSiteRule {
 // ============================================================================
 
 let hasDetectedInvalidContext = false;
+const CONTEXT_INVALIDATION_TEXT = 'extension context invalidated';
+
+const isContextInvalidationError = (error: unknown): boolean => {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.toLowerCase().includes(CONTEXT_INVALIDATION_TEXT);
+};
 
 /**
  * Check if Chrome extension context is still valid
@@ -71,8 +77,7 @@ async function safeStorageGet(keys: string[]): Promise<Record<string, any> | nul
   try {
     return await chrome.storage.local.get(keys);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('Extension context invalidated')) {
+    if (isContextInvalidationError(error)) {
       console.log('[Storage] Extension was reloaded - storage read failed');
       return null;
     }
@@ -95,8 +100,7 @@ async function safeStorageSet(items: Record<string, any>): Promise<boolean> {
     await chrome.storage.local.set(items);
     return true;
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('Extension context invalidated')) {
+    if (isContextInvalidationError(error)) {
       console.log('[Storage] Extension was reloaded - storage write failed');
       return false;
     }
@@ -118,14 +122,22 @@ async function safeSendMessage(message: any): Promise<any | null> {
   try {
     return await chrome.runtime.sendMessage(message);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('Extension context invalidated')) {
+    if (isContextInvalidationError(error)) {
       console.log('[Message] Extension was reloaded - message not sent');
       return null;
     }
     throw error;
   }
 }
+
+const reportAsyncError = (context: string, error: unknown): void => {
+  if (isContextInvalidationError(error)) {
+    console.log(`[Extension] ${context} ignored after context invalidation`);
+    return;
+  }
+
+  console.error(`[Extension] ${context} failed:`, error);
+};
 
 console.log('Intention Setting content script loaded');
 console.log('[Timer] Initial state - document.hidden:', document.hidden, 'visibilityState:', document.visibilityState);
@@ -198,28 +210,6 @@ const checkAndShowIntentionPopup = async () => {
   }
 };
 
-const runMediaControlInPageContext = (action: 'pause' | 'play') => {
-  const script = document.createElement('script');
-  script.textContent = `
-    (() => {
-      const media = Array.from(document.querySelectorAll('video, audio'));
-      for (const el of media) {
-        try {
-          if (${JSON.stringify(action)} === 'pause') {
-            el.pause();
-          } else {
-            const p = el.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-          }
-        } catch {}
-      }
-    })();
-  `;
-
-  (document.documentElement || document.head).appendChild(script);
-  script.remove();
-};
-
 // Pause all video/audio players on the page.
 const pauseAllMedia = () => {
   const mediaElements = document.querySelectorAll<HTMLMediaElement>('video, audio');
@@ -230,7 +220,6 @@ const pauseAllMedia = () => {
       // Ignore player pause errors
     }
   });
-  runMediaControlInPageContext('pause');
 };
 
 // Resume all video/audio players on the page.
@@ -241,7 +230,6 @@ const resumeAllMedia = () => {
       // Ignore autoplay errors
     });
   });
-  runMediaControlInPageContext('play');
 };
 
 // Get the current site key (normalized hostname)
@@ -739,28 +727,30 @@ const showSoftLimitPopup = (
 };
 
 // Listen for storage changes to update badge in real-time
-chrome.storage.onChanged.addListener(async (changes) => {
-  if (changes.siteRules) {
-    // Site rules updated, could trigger re-check if needed
-  }
-
-  const shouldRefreshForDebug = !!(
-    changes.siteRuleIds ||
-    changes.compiledRules ||
-    changes.ruleUsageData
-  );
-
-  // If siteTimeData changes and we're not the active tab, update our display
-  if ((changes.siteTimeData || shouldRefreshForDebug) && currentSiteKey && !document.hidden) {
-    const newData = changes.siteTimeData?.newValue || {};
-    const siteData = newData[currentSiteKey];
-    if (siteData && containerRoot) {
-      await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);
-    } else if (DEBUG_UI && containerRoot) {
-      // Update debug panel even if no timer data
-      await showDebugPanel();
+chrome.storage.onChanged.addListener((changes) => {
+  void (async () => {
+    if (changes.siteRules) {
+      // Site rules updated, could trigger re-check if needed
     }
-  }
+
+    const shouldRefreshForDebug = !!(
+      changes.siteRuleIds ||
+      changes.compiledRules ||
+      changes.ruleUsageData
+    );
+
+    // If siteTimeData changes and we're not the active tab, update our display
+    if ((changes.siteTimeData || shouldRefreshForDebug) && currentSiteKey && !document.hidden) {
+      const newData = changes.siteTimeData?.newValue || {};
+      const siteData = newData[currentSiteKey];
+      if (siteData && containerRoot) {
+        await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);
+      } else if (DEBUG_UI && containerRoot) {
+        // Update debug panel even if no timer data
+        await showDebugPanel();
+      }
+    }
+  })().catch((error) => reportAsyncError('storage.onChanged handler', error));
 });
 
 // Listen for messages from background worker
@@ -877,7 +867,7 @@ setInterval(() => {
     console.log('[Timer] 🔄 POLLING DETECTED VISIBILITY CHANGE (event did not fire!)');
     console.log('[Timer] Was hidden:', lastVisibilityState, '→ Now hidden:', currentVisibilityState);
     lastVisibilityState = currentVisibilityState;
-    handleVisibilityChange();
+    void handleVisibilityChange().catch((error) => reportAsyncError('visibility poll handler', error));
   }
 }, 500);
 
@@ -897,9 +887,11 @@ const initialize = async () => {
 
 // Run check when page loads
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initialize);
+  document.addEventListener('DOMContentLoaded', () => {
+    void initialize().catch((error) => reportAsyncError('DOMContentLoaded initialize', error));
+  });
 } else {
-  initialize();
+  void initialize().catch((error) => reportAsyncError('immediate initialize', error));
 }
 
 // Also run on navigation (for SPAs)
@@ -922,16 +914,16 @@ new MutationObserver(() => {
 
     // If site changed (different domain), notify background
     if (previousSiteKey && previousSiteKey !== newSiteKey) {
-      safeSendMessage({
+      void safeSendMessage({
         action: 'tab-navigated',
         previousSiteKey: previousSiteKey,
         newSiteKey: newSiteKey,
         url: url
-      });
+      }).catch((error) => reportAsyncError('tab-navigated message', error));
     }
 
     // Re-initialize UI
-    initialize();
+    void initialize().catch((error) => reportAsyncError('mutation initialize', error));
   }
 }).observe(document, { subtree: true, childList: true });
 
@@ -939,3 +931,15 @@ new MutationObserver(() => {
 setInterval(() => {
   isExtensionContextValid(); // Will auto-reload if stale
 }, 1000);
+
+window.addEventListener('unhandledrejection', (event) => {
+  if (isContextInvalidationError(event.reason)) {
+    event.preventDefault();
+  }
+});
+
+window.addEventListener('error', (event) => {
+  if (isContextInvalidationError(event.error ?? event.message)) {
+    event.preventDefault();
+  }
+});
