@@ -1,6 +1,6 @@
 import "./firebase-config";
 import { format } from 'date-fns';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
 import { db } from '../utils/firebase';
 import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
@@ -98,6 +98,58 @@ let lastTickTimestamp: number | null = null; // Track last tick time for reset b
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
 const MAX_DAILY_HISTORY_ENTRIES = 730;
+const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
+const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
+
+let lastUsageResetCheckAt = 0;
+
+async function clearAllUsageFromLocalStorage(appliedAt: number): Promise<void> {
+  await chrome.storage.local.set({
+    siteTimeData: {},
+    ruleUsageData: {},
+    dailyUsageHistory: {},
+    lastResetTimestamp: Date.now(),
+    usageResetAppliedAt: appliedAt
+  });
+}
+
+async function checkAndApplyRemoteUsageReset(force: boolean = false): Promise<void> {
+  const now = Date.now();
+  if (!force && now - lastUsageResetCheckAt < USAGE_RESET_CHECK_INTERVAL_MS) {
+    return;
+  }
+  lastUsageResetCheckAt = now;
+
+  try {
+    const storage = await chrome.storage.local.get(['user', 'usageResetAppliedAt']);
+    const userId = storage.user?.uid as string | undefined;
+    if (!userId) {
+      return;
+    }
+
+    const userDocRef = doc(db, 'users', userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      return;
+    }
+
+    const data = userDocSnap.data() as { usageResetRequestedAt?: number };
+    const requestedAt = Number(data.usageResetRequestedAt || 0);
+    const appliedAt = Number(storage.usageResetAppliedAt || 0);
+
+    if (!requestedAt || requestedAt <= appliedAt) {
+      return;
+    }
+
+    console.log(`[UsageReset] Applying remote clear request ${requestedAt} for users/${userId}`);
+    stopCurrentTimer();
+    await clearAllUsageFromLocalStorage(requestedAt);
+    await setDoc(userDocRef, { usageResetAppliedAt: requestedAt }, { merge: true });
+    console.log('[UsageReset] ✓ Local usage storage cleared from remote request');
+  } catch (error) {
+    console.error('[UsageReset] Failed to apply remote clear request:', error);
+  }
+}
 
 async function hydrateCompiledRuleIndexes(): Promise<void> {
   try {
@@ -644,6 +696,7 @@ async function startTimerForTab(
   siteKey: string,
   options: { skipImmediateSoftBoundaryCheck?: boolean } = {}
 ): Promise<void> {
+  await checkAndApplyRemoteUsageReset();
   console.log(`[Timer] Request to start timer - tabId: ${tabId}, site: ${siteKey}`);
 
   // CRITICAL: IMMEDIATELY clear any existing interval SYNCHRONOUSLY before ANY async operations
@@ -857,6 +910,8 @@ async function startTimerForTab(
 // Listen for when extension is installed or updated
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
+  chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
+  checkAndApplyRemoteUsageReset(true);
   hydrateCompiledRuleIndexes();
 });
 
@@ -902,6 +957,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       startTimerForTab(sender.tab.id, message.newSiteKey);
     }
+    return false;
+  }
+
+  if (message.action === 'signIn') {
+    checkAndApplyRemoteUsageReset(true);
     return false;
   }
 
@@ -1073,6 +1133,8 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // Service worker startup - recover timer state
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Timer] Service worker starting up');
+  chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
+  await checkAndApplyRemoteUsageReset(true);
   await hydrateCompiledRuleIndexes();
 
   // Find active tab and restart timer if applicable
@@ -1090,5 +1152,11 @@ chrome.runtime.onStartup.addListener(async () => {
       // Content script may not be injected yet - this is normal on startup
       console.log('[Timer] Content script not ready (startup)');
     }
+  }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === USAGE_RESET_ALARM_NAME) {
+    checkAndApplyRemoteUsageReset(true);
   }
 });

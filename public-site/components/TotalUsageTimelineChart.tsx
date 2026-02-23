@@ -123,26 +123,18 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
             Total tracked time across all sites that belong to at least one rule
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {([
-            ['week', 'Past week'],
-            ['month', 'Past month'],
-            ['year', 'Past year'],
-            ['all', 'All time'],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setRange(value)}
-              className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                range === value
-                  ? 'border-zinc-900 bg-zinc-900 text-zinc-50 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-zinc-500 dark:text-zinc-400">Past</span>
+          <select
+            value={range}
+            onChange={(event) => setRange(event.target.value as RangeFilter)}
+            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
+            <option value="all">All</option>
+          </select>
         </div>
       </div>
 
@@ -244,12 +236,57 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
 
               {chart.plotted.map((entry, index) => (
                 <circle
-                  key={index}
+                  key={`dot-${index}`}
                   cx={entry.x}
                   cy={entry.y}
-                  r="3"
+                  r={hoveredIndex === index ? 3.6 : 3}
                   fill="currentColor"
-                  className="cursor-pointer text-indigo-500 dark:text-indigo-400"
+                  className="text-indigo-500 dark:text-indigo-400"
+                />
+              ))}
+
+              {hoveredPoint && (
+                <g pointerEvents="none">
+                  <circle
+                    cx={hoveredPoint.x}
+                    cy={hoveredPoint.y}
+                    r="4"
+                    fill="currentColor"
+                    className="text-indigo-400/30 dark:text-indigo-300/30"
+                  />
+                  <circle
+                    cx={hoveredPoint.x}
+                    cy={hoveredPoint.y}
+                    r="4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.25"
+                    className="text-indigo-300 dark:text-indigo-200"
+                  >
+                    <animate
+                      attributeName="r"
+                      values="4;8;4"
+                      dur="1.2s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values="0.45;0.1;0.45"
+                      dur="1.2s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                </g>
+              )}
+
+              {chart.plotted.map((entry, index) => (
+                <circle
+                  key={`hit-${index}`}
+                  cx={entry.x}
+                  cy={entry.y}
+                  r="12"
+                  fill="transparent"
+                  className="cursor-pointer"
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                 />

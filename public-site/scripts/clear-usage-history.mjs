@@ -4,8 +4,13 @@ import { initializeApp, applicationDefault, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
+/*
+ex. usage:
+GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run clear:usage-history -- --email henrymdeutsch@gmail.com
+*/
+
 function parseArgs(argv) {
-  const args = { user: '', email: '', clearTimeTracking: false };
+  const args = { user: '', email: '' };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--user' || token === '-u') {
@@ -18,18 +23,8 @@ function parseArgs(argv) {
       i += 1;
       continue;
     }
-    if (token === '--with-time-tracking') {
-      args.clearTimeTracking = true;
-    }
   }
   return args;
-}
-
-function dayKey(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 async function resolveUserId(user, email) {
@@ -56,7 +51,7 @@ function ensureAdmin() {
 }
 
 async function main() {
-  const { user, email, clearTimeTracking } = parseArgs(process.argv.slice(2));
+  const { user, email } = parseArgs(process.argv.slice(2));
 
   ensureAdmin();
   const userId = await resolveUserId(user, email);
@@ -68,26 +63,17 @@ async function main() {
     throw new Error(`User doc not found: users/${userId}`);
   }
 
-  const data = snap.data() || {};
-  const dailyUsageHistory = data.dailyUsageHistory && typeof data.dailyUsageHistory === 'object'
-    ? data.dailyUsageHistory
-    : {};
-  const todayKey = dayKey(new Date());
-  const preservedTodayEntry = dailyUsageHistory[todayKey];
-  const payload = preservedTodayEntry
-    ? { dailyUsageHistory: { [todayKey]: preservedTodayEntry } }
-    : { dailyUsageHistory: FieldValue.delete() };
+  const usageResetRequestedAt = Date.now();
+  const payload = {
+    dailyUsageHistory: FieldValue.delete(),
+    timeTracking: FieldValue.delete(),
+    usageResetRequestedAt
+  };
 
   await userRef.set(payload, { merge: true });
 
-  console.log(
-    preservedTodayEntry
-      ? `Cleared historical dailyUsageHistory for users/${userId}, preserved today (${todayKey}).`
-      : `Cleared dailyUsageHistory for users/${userId}.`
-  );
-  if (clearTimeTracking) {
-    console.log('--with-time-tracking was ignored to preserve current-day usage.');
-  }
+  console.log(`Cleared all usage history (including current day) for users/${userId}.`);
+  console.log(`Requested extension local usage reset via usageResetRequestedAt=${usageResetRequestedAt}.`);
   if (email) {
     console.log(`Resolved email ${email} -> ${userId}`);
   }

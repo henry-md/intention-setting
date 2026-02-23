@@ -20,6 +20,7 @@
     "identity",
     "storage",
     "offscreen",
+    "alarms",
     "tabs",
     "activeTab",
     "scripting",
