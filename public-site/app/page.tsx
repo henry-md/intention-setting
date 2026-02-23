@@ -1,95 +1,29 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import Link from 'next/link';
-import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function Home() {
-  const { user, loading, signOut } = useAuth();
+export default function HomePage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading...</div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (user) {
+      router.replace('/stats');
+      return;
+    }
+
+    router.replace('/login');
+  }, [user, loading, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <div className="w-full flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-            Intention Setter
-          </h1>
-          {user && (
-            <button
-              onClick={signOut}
-              className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              Sign Out
-            </button>
-          )}
-        </div>
-
-        {user ? (
-          <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left flex-1">
-            <div className="flex items-center gap-4">
-              {user.photoURL && (
-                <Image
-                  src={user.photoURL}
-                  alt="Profile"
-                  width={64}
-                  height={64}
-                  className="rounded-full"
-                />
-              )}
-              <div>
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  Welcome, {user.displayName || 'User'}!
-                </h2>
-                <p className="text-zinc-600 dark:text-zinc-400">{user.email}</p>
-              </div>
-            </div>
-            <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-              You are successfully signed in! View your usage statistics to see how you're doing
-              with your time limits.
-            </p>
-            <div className="flex gap-4">
-              <Link
-                href="/stats"
-                className="flex h-12 items-center justify-center gap-2 rounded-full bg-zinc-900 px-8 text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                View Statistics
-              </Link>
-              <Link
-                href="/dashboard"
-                className="flex h-12 items-center justify-center gap-2 rounded-full border border-zinc-300 px-8 text-zinc-900 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-800"
-              >
-                Dashboard
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left flex-1">
-            <h2 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-              Get started with Google OAuth
-            </h2>
-            <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-              This Next.js app demonstrates Firebase Authentication with Google OAuth.
-              Sign in to see your profile information.
-            </p>
-            <div className="flex gap-4">
-              <Link
-                href="/login"
-                className="flex h-12 items-center justify-center gap-2 rounded-full bg-zinc-900 px-8 text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Sign in with Google
-              </Link>
-            </div>
-          </div>
-        )}
-      </main>
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+      <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading...</div>
     </div>
   );
 }

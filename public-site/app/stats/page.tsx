@@ -10,7 +10,7 @@ import { buildSiteStats, calculateOverallStats } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 export default function StatsPage() {
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   const { userData, loading, error } = useUserData();
 
   if (loading) {
@@ -59,24 +59,13 @@ export default function StatsPage() {
         {/* Header */}
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-6">
-              <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+            <div className="flex items-end gap-6">
+              <Link href="/stats" className="text-xl font-bold leading-none text-zinc-900 dark:text-zinc-50">
                 Intention Setter
               </Link>
-              <nav className="flex gap-4">
-                <Link
-                  href="/dashboard"
-                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/stats"
-                  className="text-sm font-medium text-zinc-900 dark:text-zinc-50"
-                >
-                  Statistics
-                </Link>
-              </nav>
+              <span className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50">
+                Statistics
+              </span>
             </div>
             <button
               onClick={signOut}
