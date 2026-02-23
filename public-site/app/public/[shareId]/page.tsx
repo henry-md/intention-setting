@@ -5,9 +5,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePublicUserData } from '@/hooks/useShareSettings';
 import { useParams } from 'next/navigation';
-import StatsOverview from '@/components/StatsOverview';
-import SiteBreakdown from '@/components/SiteBreakdown';
-import { buildSiteStats, calculateOverallStats } from '@/lib/statsHelpers';
+import RuleProgressList from '@/components/RuleProgressList';
+import { buildRuleProgressStats } from '@/lib/statsHelpers';
 import type { UserData } from '@/hooks/useUserData';
 import Link from 'next/link';
 
@@ -116,9 +115,7 @@ export default function PublicStatsPage() {
     );
   }
 
-  const siteStats = buildSiteStats(userData.rules, userData.groups, userData.timeTracking);
-  const overallStats = calculateOverallStats(siteStats);
-  const sortedStats = [...siteStats].sort((a, b) => b.percentage - a.percentage);
+  const ruleStats = buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
@@ -176,13 +173,8 @@ export default function PublicStatsPage() {
           </div>
         </div>
 
-        {/* Overall Stats Cards */}
-        <div className="mb-8">
-          <StatsOverview stats={overallStats} />
-        </div>
-
-        {/* Sites List */}
-        <SiteBreakdown stats={sortedStats} />
+        {/* Rule Progress List */}
+        <RuleProgressList rules={ruleStats} />
 
         {/* Last Reset Info */}
         {userData.lastDailyResetTimestamp && (

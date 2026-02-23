@@ -127,6 +127,21 @@ export interface SiteStats {
   color: string;
 }
 
+export interface RuleProgressSiteBreakdownItem {
+  siteKey: string;
+  timeSpent: number;
+}
+
+export interface RuleProgressStats {
+  ruleId: string;
+  ruleName: string;
+  ruleType: 'hard' | 'soft' | 'session';
+  timeSpent: number;
+  timeLimit: number;
+  percentage: number;
+  siteBreakdown: RuleProgressSiteBreakdownItem[];
+}
+
 /**
  * Build comprehensive site statistics from user data
  */
@@ -164,6 +179,51 @@ export function buildSiteStats(
   }
 
   return stats;
+}
+
+/**
+ * Build rule-level progress with aggregate time across all sites in each rule.
+ */
+export function buildRuleProgressStats(
+  rules: Rule[],
+  groups: Group[],
+  timeTracking: Record<string, SiteTimeData>
+): RuleProgressStats[] {
+  return rules
+    .filter((rule) => rule.timeLimit > 0)
+    .map((rule) => {
+      const urls = expandTargetsToUrls(rule.targets, groups);
+      const uniqueSiteKeys = Array.from(new Set(urls.map((url) => getNormalizedHostname(url))));
+      const siteBreakdown = uniqueSiteKeys
+        .map((siteKey) => ({
+          siteKey,
+          timeSpent: timeTracking[siteKey]?.timeSpent || 0,
+        }))
+        .sort((a, b) => b.timeSpent - a.timeSpent);
+
+      const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);
+      const baseLimitSeconds = Math.max(0, Math.round(rule.timeLimit * 60));
+      const softExtraSeconds =
+        rule.type === 'soft'
+          ? Math.max(0, rule.plusOnes || 0) * Math.max(0, rule.plusOneDuration || 0)
+          : 0;
+      const timeLimit = baseLimitSeconds + softExtraSeconds;
+      const percentage = calculateProgress(timeSpent, timeLimit);
+
+      return {
+        ruleId: rule.id,
+        ruleName: rule.name || 'Unnamed Rule',
+        ruleType: rule.type,
+        timeSpent,
+        timeLimit,
+        percentage,
+        siteBreakdown,
+      };
+    })
+    .sort((a, b) => {
+      if (b.percentage !== a.percentage) return b.percentage - a.percentage;
+      return b.timeSpent - a.timeSpent;
+    });
 }
 
 /**

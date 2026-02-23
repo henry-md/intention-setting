@@ -1,12 +1,11 @@
 'use client';
 
 import ProtectedRoute from '@/components/ProtectedRoute';
-import StatsOverview from '@/components/StatsOverview';
-import SiteBreakdown from '@/components/SiteBreakdown';
+import RuleProgressList from '@/components/RuleProgressList';
 import SharingToggle from '@/components/SharingToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
-import { buildSiteStats, calculateOverallStats } from '@/lib/statsHelpers';
+import { buildRuleProgressStats } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 export default function StatsPage() {
@@ -47,11 +46,7 @@ export default function StatsPage() {
     );
   }
 
-  const siteStats = buildSiteStats(userData.rules, userData.groups, userData.timeTracking);
-  const overallStats = calculateOverallStats(siteStats);
-
-  // Sort sites by percentage (highest first)
-  const sortedStats = [...siteStats].sort((a, b) => b.percentage - a.percentage);
+  const ruleStats = buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking);
 
   return (
     <ProtectedRoute>
@@ -105,7 +100,7 @@ export default function StatsPage() {
               Usage Statistics
             </h1>
             <p className="text-zinc-600 dark:text-zinc-400">
-              Track your time across all sites and see how close you are to your limits
+              Track total progress per rule and expand each rule to see per-site usage
             </p>
           </div>
 
@@ -114,13 +109,8 @@ export default function StatsPage() {
             <SharingToggle />
           </div>
 
-          {/* Overall Stats Cards */}
-          <div className="mb-8">
-            <StatsOverview stats={overallStats} />
-          </div>
-
-          {/* Sites List */}
-          <SiteBreakdown stats={sortedStats} />
+          {/* Rule Progress List */}
+          <RuleProgressList rules={ruleStats} />
 
           {/* Last Reset Info */}
           {userData.lastDailyResetTimestamp && (
