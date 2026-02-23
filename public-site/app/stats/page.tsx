@@ -10,7 +10,7 @@ import { buildSiteStats, calculateOverallStats } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 export default function StatsPage() {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const { userData, loading, error } = useUserData();
 
   if (loading) {
@@ -63,16 +63,39 @@ export default function StatsPage() {
               <Link href="/stats" className="text-xl font-bold leading-none text-zinc-900 dark:text-zinc-50">
                 Intention Setter
               </Link>
-              <span className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50">
-                Statistics
-              </span>
+              <nav className="flex items-end gap-4">
+                <Link
+                  href="/stats"
+                  className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50"
+                >
+                  Statistics
+                </Link>
+                {user?.email === 'henrymdeutsch@gmail.com' && (
+                  <Link
+                    href="/god"
+                    className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50"
+                  >
+                    God
+                  </Link>
+                )}
+              </nav>
             </div>
-            <button
-              onClick={signOut}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={signOut}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+              >
+                Sign Out
+              </button>
+              {user?.photoURL && (
+                <img
+                  src={user.photoURL}
+                  alt="Profile"
+                  title={user.email || undefined}
+                  className="h-8 w-8 rounded-full border border-zinc-300 dark:border-zinc-700"
+                />
+              )}
+            </div>
           </div>
         </header>
 
