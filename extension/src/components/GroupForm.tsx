@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, X, Pencil } from 'lucide-react';
 import type { Group } from '../types/Group';
-import { normalizeUrl, getNormalizedHostname } from '../utils/urlNormalization';
+import { normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
 import { ReorderList } from './ui/reorder-list';
@@ -39,10 +39,12 @@ export const GroupForm: React.FC<GroupFormProps> = ({
   const [newItemInput, setNewItemInput] = useState('');
   const [inputError, setInputError] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isNameFocused, setIsNameFocused] = useState(false);
   const [typosquattingWarning, setTyposquattingWarning] = useState<{
     url: string;
     suggestion: string;
   } | null>(null);
+  const groupNameInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = !!groupId;
 
@@ -204,20 +206,51 @@ export const GroupForm: React.FC<GroupFormProps> = ({
     <div className="bg-slate-700 rounded-lg p-4 space-y-3">
       {/* Group Name - Header or Input based on mode */}
       {isEditMode ? (
-        <input
-          type="text"
-          value={groupName}
-          onChange={(e) => setGroupName(e.target.value)}
-          onBlur={handleUpdateName}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleUpdateName();
-              e.currentTarget.blur();
+        <div className={isNameFocused ? 'flex w-full items-center gap-3' : 'inline-flex items-center gap-1.5'}>
+          <input
+            ref={groupNameInputRef}
+            type="text"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            onFocus={() => setIsNameFocused(true)}
+            onBlur={async () => {
+              setIsNameFocused(false);
+              await handleUpdateName();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleUpdateName();
+                e.currentTarget.blur();
+              }
+            }}
+            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 min-w-0 ${
+              isNameFocused ? 'flex-1 mr-1' : 'w-fit'
+            }`}
+            style={
+              isNameFocused
+                ? undefined
+                : { width: `${Math.max(1, Math.min(groupName.length + 1, 28))}ch` }
             }
-          }}
-          className="text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 w-full"
-        />
+          />
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={async () => {
+              if (document.activeElement !== groupNameInputRef.current) {
+                groupNameInputRef.current?.focus();
+                return;
+              }
+              await handleUpdateName();
+              groupNameInputRef.current?.blur();
+            }}
+            aria-label={isNameFocused ? 'Save group name' : 'Edit group name'}
+            title={isNameFocused ? 'Save group name' : 'Edit group name'}
+            className={`text-gray-400 hover:text-white transition-colors ${isNameFocused ? 'ml-auto pl-1' : ''}`}
+          >
+            <Pencil className={isNameFocused ? 'h-4 w-4' : 'h-3 w-3'} />
+          </button>
+        </div>
       ) : (
         <input
           type="text"

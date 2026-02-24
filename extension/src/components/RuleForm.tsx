@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Pencil } from 'lucide-react';
 import type { Group } from '../types/Group';
 import type { RuleTarget } from '../types/Rule';
 import { normalizeUrl } from '../utils/urlNormalization';
@@ -50,6 +51,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 }) => {
   const [ruleName, setRuleName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
+  const [isRuleNameFocused, setIsRuleNameFocused] = useState(false);
   const [targetItems, setTargetItems] = useState<RuleTarget[]>(initialTargetItems);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [ruleType, setRuleType] = useState<'hard' | 'soft' | 'session'>(initialRuleType);
@@ -64,6 +66,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
     targetType: 'url' | 'group';
     targetId: string;
   } | null>(null);
+  const ruleNameInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = !!ruleId;
 
@@ -254,18 +257,46 @@ export const RuleForm: React.FC<RuleFormProps> = ({
     <div className="bg-gray-800 border border-gray-600 rounded-lg p-4 space-y-3">
       {/* Rule Name - Always an input, styled based on whether we have a name */}
       {isEditMode && ruleName ? (
-        <input
-          type="text"
-          value={ruleName}
-          onChange={(e) => setRuleName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.currentTarget.blur();
+        <div className={isRuleNameFocused ? 'flex w-full items-center gap-3' : 'inline-flex items-center gap-1.5'}>
+          <input
+            ref={ruleNameInputRef}
+            type="text"
+            value={ruleName}
+            onChange={(e) => setRuleName(e.target.value)}
+            onFocus={() => setIsRuleNameFocused(true)}
+            onBlur={() => setIsRuleNameFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 min-w-0 text-white ${
+              isRuleNameFocused ? 'flex-1 mr-1' : 'w-fit'
+            }`}
+            style={
+              isRuleNameFocused
+                ? undefined
+                : { width: `${Math.max(1, Math.min(ruleName.length + 1, 28))}ch` }
             }
-          }}
-          className="text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -mx-2 w-full text-white"
-        />
+          />
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (document.activeElement !== ruleNameInputRef.current) {
+                ruleNameInputRef.current?.focus();
+                return;
+              }
+              ruleNameInputRef.current?.blur();
+            }}
+            aria-label={isRuleNameFocused ? 'Save rule name' : 'Edit rule name'}
+            title={isRuleNameFocused ? 'Save rule name' : 'Edit rule name'}
+            className={`text-gray-400 hover:text-white transition-colors ${isRuleNameFocused ? 'ml-auto pl-1' : ''}`}
+          >
+            <Pencil className={isRuleNameFocused ? 'h-4 w-4' : 'h-3 w-3'} />
+          </button>
+        </div>
       ) : (
         <input
           type="text"
