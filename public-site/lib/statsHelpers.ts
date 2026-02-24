@@ -396,13 +396,15 @@ export function buildTotalTrackedUsageTimeline(
   ];
 
   const byDateKey = new Map<string, UsageTimelinePoint>();
-  [...historyPoints, ...todayOnlyPoint].forEach((point) => {
-    const key = point.dayKey;
-    const existing = byDateKey.get(key);
-    if (!existing || point.timestamp >= existing.timestamp) {
-      byDateKey.set(key, point);
-    }
+  historyPoints.forEach((point) => {
+    byDateKey.set(point.dayKey, point);
   });
+
+  const existingTodayPoint = byDateKey.get(todayKey);
+  const shouldUseLiveTodayPoint = !existingTodayPoint || currentTotal > 0;
+  if (shouldUseLiveTodayPoint && todayOnlyPoint[0]) {
+    byDateKey.set(todayOnlyPoint[0].dayKey, todayOnlyPoint[0]);
+  }
 
   return Array.from(byDateKey.values()).sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 }

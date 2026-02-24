@@ -232,9 +232,9 @@ async function main() {
   const now = Date.now();
   const dailyUsageHistory = {};
 
-  // Seed historical days only (exclude current day to preserve real-time usage today).
-  for (let offset = days; offset >= 1; offset -= 1) {
-    const dayIndex = days - 1 - offset;
+  // Seed past days and include the current day.
+  for (let offset = days; offset >= 0; offset -= 1) {
+    const dayIndex = days - offset;
     const date = new Date(now - (offset * 24 * 60 * 60 * 1000));
     const start = new Date(date);
     start.setHours(RESET_HOUR, RESET_MINUTE, 0, 0);
@@ -278,7 +278,7 @@ async function main() {
   );
 
   console.log(
-    `Seeded ${Object.keys(dailyUsageHistory).length} historical days for users/${userId} (current day untouched).`
+    `Seeded ${Object.keys(dailyUsageHistory).length} days for users/${userId} (including current day).`
   );
   if (email) {
     console.log(`Resolved email ${email} -> ${userId}`);
