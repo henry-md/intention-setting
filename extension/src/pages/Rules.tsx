@@ -284,7 +284,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
   const editingRule = editingRuleId ? rules.find(r => r.id === editingRuleId) : null;
 
   return (
-    <div className="h-full w-full flex flex-col space-y-4 bg-zinc-950 p-4 pb-20">
+    <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Rules</h3>

@@ -122,7 +122,7 @@ const Popup: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto bg-zinc-950">
+            <div className="extension-gradient-bg flex-1 overflow-y-auto">
               {currentTab === 'home' && (
                 <Home user={user} />
               )}
