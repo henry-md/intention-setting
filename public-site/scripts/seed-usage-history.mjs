@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { initializeApp, applicationDefault, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -24,6 +27,25 @@ const TARGET_MEAN_MINUTES = 45;
 const TARGET_STDDEV_MINUTES = 20;
 const SEASONAL_AMPLITUDE_MINUTES = 8; // slight seasonal wave
 const SEASONAL_WAVELENGTH_DAYS = 365; // ~12 months
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function readDefaultResetTime() {
+  const constantsPath = path.resolve(__dirname, '../lib/constants.ts');
+  const constantsSource = fs.readFileSync(constantsPath, 'utf8');
+  const match = constantsSource.match(
+    /export const DEFAULT_DAILY_RESET_TIME = ['"](\d{2}:\d{2})['"]/
+  );
+
+  if (!match?.[1]) {
+    throw new Error('Could not read DEFAULT_DAILY_RESET_TIME from public-site/lib/constants.ts');
+  }
+
+  return match[1];
+}
+
+const DEFAULT_DAILY_RESET_TIME = readDefaultResetTime();
+const [RESET_HOUR, RESET_MINUTE] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
 
 function parseArgs(argv) {
   const args = { user: '', email: '', days: 90 };
@@ -215,7 +237,7 @@ async function main() {
     const dayIndex = days - 1 - offset;
     const date = new Date(now - (offset * 24 * 60 * 60 * 1000));
     const start = new Date(date);
-    start.setHours(4, 0, 0, 0);
+    start.setHours(RESET_HOUR, RESET_MINUTE, 0, 0);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
 

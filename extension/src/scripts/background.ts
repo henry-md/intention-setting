@@ -126,6 +126,7 @@ let activeTimer: ActiveTimerState | null = null;
 let syncIntervalId: NodeJS.Timeout | null = null;
 let secondsCounter = 0;
 let lastTickTimestamp: number | null = null; // Track last tick time for reset boundary detection
+let isDailyResetInProgress = false;
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
@@ -202,6 +203,39 @@ async function hydrateCompiledRuleIndexes(): Promise<void> {
 
 function getHistoryDateKey(periodEnd: number): string {
   return format(new Date(periodEnd - 1), 'yyyy-MM-dd');
+}
+
+function parseResetTime(resetTime: unknown): { resetHour: number; resetMinute: number } {
+  const [fallbackHour, fallbackMinute] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
+  const fallback = { resetHour: fallbackHour, resetMinute: fallbackMinute };
+
+  if (typeof resetTime !== 'string') return fallback;
+
+  const [hourStr, minuteStr] = resetTime.split(':');
+  const resetHour = Number(hourStr);
+  const resetMinute = Number(minuteStr);
+
+  if (
+    Number.isNaN(resetHour) ||
+    Number.isNaN(resetMinute) ||
+    resetHour < 0 ||
+    resetHour > 23 ||
+    resetMinute < 0 ||
+    resetMinute > 59
+  ) {
+    return fallback;
+  }
+
+  return { resetHour, resetMinute };
+}
+
+async function getResetSchedule(): Promise<{ resetHour: number; resetMinute: number }> {
+  if (!ALLOW_CUSTOM_RESET_TIME) {
+    return parseResetTime(DEFAULT_DAILY_RESET_TIME);
+  }
+
+  const storage = await chrome.storage.local.get(['dailyResetTime']);
+  return parseResetTime(storage.dailyResetTime);
 }
 
 function collectTrackedSiteTotals(
@@ -323,6 +357,69 @@ function getMostRecentResetBoundary(timestamp: number, resetHour: number, resetM
 
   // Otherwise, the boundary is today's reset
   return todayReset.getTime();
+}
+
+async function maybeRunDailyReset(
+  userId: string | null,
+  previousBoundary: number,
+  currentBoundary: number,
+  source: string
+): Promise<void> {
+  if (previousBoundary >= currentBoundary) {
+    return;
+  }
+
+  if (isDailyResetInProgress) {
+    return;
+  }
+
+  isDailyResetInProgress = true;
+  try {
+    console.log(`[DailyReset] Boundary crossed via ${source}`);
+    console.log('[DailyReset] Previous boundary:', formatDateWithTimezone(new Date(previousBoundary)));
+    console.log('[DailyReset] Current boundary:', formatDateWithTimezone(new Date(currentBoundary)));
+    await resetAllSiteTime(userId, currentBoundary, previousBoundary);
+  } finally {
+    isDailyResetInProgress = false;
+  }
+}
+
+async function checkAndApplyScheduledDailyReset(source: string): Promise<void> {
+  try {
+    const resetSchedule = await getResetSchedule();
+    const storage = await chrome.storage.local.get(['user', 'lastResetTimestamp', 'siteTimeData']);
+    const userId = storage.user?.uid || null;
+    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+    const now = Date.now();
+    const currentBoundary = getMostRecentResetBoundary(
+      now,
+      resetSchedule.resetHour,
+      resetSchedule.resetMinute
+    );
+
+    const rawLastResetTimestamp = Number(storage.lastResetTimestamp);
+    const latestSiteUpdate = Object.values(siteTimeData).reduce((latest, siteData) => {
+      const lastUpdated = Number(siteData?.lastUpdated);
+      if (Number.isFinite(lastUpdated) && lastUpdated > latest) {
+        return lastUpdated;
+      }
+      return latest;
+    }, 0);
+
+    const boundaryReferenceTimestamp =
+      Number.isFinite(rawLastResetTimestamp) && rawLastResetTimestamp > 0
+        ? rawLastResetTimestamp
+        : (latestSiteUpdate || now);
+    const previousBoundary = getMostRecentResetBoundary(
+      boundaryReferenceTimestamp,
+      resetSchedule.resetHour,
+      resetSchedule.resetMinute
+    );
+
+    await maybeRunDailyReset(userId, previousBoundary, currentBoundary, source);
+  } catch (error) {
+    console.error('[DailyReset] Scheduled reset check failed:', error);
+  }
 }
 
 /**
@@ -498,30 +595,22 @@ async function timerTick(): Promise<void> {
   // ============================================================================
   if (lastTickTimestamp !== null) {
     try {
-      const storage = await chrome.storage.local.get(['dailyResetTime', 'user']);
-      const resetTime = ALLOW_CUSTOM_RESET_TIME
-        ? storage.dailyResetTime || DEFAULT_DAILY_RESET_TIME
-        : DEFAULT_DAILY_RESET_TIME;
-      const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+      const resetSchedule = await getResetSchedule();
+      const storage = await chrome.storage.local.get(['user']);
       const userId = storage.user?.uid || null;
 
       // Calculate the most recent reset boundary for both timestamps
-      const previousBoundary = getMostRecentResetBoundary(lastTickTimestamp, resetHour, resetMinute);
-      const currentBoundary = getMostRecentResetBoundary(currentTickTimestamp, resetHour, resetMinute);
-
-      // If boundaries are different, we crossed a reset point
-      if (previousBoundary !== currentBoundary) {
-        console.log('[Timer] ====== DAILY RESET BOUNDARY CROSSED ======');
-        console.log('[Timer] Previous tick:', formatDateWithTimezone(new Date(lastTickTimestamp)));
-        console.log('[Timer] Current tick:', formatDateWithTimezone(new Date(currentTickTimestamp)));
-        console.log('[Timer] Previous boundary:', formatDateWithTimezone(new Date(previousBoundary)));
-        console.log('[Timer] Current boundary:', formatDateWithTimezone(new Date(currentBoundary)));
-
-        // Reset all site time immediately
-        await resetAllSiteTime(userId, currentBoundary, previousBoundary);
-
-        console.log('[Timer] ============================================');
-      }
+      const previousBoundary = getMostRecentResetBoundary(
+        lastTickTimestamp,
+        resetSchedule.resetHour,
+        resetSchedule.resetMinute
+      );
+      const currentBoundary = getMostRecentResetBoundary(
+        currentTickTimestamp,
+        resetSchedule.resetHour,
+        resetSchedule.resetMinute
+      );
+      await maybeRunDailyReset(userId, previousBoundary, currentBoundary, 'timer-tick');
     } catch (error) {
       console.error('[Timer] Error checking reset boundary:', error);
     }
@@ -910,14 +999,10 @@ async function startTimerForTab(
 
   // Log next reset time for debugging
   try {
-    const resetStorage = await chrome.storage.local.get(['dailyResetTime']);
-    const resetTime = ALLOW_CUSTOM_RESET_TIME
-      ? resetStorage.dailyResetTime || DEFAULT_DAILY_RESET_TIME
-      : DEFAULT_DAILY_RESET_TIME;
-    const [resetHour, resetMinute] = resetTime.split(':').map(Number);
+    const resetSchedule = await getResetSchedule();
     const now = new Date();
     const todayReset = new Date();
-    todayReset.setHours(resetHour, resetMinute, 0, 0);
+    todayReset.setHours(resetSchedule.resetHour, resetSchedule.resetMinute, 0, 0);
     const nextReset = now >= todayReset ? new Date(todayReset.getTime() + 24 * 60 * 60 * 1000) : todayReset;
     const tzAbbr = getTimezoneAbbreviation();
     console.log(`[Timer] Next daily reset: ${formatDateWithTimezone(nextReset)} (${tzAbbr})`);
@@ -937,6 +1022,7 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
   checkAndApplyRemoteUsageReset(true);
+  checkAndApplyScheduledDailyReset('onInstalled');
   hydrateCompiledRuleIndexes();
 });
 
@@ -987,6 +1073,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'signIn') {
     checkAndApplyRemoteUsageReset(true);
+    checkAndApplyScheduledDailyReset('signIn');
     return false;
   }
 
@@ -1160,6 +1247,7 @@ chrome.runtime.onStartup.addListener(async () => {
   console.log('[Timer] Service worker starting up');
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
   await checkAndApplyRemoteUsageReset(true);
+  await checkAndApplyScheduledDailyReset('onStartup');
   await hydrateCompiledRuleIndexes();
 
   // Find active tab and restart timer if applicable
@@ -1183,5 +1271,6 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === USAGE_RESET_ALARM_NAME) {
     checkAndApplyRemoteUsageReset(true);
+    checkAndApplyScheduledDailyReset('alarm');
   }
 });

@@ -5,6 +5,7 @@ import type {
   RuleTarget,
   SiteTimeData,
 } from '@/hooks/useUserData';
+import { DEFAULT_DAILY_RESET_TIME } from '@/lib/constants';
 
 /**
  * Get the normalized hostname from a URL
@@ -277,10 +278,34 @@ export function buildTotalTrackedUsageTimeline(
   };
 
   const now = Date.now();
+  const parseResetTime = (resetTime: unknown): { resetHour: number; resetMinute: number } => {
+    const [fallbackHour, fallbackMinute] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
+    const fallback = { resetHour: fallbackHour, resetMinute: fallbackMinute };
+
+    if (typeof resetTime !== 'string') return fallback;
+
+    const [hourStr, minuteStr] = resetTime.split(':');
+    const resetHour = Number(hourStr);
+    const resetMinute = Number(minuteStr);
+
+    if (
+      Number.isNaN(resetHour) ||
+      Number.isNaN(resetMinute) ||
+      resetHour < 0 ||
+      resetHour > 23 ||
+      resetMinute < 0 ||
+      resetMinute > 59
+    ) {
+      return fallback;
+    }
+
+    return { resetHour, resetMinute };
+  };
+  const resetSchedule = parseResetTime(DEFAULT_DAILY_RESET_TIME);
   const getUsageDayKeyForTimestamp = (timestamp: number): string => {
     const usageDate = new Date(timestamp);
     const resetBoundary = new Date(timestamp);
-    resetBoundary.setHours(4, 0, 0, 0);
+    resetBoundary.setHours(resetSchedule.resetHour, resetSchedule.resetMinute, 0, 0);
     if (usageDate < resetBoundary) {
       usageDate.setDate(usageDate.getDate() - 1);
     }
