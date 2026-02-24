@@ -7,6 +7,8 @@ import { usePublicUserData } from '@/hooks/useShareSettings';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
 import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import type { UserData } from '@/hooks/useUserData';
+import { useAuth } from '@/contexts/AuthContext';
+import { REQUIRE_SIGN_IN_TO_SPY } from '@/lib/constants';
 import Link from 'next/link';
 
 interface PublicStatsPageClientProps {
@@ -14,12 +16,30 @@ interface PublicStatsPageClientProps {
 }
 
 export default function PublicStatsPageClient({ shareId }: PublicStatsPageClientProps) {
+  const { user, loading: authLoading, signInWithGoogle } = useAuth();
   const { userId, loading: userIdLoading, error: userIdError } = usePublicUserData(shareId);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  const shouldRequireSignInToView = REQUIRE_SIGN_IN_TO_SPY;
+
+  const handleSignIn = async () => {
+    try {
+      await signInWithGoogle();
+      setSignInError(null);
+    } catch (err) {
+      console.error('Sign in failed:', err);
+      setSignInError('Google sign in failed. Please try again.');
+    }
+  };
 
   useEffect(() => {
+    if (shouldRequireSignInToView && (authLoading || !user)) {
+      return;
+    }
+
     if (!userId) {
       setLoading(userIdLoading);
       return;
@@ -51,7 +71,60 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
     };
 
     fetchUserData();
-  }, [userId, userIdLoading]);
+  }, [authLoading, shouldRequireSignInToView, user, userId, userIdLoading]);
+
+  if (shouldRequireSignInToView && authLoading) {
+    return (
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+            <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+              Intention Setter
+            </Link>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-lg text-zinc-600 dark:text-zinc-400">Checking sign-in status...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (shouldRequireSignInToView && !user) {
+    return (
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+            <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+              Intention Setter
+            </Link>
+          </div>
+        </header>
+        <div className="mx-auto flex w-full max-w-7xl flex-1 items-center justify-center px-6 py-8">
+          <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+            <h1 className="mb-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+              Sign In Required
+            </h1>
+            <p className="text-zinc-600 dark:text-zinc-400">
+              You must sign in with Google to view shared public statistics.
+            </p>
+            <button
+              type="button"
+              onClick={handleSignIn}
+              className="mt-6 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Sign In with Google
+            </button>
+            {signInError && (
+              <p className="mt-3 text-sm text-red-700 dark:text-red-300">
+                {signInError}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading || userIdLoading) {
     return (
