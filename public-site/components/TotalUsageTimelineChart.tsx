@@ -1,4 +1,4 @@
-import { type TouchEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type TouchEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { UsageTimelinePoint } from '@/lib/statsHelpers';
 import { formatTime } from '@/lib/statsHelpers';
 
@@ -18,9 +18,16 @@ const MOBILE_BREAKPOINT_MAX_WIDTH = 639;
 const DESKTOP_CHART_WIDTH = 1000;
 const DESKTOP_CHART_HEIGHT = 260;
 const DESKTOP_PADDING = { top: 18, right: 16, bottom: 42, left: 68 };
-const MOBILE_CHART_WIDTH = 760;
+const MOBILE_MAX_CHART_WIDTH = 1200;
+const MOBILE_MIN_CHART_WIDTH = 320;
+const MOBILE_POINT_SPACING = 10;
 const MOBILE_CHART_HEIGHT = 240;
 const MOBILE_PADDING = { top: 12, right: 10, bottom: 34, left: 30 };
+const MOBILE_CHART_BREAKOUT_X = 0;
+const MOBILE_LEFT_FADE_AXIS_OFFSET = 10; // Offset for where the fade starts relative to the y axis
+const MOBILE_RIGHT_FADE_AXIS_OFFSET = 3;
+const MOBILE_PLOT_EDGE_INSET_X = 6;
+const MOBILE_PLOT_CLIP_PADDING = 8;
 
 const formatYAxisTime = (seconds: number): string => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -65,6 +72,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   const chartScrollRef = useRef<HTMLDivElement | null>(null);
   const [showLeftFade, setShowLeftFade] = useState(false);
   const [showRightFade, setShowRightFade] = useState(false);
+  const [mobileViewportWidth, setMobileViewportWidth] = useState(0);
+  const plotClipPathId = useId().replace(/:/g, '');
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_MAX_WIDTH}px)`);
@@ -87,6 +96,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
     const updateFades = () => {
       const { scrollLeft, clientWidth, scrollWidth } = container;
       const maxScrollLeft = Math.max(scrollWidth - clientWidth, 0);
+      setMobileViewportWidth(clientWidth);
       setShowLeftFade(scrollLeft > 2);
       setShowRightFade(scrollLeft < maxScrollLeft - 2);
     };
@@ -100,10 +110,6 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       window.removeEventListener('resize', updateFades);
     };
   }, [isMobile, points.length, range]);
-
-  const chartWidth = isMobile ? MOBILE_CHART_WIDTH : DESKTOP_CHART_WIDTH;
-  const chartHeight = isMobile ? MOBILE_CHART_HEIGHT : DESKTOP_CHART_HEIGHT;
-  const padding = isMobile ? MOBILE_PADDING : DESKTOP_PADDING;
 
   const historicalSummary = useMemo(() => {
     if (points.length <= 7) return null;
@@ -160,6 +166,57 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
     return points.filter((point) => point.timestamp >= cutoff);
   }, [points, range, referenceNow]);
 
+  const mobileChartWidth = useMemo(() => {
+    const pointCount = Math.max(filteredPoints.length, 1);
+    const dynamicWidth =
+      MOBILE_PADDING.left +
+      MOBILE_PADDING.right +
+      Math.max(0, pointCount - 1) * MOBILE_POINT_SPACING;
+
+    return Math.min(MOBILE_MAX_CHART_WIDTH, Math.max(MOBILE_MIN_CHART_WIDTH, dynamicWidth));
+  }, [filteredPoints.length]);
+
+  const chartWidth = isMobile ? mobileChartWidth : DESKTOP_CHART_WIDTH;
+  const chartHeight = isMobile ? MOBILE_CHART_HEIGHT : DESKTOP_CHART_HEIGHT;
+  const padding = isMobile ? MOBILE_PADDING : DESKTOP_PADDING;
+  const mobileChartFrameStyle = isMobile
+    ? {
+        marginLeft: `-${MOBILE_CHART_BREAKOUT_X}px`,
+        marginRight: `-${MOBILE_CHART_BREAKOUT_X}px`,
+      }
+    : undefined;
+  const mobileScrollMaskStyle = useMemo(() => {
+    if (!isMobile || mobileViewportWidth <= 0) return undefined;
+
+    const leftFadeWidth = showLeftFade ? 18 : 0;
+    const rightFadeWidth = showRightFade ? 24 : 0;
+    const leftBoundary = padding.left + MOBILE_LEFT_FADE_AXIS_OFFSET;
+    const rightBoundary = Math.max(
+      leftBoundary,
+      mobileViewportWidth - padding.right - MOBILE_RIGHT_FADE_AXIS_OFFSET
+    );
+    const leftOpaqueStart = leftBoundary + leftFadeWidth;
+    const rightOpaqueEnd = rightBoundary - rightFadeWidth;
+    const opaqueStop = Math.max(leftOpaqueStart, rightOpaqueEnd);
+
+    const maskImage = `linear-gradient(to right,
+      transparent 0px,
+      transparent ${leftBoundary}px,
+      black ${leftOpaqueStart}px,
+      black ${opaqueStop}px,
+      transparent ${rightBoundary}px,
+      transparent 100%)`;
+
+    return {
+      WebkitMaskImage: maskImage,
+      maskImage,
+      WebkitMaskRepeat: 'no-repeat',
+      maskRepeat: 'no-repeat',
+      WebkitMaskSize: '100% 100%',
+      maskSize: '100% 100%',
+    } as const;
+  }, [isMobile, mobileViewportWidth, padding.left, padding.right, showLeftFade, showRightFade]);
+
   const chart = useMemo(() => {
     if (filteredPoints.length === 0) return null;
 
@@ -168,10 +225,13 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
     const maxY = Math.max(1, ...filteredPoints.map((point) => point.totalTimeSpent));
     const innerWidth = chartWidth - padding.left - padding.right;
     const innerHeight = chartHeight - padding.top - padding.bottom;
+    const xStart = padding.left + (isMobile ? MOBILE_PLOT_EDGE_INSET_X : 0);
+    const xEnd = chartWidth - padding.right - (isMobile ? MOBILE_PLOT_EDGE_INSET_X : 0);
+    const xSpan = Math.max(xEnd - xStart, 1);
 
     const scaleX = (value: number): number => {
-      if (maxX === minX) return padding.left + innerWidth / 2;
-      return padding.left + ((value - minX) / (maxX - minX)) * innerWidth;
+      if (maxX === minX) return xStart + xSpan / 2;
+      return xStart + ((value - minX) / (maxX - minX)) * xSpan;
     };
 
     const scaleY = (value: number): number => {
@@ -197,16 +257,27 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       };
     });
 
-    const maxXTicks = isMobile ? 3 : 5;
+    const mobileMaxXTicks = Math.min(10, Math.max(4, Math.floor(innerWidth / 110) + 1));
+    const maxXTicks = isMobile ? mobileMaxXTicks : 5;
     const xTickCount = Math.min(maxXTicks, Math.max(2, plotted.length));
-    const xTicks = Array.from({ length: xTickCount }, (_, index) => {
-      const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
-      const timestamp = minX + (maxX - minX) * ratio;
-      return {
-        timestamp,
-        x: scaleX(timestamp),
-      };
-    });
+    const xTicks = isMobile
+      ? Array.from({ length: xTickCount }, (_, index) => {
+          const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
+          const pointIndex = Math.round(ratio * (plotted.length - 1));
+          const point = plotted[pointIndex];
+          return {
+            timestamp: point.point.timestamp,
+            x: point.x,
+          };
+        })
+      : Array.from({ length: xTickCount }, (_, index) => {
+          const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
+          const timestamp = minX + (maxX - minX) * ratio;
+          return {
+            timestamp,
+            x: scaleX(timestamp),
+          };
+        });
 
     return {
       plotted,
@@ -218,6 +289,11 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   }, [chartHeight, chartWidth, filteredPoints, isMobile, padding.bottom, padding.left, padding.right, padding.top]);
 
   const hoveredPoint = hoveredIndex == null || !chart ? null : chart.plotted[hoveredIndex];
+  const mobilePulsePoint = useMemo(() => {
+    if (!isMobile || !chart || selectedTimestamp == null) return null;
+    return chart.plotted.find((entry) => entry.point.timestamp === selectedTimestamp) ?? null;
+  }, [chart, isMobile, selectedTimestamp]);
+  const activePulsePoint = isMobile ? mobilePulsePoint : hoveredPoint;
   const selectedPoint = useMemo(() => {
     if (!chart || chart.plotted.length === 0) return null;
     if (selectedTimestamp != null) {
@@ -281,7 +357,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   };
 
   return (
-    <section className="mb-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+    <section className="-mx-4 mb-8 rounded-xl border border-zinc-200 bg-white p-5 sm:mx-0 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Usage Over Time</h2>
@@ -289,12 +365,13 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
             Total tracked time across all sites that belong to at least one rule
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="hidden items-center gap-2 text-xs sm:flex">
           <span className="text-zinc-500 dark:text-zinc-400">Past</span>
           <select
             value={range}
             onChange={(event) => setRange(event.target.value as RangeFilter)}
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className="appearance-none rounded-md border border-zinc-300 bg-white px-2 py-1 text-zinc-700 outline-none ring-0 transition-colors hover:bg-zinc-100 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 active:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
           >
             <option value="week">Week</option>
             <option value="month">Month</option>
@@ -416,10 +493,72 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
 
       {chart ? (
         <>
-          <div className="mb-2 text-center text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            Current total: {formatTime(chart.total)}
-          </div>
+          {isMobile && (
+            <div className="mb-2 flex items-center justify-center gap-2 text-xs">
+              <span className="text-zinc-500 dark:text-zinc-400">Past</span>
+              <select
+                value={range}
+                onChange={(event) => setRange(event.target.value as RangeFilter)}
+                className="appearance-none rounded-md border border-zinc-300 bg-white px-2 py-1 text-zinc-700 outline-none ring-0 transition-colors hover:bg-zinc-100 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 active:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+                <option value="year">Year</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+          )}
           <div className="relative">
+            {isMobile && chart && mobileViewportWidth > 0 && (
+              <svg
+                viewBox={`0 0 ${mobileViewportWidth} ${chartHeight}`}
+                className="pointer-events-none absolute inset-0 z-20 h-56 w-full overflow-visible"
+                style={{ overflow: 'visible' }}
+                aria-hidden="true"
+              >
+                <line
+                  x1={padding.left}
+                  x2={padding.left}
+                  y1={padding.top}
+                  y2={chartHeight - padding.bottom}
+                  stroke="currentColor"
+                  className="text-zinc-300 dark:text-zinc-700"
+                  strokeWidth="1"
+                />
+                <line
+                  x1={padding.left}
+                  x2={Math.max(padding.left, mobileViewportWidth - padding.right)}
+                  y1={chartHeight - padding.bottom}
+                  y2={chartHeight - padding.bottom}
+                  stroke="currentColor"
+                  className="text-zinc-300 dark:text-zinc-700"
+                  strokeWidth="1"
+                />
+                {chart.yTicks.map((tick) => (
+                  <g key={`mobile-y-${tick.y}`}>
+                    <line
+                      x1={padding.left}
+                      x2={Math.max(padding.left, mobileViewportWidth - padding.right)}
+                      y1={tick.y}
+                      y2={tick.y}
+                      stroke="currentColor"
+                      className="text-zinc-200/80 dark:text-zinc-700/60"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={padding.left - 8}
+                      y={tick.y}
+                      textAnchor="end"
+                      dominantBaseline="central"
+                      className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
+                    >
+                      {formatYAxisTime(tick.value)}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+            )}
             {!isMobile && hoveredPoint && (
               <div
                 className="pointer-events-none absolute z-10 rounded-md border border-zinc-200 bg-white/95 px-2 py-1 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900/95"
@@ -437,46 +576,61 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 </div>
               </div>
             )}
-            <div className={isMobile ? 'relative' : ''}>
-              {isMobile && showLeftFade && (
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-zinc-900 to-transparent" />
-              )}
-              {isMobile && showRightFade && (
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-zinc-900 via-zinc-900/75 to-transparent" />
-              )}
+            <div className="relative" style={mobileChartFrameStyle}>
               <div
                 ref={chartScrollRef}
                 className={isMobile ? 'overflow-x-auto pb-1' : ''}
+                style={isMobile ? mobileScrollMaskStyle : undefined}
               >
               <svg
                 ref={svgRef}
                 viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                className={isMobile ? 'h-56 min-w-[760px]' : 'h-60 w-full'}
-                style={isMobile ? { width: `${MOBILE_CHART_WIDTH}px` } : undefined}
+                className={isMobile ? 'h-56 w-auto' : 'h-auto w-full'}
+                style={isMobile ? { width: `${chartWidth}px` } : undefined}
                 onTouchStart={handleChartTouchStart}
                 onTouchMove={handleChartTouchMove}
                 onTouchEnd={handleChartTouchEnd}
               >
-              <line
-                x1={padding.left}
-                x2={padding.left}
-                y1={padding.top}
-                y2={chartHeight - padding.bottom}
-                stroke="currentColor"
-                className="text-zinc-300 dark:text-zinc-700"
-                strokeWidth="1"
-              />
-              <line
-                x1={padding.left}
-                x2={chartWidth - padding.right}
-                y1={chartHeight - padding.bottom}
-                y2={chartHeight - padding.bottom}
-                stroke="currentColor"
-                className="text-zinc-300 dark:text-zinc-700"
-                strokeWidth="1"
-              />
+              <defs>
+                <clipPath id={plotClipPathId}>
+                  <rect
+                    x={isMobile ? padding.left - MOBILE_PLOT_CLIP_PADDING : padding.left}
+                    y={isMobile ? padding.top - MOBILE_PLOT_CLIP_PADDING : padding.top}
+                    width={
+                      chartWidth - padding.left - padding.right +
+                      (isMobile ? MOBILE_PLOT_CLIP_PADDING * 2 : 0)
+                    }
+                    height={
+                      chartHeight - padding.top - padding.bottom +
+                      (isMobile ? MOBILE_PLOT_CLIP_PADDING * 2 : 0)
+                    }
+                  />
+                </clipPath>
+              </defs>
+              {!isMobile && (
+                <>
+                  <line
+                    x1={padding.left}
+                    x2={padding.left}
+                    y1={padding.top}
+                    y2={chartHeight - padding.bottom}
+                    stroke="currentColor"
+                    className="text-zinc-300 dark:text-zinc-700"
+                    strokeWidth="1"
+                  />
+                  <line
+                    x1={padding.left}
+                    x2={chartWidth - padding.right}
+                    y1={chartHeight - padding.bottom}
+                    y2={chartHeight - padding.bottom}
+                    stroke="currentColor"
+                    className="text-zinc-300 dark:text-zinc-700"
+                    strokeWidth="1"
+                  />
+                </>
+              )}
 
-              {chart.yTicks.map((tick) => (
+              {!isMobile && chart.yTicks.map((tick) => (
                 <g key={tick.y}>
                   <line
                     x1={padding.left}
@@ -499,98 +653,111 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 </g>
               ))}
 
-              {chart.xTicks.map((tick) => (
-                <g key={tick.x}>
-                  <line
-                    x1={tick.x}
-                    x2={tick.x}
-                    y1={chartHeight - padding.bottom}
-                    y2={chartHeight - padding.bottom + 4}
-                    stroke="currentColor"
-                    className="text-zinc-300 dark:text-zinc-700"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={tick.x}
-                    y={chartHeight - padding.bottom + 16}
-                    textAnchor="middle"
-                    className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
-                  >
-                    {formatDateTick(tick.timestamp)}
-                  </text>
-                </g>
-              ))}
-
-              <path
-                d={chart.linePath}
-                fill="none"
-                stroke="currentColor"
-                className="text-indigo-500 dark:text-indigo-400"
-                strokeWidth="1.3"
-              />
-
-              {chart.plotted.map((entry, index) => (
-                <circle
-                  key={`dot-${index}`}
-                  cx={entry.x}
-                  cy={entry.y}
-                  r={hoveredIndex === index ? 3.6 : 3}
-                  fill="currentColor"
-                  className={
-                    selectedPoint?.timestamp === entry.point.timestamp
-                      ? 'text-indigo-600 dark:text-indigo-300'
-                      : 'text-indigo-500 dark:text-indigo-400'
-                  }
+              <g clipPath={`url(#${plotClipPathId})`}>
+                <path
+                  d={chart.linePath}
+                  fill="none"
+                  stroke="currentColor"
+                  className="text-indigo-500 dark:text-indigo-400"
+                  strokeWidth="1.3"
                 />
-              ))}
 
-              {hoveredPoint && (
-                <g pointerEvents="none">
+                {chart.plotted.map((entry, index) => (
                   <circle
-                    cx={hoveredPoint.x}
-                    cy={hoveredPoint.y}
-                    r="4"
+                    key={`dot-${index}`}
+                    cx={entry.x}
+                    cy={entry.y}
+                    r={hoveredIndex === index ? 3.6 : 3}
                     fill="currentColor"
-                    className="text-indigo-400/30 dark:text-indigo-300/30"
+                    className={
+                      selectedPoint?.timestamp === entry.point.timestamp
+                        ? 'text-indigo-600 dark:text-indigo-300'
+                        : 'text-indigo-500 dark:text-indigo-400'
+                    }
                   />
-                  <circle
-                    cx={hoveredPoint.x}
-                    cy={hoveredPoint.y}
-                    r="4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.25"
-                    className="text-indigo-300 dark:text-indigo-200"
-                  >
-                    <animate
-                      attributeName="r"
-                      values="4;8;4"
-                      dur="1.2s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="opacity"
-                      values="0.45;0.1;0.45"
-                      dur="1.2s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
-                </g>
-              )}
+                ))}
 
-              {chart.plotted.map((entry, index) => (
-                <circle
-                  key={`hit-${index}`}
-                  cx={entry.x}
-                  cy={entry.y}
-                  r="12"
-                  fill="transparent"
-                  className="cursor-pointer"
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                  onClick={() => setSelectedTimestamp(entry.point.timestamp)}
-                />
-              ))}
+                {activePulsePoint && (
+                  <g pointerEvents="none">
+                    <circle
+                      cx={activePulsePoint.x}
+                      cy={activePulsePoint.y}
+                      r="4"
+                      fill="currentColor"
+                      className="text-indigo-400/30 dark:text-indigo-300/30"
+                    />
+                    <circle
+                      cx={activePulsePoint.x}
+                      cy={activePulsePoint.y}
+                      r="4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                      className="text-indigo-300 dark:text-indigo-200"
+                    >
+                      <animate
+                        attributeName="r"
+                        values="4;8;4"
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values="0.45;0.1;0.45"
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  </g>
+                )}
+
+                {chart.plotted.map((entry, index) => (
+                  <circle
+                    key={`hit-${index}`}
+                    cx={entry.x}
+                    cy={entry.y}
+                    r="12"
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredIndex(index)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                    onClick={() => setSelectedTimestamp(entry.point.timestamp)}
+                  />
+                ))}
+              </g>
+
+              {chart.xTicks.map((tick, index) => {
+                const isFirstMobileTick = isMobile && index === 0;
+                const isLastMobileTick = isMobile && index === chart.xTicks.length - 1;
+                const textAnchor = isFirstMobileTick
+                  ? 'start'
+                  : isLastMobileTick
+                    ? 'end'
+                    : 'middle';
+                const textX = isFirstMobileTick ? tick.x + 5 : isLastMobileTick ? tick.x - 5 : tick.x;
+
+                return (
+                  <g key={tick.x}>
+                    <line
+                      x1={tick.x}
+                      x2={tick.x}
+                      y1={chartHeight - padding.bottom}
+                      y2={chartHeight - padding.bottom + 4}
+                      stroke="currentColor"
+                      className="text-zinc-300 dark:text-zinc-700"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={textX}
+                      y={chartHeight - padding.bottom + 16}
+                      textAnchor={textAnchor}
+                      className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
+                    >
+                      {formatDateTick(tick.timestamp)}
+                    </text>
+                  </g>
+                );
+              })}
 
               {!isMobile && (
                 <text
