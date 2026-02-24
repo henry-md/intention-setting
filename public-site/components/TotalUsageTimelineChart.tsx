@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { type TouchEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { UsageTimelinePoint } from '@/lib/statsHelpers';
 import { formatTime } from '@/lib/statsHelpers';
 
@@ -14,9 +14,13 @@ const RANGE_MS: Record<Exclude<RangeFilter, 'all'>, number> = {
   year: 365 * 24 * 60 * 60 * 1000,
 };
 
-const CHART_WIDTH = 1000;
-const CHART_HEIGHT = 260;
-const PADDING = { top: 18, right: 16, bottom: 42, left: 68 };
+const MOBILE_BREAKPOINT_MAX_WIDTH = 639;
+const DESKTOP_CHART_WIDTH = 1000;
+const DESKTOP_CHART_HEIGHT = 260;
+const DESKTOP_PADDING = { top: 18, right: 16, bottom: 42, left: 68 };
+const MOBILE_CHART_WIDTH = 760;
+const MOBILE_CHART_HEIGHT = 240;
+const MOBILE_PADDING = { top: 12, right: 10, bottom: 34, left: 30 };
 
 const formatYAxisTime = (seconds: number): string => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -43,10 +47,62 @@ const formatUsageDay = (timestamp: number): string => {
 };
 
 export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineChartProps) {
-  const [range, setRange] = useState<RangeFilter>('all');
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_MAX_WIDTH}px)`).matches;
+  });
+  const [range, setRange] = useState<RangeFilter>(() => {
+    if (typeof window === 'undefined') return 'all';
+    return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_MAX_WIDTH}px)`).matches
+      ? 'month'
+      : 'all';
+  });
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null);
   const [referenceNow] = useState<number>(() => Date.now());
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const chartScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showLeftFade, setShowLeftFade] = useState(false);
+  const [showRightFade, setShowRightFade] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_MAX_WIDTH}px)`);
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', onChange);
+    return () => mediaQuery.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) {
+      return;
+    }
+
+    const container = chartScrollRef.current;
+    if (!container) return;
+
+    const updateFades = () => {
+      const { scrollLeft, clientWidth, scrollWidth } = container;
+      const maxScrollLeft = Math.max(scrollWidth - clientWidth, 0);
+      setShowLeftFade(scrollLeft > 2);
+      setShowRightFade(scrollLeft < maxScrollLeft - 2);
+    };
+
+    updateFades();
+    container.addEventListener('scroll', updateFades, { passive: true });
+    window.addEventListener('resize', updateFades);
+
+    return () => {
+      container.removeEventListener('scroll', updateFades);
+      window.removeEventListener('resize', updateFades);
+    };
+  }, [isMobile, points.length, range]);
+
+  const chartWidth = isMobile ? MOBILE_CHART_WIDTH : DESKTOP_CHART_WIDTH;
+  const chartHeight = isMobile ? MOBILE_CHART_HEIGHT : DESKTOP_CHART_HEIGHT;
+  const padding = isMobile ? MOBILE_PADDING : DESKTOP_PADDING;
 
   const historicalSummary = useMemo(() => {
     if (points.length <= 7) return null;
@@ -109,16 +165,16 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
     const minX = filteredPoints[0].timestamp;
     const maxX = filteredPoints[filteredPoints.length - 1].timestamp;
     const maxY = Math.max(1, ...filteredPoints.map((point) => point.totalTimeSpent));
-    const innerWidth = CHART_WIDTH - PADDING.left - PADDING.right;
-    const innerHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
+    const innerWidth = chartWidth - padding.left - padding.right;
+    const innerHeight = chartHeight - padding.top - padding.bottom;
 
     const scaleX = (value: number): number => {
-      if (maxX === minX) return PADDING.left + innerWidth / 2;
-      return PADDING.left + ((value - minX) / (maxX - minX)) * innerWidth;
+      if (maxX === minX) return padding.left + innerWidth / 2;
+      return padding.left + ((value - minX) / (maxX - minX)) * innerWidth;
     };
 
     const scaleY = (value: number): number => {
-      return PADDING.top + innerHeight - (value / maxY) * innerHeight;
+      return padding.top + innerHeight - (value / maxY) * innerHeight;
     };
 
     const plotted = filteredPoints.map((point) => ({
@@ -131,7 +187,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       .map((entry, index) => `${index === 0 ? 'M' : 'L'} ${entry.x} ${entry.y}`)
       .join(' ');
 
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const yTickRatios = isMobile ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+    const yTicks = yTickRatios.map((ratio) => {
       const value = Math.round(maxY * ratio);
       return {
         value,
@@ -139,7 +196,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       };
     });
 
-    const xTickCount = Math.min(5, Math.max(2, plotted.length));
+    const maxXTicks = isMobile ? 3 : 5;
+    const xTickCount = Math.min(maxXTicks, Math.max(2, plotted.length));
     const xTicks = Array.from({ length: xTickCount }, (_, index) => {
       const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
       const timestamp = minX + (maxX - minX) * ratio;
@@ -156,7 +214,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       xTicks,
       total: filteredPoints[filteredPoints.length - 1].totalTimeSpent,
     };
-  }, [filteredPoints]);
+  }, [chartHeight, chartWidth, filteredPoints, isMobile, padding.bottom, padding.left, padding.right, padding.top]);
 
   const hoveredPoint = hoveredIndex == null || !chart ? null : chart.plotted[hoveredIndex];
   const selectedPoint = useMemo(() => {
@@ -177,6 +235,49 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
       .filter((site) => site.timeSpent > 0)
       .sort((a, b) => b.timeSpent - a.timeSpent);
   }, [selectedPoint]);
+
+  const updateNearestPointFromClientX = (clientX: number, persistSelection: boolean) => {
+    if (!chart || !svgRef.current || chart.plotted.length === 0) return;
+
+    const svgRect = svgRef.current.getBoundingClientRect();
+    if (svgRect.width <= 0) return;
+
+    const relativeX = ((clientX - svgRect.left) / svgRect.width) * chartWidth;
+    let nearestIndex = 0;
+    let smallestDistance = Number.POSITIVE_INFINITY;
+
+    chart.plotted.forEach((entry, index) => {
+      const distance = Math.abs(entry.x - relativeX);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    const nearestPoint = chart.plotted[nearestIndex];
+    if (!nearestPoint) return;
+
+    setHoveredIndex(nearestIndex);
+    if (persistSelection) {
+      setSelectedTimestamp(nearestPoint.point.timestamp);
+    }
+  };
+
+  const handleChartTouchStart = (event: TouchEvent<SVGSVGElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    updateNearestPointFromClientX(touch.clientX, true);
+  };
+
+  const handleChartTouchMove = (event: TouchEvent<SVGSVGElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    updateNearestPointFromClientX(touch.clientX, true);
+  };
+
+  const handleChartTouchEnd = () => {
+    setHoveredIndex(null);
+  };
 
   return (
     <section className="mb-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -202,51 +303,105 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
         </div>
       </div>
 
-      {historicalSummary && (
-        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Avg Daily Time
+      {historicalSummary &&
+        (isMobile ? (
+          <div className="mb-4 space-y-2">
+            <div className="grid grid-cols-1 gap-2">
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Avg Daily Time
+                </div>
+                <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                  {formatTime(historicalSummary.average)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Median Daily Time
+                </div>
+                <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                  {formatTime(historicalSummary.median)}
+                </div>
+              </div>
             </div>
-            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              {formatTime(historicalSummary.average)}
+            <details className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                More Stats
+              </summary>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Std Dev (Daily)
+                  </div>
+                  <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                    {formatTime(historicalSummary.standardDeviation)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Weekday vs Weekend Avg
+                  </div>
+                  <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                    {historicalSummary.weekdayAverage == null
+                      ? 'N/A'
+                      : formatTime(historicalSummary.weekdayAverage)}{' '}
+                    /{' '}
+                    {historicalSummary.weekendAverage == null
+                      ? 'N/A'
+                      : formatTime(historicalSummary.weekendAverage)}
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Weekday / Weekend
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        ) : (
+          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Avg Daily Time
+              </div>
+              <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                {formatTime(historicalSummary.average)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Std Dev (Daily)
+              </div>
+              <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                {formatTime(historicalSummary.standardDeviation)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Median Daily Time
+              </div>
+              <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                {formatTime(historicalSummary.median)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Weekday vs Weekend Avg
+              </div>
+              <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                {historicalSummary.weekdayAverage == null
+                  ? 'N/A'
+                  : formatTime(historicalSummary.weekdayAverage)}{' '}
+                /{' '}
+                {historicalSummary.weekendAverage == null
+                  ? 'N/A'
+                  : formatTime(historicalSummary.weekendAverage)}
+              </div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Weekday / Weekend
+              </div>
             </div>
           </div>
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Std Dev (Daily)
-            </div>
-            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              {formatTime(historicalSummary.standardDeviation)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Median Daily Time
-            </div>
-            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              {formatTime(historicalSummary.median)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Weekday vs Weekend Avg
-            </div>
-            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              {historicalSummary.weekdayAverage == null
-                ? 'N/A'
-                : formatTime(historicalSummary.weekdayAverage)}{' '}
-              /{' '}
-              {historicalSummary.weekendAverage == null
-                ? 'N/A'
-                : formatTime(historicalSummary.weekendAverage)}
-            </div>
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              Weekday / Weekend
-            </div>
-          </div>
-        </div>
-      )}
+        ))}
 
       {chart ? (
         <>
@@ -254,12 +409,12 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
             Current total: {formatTime(chart.total)}
           </div>
           <div className="relative">
-            {hoveredPoint && (
+            {!isMobile && hoveredPoint && (
               <div
                 className="pointer-events-none absolute z-10 rounded-md border border-zinc-200 bg-white/95 px-2 py-1 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900/95"
                 style={{
-                  left: `${(hoveredPoint.x / CHART_WIDTH) * 100}%`,
-                  top: `${(hoveredPoint.y / CHART_HEIGHT) * 100}%`,
+                  left: `${(hoveredPoint.x / chartWidth) * 100}%`,
+                  top: `${(hoveredPoint.y / chartHeight) * 100}%`,
                   transform: 'translate(-50%, calc(-100% - 10px))',
                 }}
               >
@@ -271,21 +426,40 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 </div>
               </div>
             )}
-            <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="h-60 w-full">
+            <div className={isMobile ? 'relative' : ''}>
+              {isMobile && showLeftFade && (
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-zinc-900 to-transparent" />
+              )}
+              {isMobile && showRightFade && (
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-zinc-900 via-zinc-900/75 to-transparent" />
+              )}
+              <div
+                ref={chartScrollRef}
+                className={isMobile ? 'overflow-x-auto pb-1' : ''}
+              >
+              <svg
+                ref={svgRef}
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                className={isMobile ? 'h-56 min-w-[760px]' : 'h-60 w-full'}
+                style={isMobile ? { width: `${MOBILE_CHART_WIDTH}px` } : undefined}
+                onTouchStart={handleChartTouchStart}
+                onTouchMove={handleChartTouchMove}
+                onTouchEnd={handleChartTouchEnd}
+              >
               <line
-                x1={PADDING.left}
-                x2={PADDING.left}
-                y1={PADDING.top}
-                y2={CHART_HEIGHT - PADDING.bottom}
+                x1={padding.left}
+                x2={padding.left}
+                y1={padding.top}
+                y2={chartHeight - padding.bottom}
                 stroke="currentColor"
                 className="text-zinc-300 dark:text-zinc-700"
                 strokeWidth="1"
               />
               <line
-                x1={PADDING.left}
-                x2={CHART_WIDTH - PADDING.right}
-                y1={CHART_HEIGHT - PADDING.bottom}
-                y2={CHART_HEIGHT - PADDING.bottom}
+                x1={padding.left}
+                x2={chartWidth - padding.right}
+                y1={chartHeight - padding.bottom}
+                y2={chartHeight - padding.bottom}
                 stroke="currentColor"
                 className="text-zinc-300 dark:text-zinc-700"
                 strokeWidth="1"
@@ -294,8 +468,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
               {chart.yTicks.map((tick) => (
                 <g key={tick.y}>
                   <line
-                    x1={PADDING.left}
-                    x2={CHART_WIDTH - PADDING.right}
+                    x1={padding.left}
+                    x2={chartWidth - padding.right}
                     y1={tick.y}
                     y2={tick.y}
                     stroke="currentColor"
@@ -303,7 +477,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                     strokeWidth="1"
                   />
                   <text
-                    x={PADDING.left - 8}
+                    x={padding.left - 8}
                     y={tick.y}
                     textAnchor="end"
                     dominantBaseline="central"
@@ -319,15 +493,15 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                   <line
                     x1={tick.x}
                     x2={tick.x}
-                    y1={CHART_HEIGHT - PADDING.bottom}
-                    y2={CHART_HEIGHT - PADDING.bottom + 4}
+                    y1={chartHeight - padding.bottom}
+                    y2={chartHeight - padding.bottom + 4}
                     stroke="currentColor"
                     className="text-zinc-300 dark:text-zinc-700"
                     strokeWidth="1"
                   />
                   <text
                     x={tick.x}
-                    y={CHART_HEIGHT - PADDING.bottom + 16}
+                    y={chartHeight - padding.bottom + 16}
                     textAnchor="middle"
                     className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
                   >
@@ -407,29 +581,35 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 />
               ))}
 
-              <text
-                x={(PADDING.left + (CHART_WIDTH - PADDING.right)) / 2}
-                y={CHART_HEIGHT - 6}
-                textAnchor="middle"
-                className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
-              >
-                Date
-              </text>
-              <text
-                x={14}
-                y={(PADDING.top + (CHART_HEIGHT - PADDING.bottom)) / 2}
-                transform={`rotate(-90 14 ${(PADDING.top + (CHART_HEIGHT - PADDING.bottom)) / 2})`}
-                textAnchor="middle"
-                className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
-              >
-                Time
-              </text>
+              {!isMobile && (
+                <text
+                  x={(padding.left + (chartWidth - padding.right)) / 2}
+                  y={chartHeight - 6}
+                  textAnchor="middle"
+                  className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
+                >
+                  Date
+                </text>
+              )}
+              {!isMobile && (
+                <text
+                  x={14}
+                  y={(padding.top + (chartHeight - padding.bottom)) / 2}
+                  transform={`rotate(-90 14 ${(padding.top + (chartHeight - padding.bottom)) / 2})`}
+                  textAnchor="middle"
+                  className="fill-zinc-500 text-[11px] dark:fill-zinc-400"
+                >
+                  Time
+                </text>
+              )}
             </svg>
+              </div>
+            </div>
           </div>
 
           {selectedPoint && (
-            <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3 border-b border-zinc-200 pb-2 dark:border-zinc-800">
+            <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2 sm:gap-3 border-b border-zinc-200 pb-2 dark:border-zinc-800">
                 <div>
                   <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                     URLs for {new Date(selectedPoint.timestamp).toLocaleDateString([], {
@@ -443,7 +623,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                     Ranked by most time used
                   </div>
                 </div>
-                <div className="rounded-md border border-violet-300/80 bg-violet-100/80 px-3 py-1.5 dark:border-violet-500/50 dark:bg-violet-900/30">
+                <div className="rounded-md border border-violet-300/80 bg-violet-100/80 px-2.5 py-1 sm:px-3 sm:py-1.5 dark:border-violet-500/50 dark:bg-violet-900/30">
                   <div className="text-[10px] uppercase tracking-wide text-violet-700 dark:text-violet-300">
                     Total Time
                   </div>
@@ -458,7 +638,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                   {selectedDaySiteTotals.map((site, index) => (
                     <div
                       key={`${selectedPoint.dayKey}-${site.siteKey}`}
-                      className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2 py-2 text-sm ${
+                      className={`grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 rounded-md px-2 py-1.5 sm:py-2 text-sm ${
                         index % 2 === 0
                           ? 'bg-zinc-100 dark:bg-zinc-800/70'
                           : 'bg-zinc-50 dark:bg-zinc-900/60'
