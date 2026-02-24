@@ -5,9 +5,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePublicUserData } from '@/hooks/useShareSettings';
 import { useParams } from 'next/navigation';
-import RuleProgressList from '@/components/RuleProgressList';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
-import { buildRuleProgressStats, buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
+import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import type { UserData } from '@/hooks/useUserData';
 import Link from 'next/link';
 
@@ -117,7 +116,6 @@ export default function PublicStatsPage() {
     );
   }
 
-  const ruleStats = buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking);
   const usageTimeline = buildTotalTrackedUsageTimeline(
     userData.rules,
     userData.groups,
@@ -182,9 +180,6 @@ export default function PublicStatsPage() {
         </div>
 
         <TotalUsageTimelineChart points={usageTimeline} />
-
-        {/* Rule Progress List */}
-        <RuleProgressList rules={ruleStats} />
 
         {/* Last Reset Info */}
         {userData.lastDailyResetTimestamp && (

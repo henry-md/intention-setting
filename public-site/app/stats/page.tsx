@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import RuleProgressList from '@/components/RuleProgressList';
 import SharingToggle from '@/components/SharingToggle';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
 import {
@@ -17,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
-import { buildRuleProgressStats, buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
+import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 type ThemeMode = 'light' | 'dark';
@@ -80,7 +79,6 @@ export default function StatsPage() {
   };
 
   const isStatsLoading = !!user && loading;
-  const ruleStats = userData ? buildRuleProgressStats(userData.rules, userData.groups, userData.timeTracking) : [];
   const usageTimeline = userData
     ? buildTotalTrackedUsageTimeline(
         userData.rules,
@@ -177,7 +175,7 @@ export default function StatsPage() {
               Usage Statistics
             </h1>
             <p className="text-zinc-600 dark:text-zinc-400">
-              Track total progress per rule and expand each rule to see per-site usage
+              Click any day on the timeline to see ranked URL usage for that day
             </p>
           </div>
 
@@ -260,9 +258,6 @@ export default function StatsPage() {
               </div>
 
               <TotalUsageTimelineChart points={usageTimeline} />
-
-              {/* Rule Progress List */}
-              <RuleProgressList rules={ruleStats} />
 
               {/* Last Reset Info */}
               {userData.lastDailyResetTimestamp && (

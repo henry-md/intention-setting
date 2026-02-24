@@ -63,12 +63,44 @@ interface RuleUsageData {
 interface DailyUsageHistoryEntry {
   totalTimeSpent: number;
   trackedSiteCount: number;
+  siteTotals: Record<string, number>;
   periodStart: number;
   periodEnd: number;
   capturedAt: number;
 }
 
 type DailyUsageHistory = Record<string, DailyUsageHistoryEntry>;
+
+function normalizeSiteTotals(siteTotals: Record<string, number>): Record<string, number> {
+  const normalized: Record<string, number> = {};
+
+  for (const [siteKey, rawSeconds] of Object.entries(siteTotals)) {
+    const seconds = Math.max(0, Math.floor(Number(rawSeconds) || 0));
+    if (seconds <= 0) continue;
+    normalized[siteKey] = seconds;
+  }
+
+  return normalized;
+}
+
+function createDailyUsageHistoryEntry(
+  siteTotals: Record<string, number>,
+  periodStart: number,
+  periodEnd: number,
+  capturedAt: number
+): DailyUsageHistoryEntry {
+  const normalizedSiteTotals = normalizeSiteTotals(siteTotals);
+  const totalTimeSpent = Object.values(normalizedSiteTotals).reduce((sum, value) => sum + value, 0);
+
+  return {
+    totalTimeSpent,
+    trackedSiteCount: Object.keys(normalizedSiteTotals).length,
+    siteTotals: normalizedSiteTotals,
+    periodStart,
+    periodEnd,
+    capturedAt
+  };
+}
 
 interface ExceededRuleInfo {
   ruleId: string;
@@ -314,15 +346,8 @@ async function resetAllSiteTime(
     const periodEnd = periodEndBoundary ?? now;
     const periodStart = periodStartBoundary ?? Math.max(periodEnd - (24 * 60 * 60 * 1000), 0);
     const historyKey = getHistoryDateKey(periodEnd);
-    const siteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
-    const totalTimeSpent = Object.values(siteTotals).reduce((sum, value) => sum + value, 0);
-    const historyEntry: DailyUsageHistoryEntry = {
-      totalTimeSpent,
-      trackedSiteCount: Object.keys(siteTotals).length,
-      periodStart,
-      periodEnd,
-      capturedAt: now
-    };
+    const rawSiteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
+    const historyEntry = createDailyUsageHistoryEntry(rawSiteTotals, periodStart, periodEnd, now);
     const nextDailyUsageHistory = appendHistoryEntry(dailyUsageHistory, historyKey, historyEntry);
 
     // Reset all time spent values to 0

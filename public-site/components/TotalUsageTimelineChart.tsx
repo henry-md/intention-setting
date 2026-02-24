@@ -47,6 +47,7 @@ const formatTooltipDate = (timestamp: number): string => {
 export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineChartProps) {
   const [range, setRange] = useState<RangeFilter>('all');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null);
   const [referenceNow] = useState<number>(() => Date.now());
 
   const historicalSummary = useMemo(() => {
@@ -160,6 +161,24 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   }, [filteredPoints]);
 
   const hoveredPoint = hoveredIndex == null || !chart ? null : chart.plotted[hoveredIndex];
+  const selectedPoint = useMemo(() => {
+    if (!chart || chart.plotted.length === 0) return null;
+    if (selectedTimestamp != null) {
+      const selected = chart.plotted.find((entry) => entry.point.timestamp === selectedTimestamp);
+      if (selected) return selected.point;
+    }
+    return chart.plotted[chart.plotted.length - 1].point;
+  }, [chart, selectedTimestamp]);
+  const selectedDaySiteTotals = useMemo(() => {
+    if (!selectedPoint) return [];
+    return Object.entries(selectedPoint.siteTotals || {})
+      .map(([siteKey, timeSpent]) => ({
+        siteKey,
+        timeSpent: Math.max(0, Math.floor(Number(timeSpent) || 0)),
+      }))
+      .filter((site) => site.timeSpent > 0)
+      .sort((a, b) => b.timeSpent - a.timeSpent);
+  }, [selectedPoint]);
 
   return (
     <section className="mb-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -334,7 +353,11 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                   cy={entry.y}
                   r={hoveredIndex === index ? 3.6 : 3}
                   fill="currentColor"
-                  className="text-indigo-500 dark:text-indigo-400"
+                  className={
+                    selectedPoint?.timestamp === entry.point.timestamp
+                      ? 'text-indigo-600 dark:text-indigo-300'
+                      : 'text-indigo-500 dark:text-indigo-400'
+                  }
                 />
               ))}
 
@@ -382,6 +405,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                   className="cursor-pointer"
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
+                  onClick={() => setSelectedTimestamp(entry.point.timestamp)}
                 />
               ))}
 
@@ -404,6 +428,61 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
               </text>
             </svg>
           </div>
+
+          {selectedPoint && (
+            <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3 border-b border-zinc-200 pb-2 dark:border-zinc-800">
+                <div>
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                    URLs for {new Date(selectedPoint.timestamp).toLocaleDateString([], {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Ranked by most time used
+                  </div>
+                </div>
+                <div className="rounded-md border border-violet-300/80 bg-violet-100/80 px-3 py-1.5 dark:border-violet-500/50 dark:bg-violet-900/30">
+                  <div className="text-[10px] uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                    Total Time
+                  </div>
+                  <div className="text-sm font-bold text-violet-800 dark:text-violet-200">
+                    {formatTime(selectedPoint.totalTimeSpent)}
+                  </div>
+                </div>
+              </div>
+
+              {selectedDaySiteTotals.length > 0 ? (
+                <div className="space-y-1">
+                  {selectedDaySiteTotals.map((site, index) => (
+                    <div
+                      key={`${selectedPoint.dayKey}-${site.siteKey}`}
+                      className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2 py-2 text-sm ${
+                        index % 2 === 0
+                          ? 'bg-zinc-100 dark:bg-zinc-800/70'
+                          : 'bg-zinc-50 dark:bg-zinc-900/60'
+                      }`}
+                    >
+                      <span className="w-5 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                        {index + 1}
+                      </span>
+                      <span className="truncate text-zinc-800 dark:text-zinc-200">{site.siteKey}</span>
+                      <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                        {formatTime(site.timeSpent)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md bg-zinc-100 px-2 py-2 text-sm text-zinc-600 dark:bg-zinc-800/70 dark:text-zinc-300">
+                  No URL breakdown was captured for this day.
+                </div>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">

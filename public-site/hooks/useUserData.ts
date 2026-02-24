@@ -37,6 +37,7 @@ export interface SiteTimeData {
 export interface DailyUsageHistoryEntry {
   totalTimeSpent: number;
   trackedSiteCount?: number;
+  siteTotals?: Record<string, number>;
   periodStart: number;
   periodEnd: number;
   capturedAt: number;

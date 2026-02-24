@@ -111,6 +111,70 @@ function pickRandomSites() {
   return shuffled.slice(0, count);
 }
 
+function normalizeSiteKey(site) {
+  try {
+    const url = new URL(site.startsWith('http') ? site : `https://${site}`);
+    return url.hostname.replace(/^www\./, '');
+  } catch {
+    return String(site).replace(/^www\./, '');
+  }
+}
+
+function buildSiteTotals(sites, totalSeconds) {
+  if (sites.length === 0 || totalSeconds <= 0) return {};
+
+  const weights = sites.map(() => Math.random() + 0.2);
+  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+  const totals = {};
+
+  let allocated = 0;
+  sites.forEach((site, index) => {
+    const remainingSites = sites.length - index;
+    if (remainingSites === 1) {
+      totals[site] = Math.max(totalSeconds - allocated, 0);
+      allocated += totals[site];
+      return;
+    }
+    const seconds = Math.max(0, Math.round((weights[index] / totalWeight) * totalSeconds));
+    totals[site] = seconds;
+    allocated += seconds;
+  });
+
+  if (allocated !== totalSeconds) {
+    const firstSite = sites[0];
+    totals[firstSite] = Math.max((totals[firstSite] || 0) + (totalSeconds - allocated), 0);
+  }
+
+  return totals;
+}
+
+function normalizeSiteTotals(siteTotals) {
+  const normalized = {};
+
+  Object.entries(siteTotals || {}).forEach(([rawSiteKey, rawSeconds]) => {
+    const siteKey = normalizeSiteKey(rawSiteKey);
+    const seconds = Math.max(0, Math.floor(Number(rawSeconds) || 0));
+    if (!siteKey || seconds <= 0) return;
+    normalized[siteKey] = (normalized[siteKey] || 0) + seconds;
+  });
+
+  return normalized;
+}
+
+function createDailyUsageHistoryEntry(siteTotals, periodStart, periodEnd, capturedAt) {
+  const normalizedSiteTotals = normalizeSiteTotals(siteTotals);
+  const totalTimeSpent = Object.values(normalizedSiteTotals).reduce((sum, value) => sum + value, 0);
+
+  return {
+    totalTimeSpent,
+    trackedSiteCount: Object.keys(normalizedSiteTotals).length,
+    siteTotals: normalizedSiteTotals,
+    periodStart,
+    periodEnd,
+    capturedAt,
+  };
+}
+
 function dayKey(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -157,13 +221,14 @@ async function main() {
 
     const minutes = generateDailyMinutes(dayIndex);
     const totalSeconds = Math.round(minutes * 60);
-    dailyUsageHistory[dayKey(date)] = {
-      totalTimeSpent: totalSeconds,
-      trackedSiteCount: pickRandomSites().length,
-      periodStart: start.getTime(),
-      periodEnd: end.getTime(),
-      capturedAt: end.getTime(),
-    };
+    const sites = pickRandomSites();
+    const rawSiteTotals = buildSiteTotals(sites, totalSeconds);
+    dailyUsageHistory[dayKey(date)] = createDailyUsageHistoryEntry(
+      rawSiteTotals,
+      start.getTime(),
+      end.getTime(),
+      end.getTime()
+    );
   }
 
   const data = snap.data() || {};

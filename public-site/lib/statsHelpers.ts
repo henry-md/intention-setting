@@ -149,8 +149,10 @@ export interface RuleProgressStats {
 }
 
 export interface UsageTimelinePoint {
+  dayKey: string;
   timestamp: number;
   totalTimeSpent: number;
+  siteTotals: Record<string, number>;
 }
 
 /**
@@ -240,7 +242,7 @@ export function buildRuleProgressStats(
 
 /**
  * Build timeline points using tracked sites that belong to at least one rule.
- * Each point represents cumulative total tracked seconds at a timestamp.
+ * Each point represents one day's total tracked seconds and optional per-site totals.
  */
 export function buildTotalTrackedUsageTimeline(
   rules: Rule[],
@@ -250,6 +252,28 @@ export function buildTotalTrackedUsageTimeline(
 ): UsageTimelinePoint[] {
   const now = Date.now();
   const todayKey = new Date(now).toISOString().slice(0, 10);
+
+  const trackedSiteKeys = new Set<string>();
+  for (const rule of rules) {
+    const urls = expandTargetsToUrls(rule.targets, groups);
+    for (const url of urls) {
+      trackedSiteKeys.add(getNormalizedHostname(url));
+    }
+  }
+  if (trackedSiteKeys.size === 0) {
+    Object.keys(timeTracking).forEach((siteKey) => trackedSiteKeys.add(siteKey));
+  }
+
+  const sanitizeSiteTotals = (raw: unknown): Record<string, number> => {
+    if (!raw || typeof raw !== 'object') return {};
+    const normalized: Record<string, number> = {};
+    for (const [siteKey, value] of Object.entries(raw as Record<string, unknown>)) {
+      const seconds = Math.max(0, Math.floor(Number(value) || 0));
+      if (seconds > 0) normalized[siteKey] = seconds;
+    }
+    return normalized;
+  };
+
   const historyPoints: UsageTimelinePoint[] = Object.entries(dailyUsageHistory)
     .map(([dayKey, entry]) => {
       // Never render future calendar days, even if bad/old test data exists.
@@ -265,54 +289,53 @@ export function buildTotalTrackedUsageTimeline(
       const safeTimestamp = Math.min(rawTimestamp, now);
       const rawTotal = Number(entry?.totalTimeSpent ?? 0);
       if (!Number.isFinite(safeTimestamp) || !Number.isFinite(rawTotal)) return null;
+      const siteTotals = sanitizeSiteTotals(entry?.siteTotals);
       return {
+        dayKey,
         timestamp: safeTimestamp,
         totalTimeSpent: Math.max(0, Math.floor(rawTotal)),
+        siteTotals,
       };
     })
     .filter((point): point is UsageTimelinePoint => point !== null)
     .sort((a, b) => a.timestamp - b.timestamp);
 
-  if (historyPoints.length > 0) {
+  if (trackedSiteKeys.size === 0) {
     return historyPoints;
   }
 
-  // Fallback only when no daily history exists yet: show a single current-day total point.
-  const trackedSiteKeys = new Set<string>();
-  for (const rule of rules) {
-    const urls = expandTargetsToUrls(rule.targets, groups);
-    for (const url of urls) {
-      trackedSiteKeys.add(getNormalizedHostname(url));
-    }
-  }
-
-  if (trackedSiteKeys.size === 0) {
-    return [];
-  }
-
+  const currentSiteTotals: Record<string, number> = {};
   let currentTotal = 0;
   let latestCurrentTimestamp = 0;
   trackedSiteKeys.forEach((siteKey) => {
     const tracking = timeTracking[siteKey];
     if (!tracking) return;
-    currentTotal += Math.max(0, Number(tracking.timeSpent) || 0);
+    const currentSeconds = Math.max(0, Math.floor(Number(tracking.timeSpent) || 0));
+    if (currentSeconds > 0) {
+      currentSiteTotals[siteKey] = currentSeconds;
+      currentTotal += currentSeconds;
+    }
     const rawTimestamp = Number(tracking.lastUpdated);
     if (Number.isFinite(rawTimestamp) && rawTimestamp > latestCurrentTimestamp) {
       latestCurrentTimestamp = rawTimestamp;
     }
   });
 
-  if (currentTotal <= 0) {
-    return [];
-  }
-
-  const todayOnlyPoint: UsageTimelinePoint[] = [
-    { timestamp: latestCurrentTimestamp || Date.now(), totalTimeSpent: Math.floor(currentTotal) },
-  ];
+  const todayOnlyPoint: UsageTimelinePoint[] =
+    currentTotal > 0
+      ? [
+          {
+            dayKey: todayKey,
+            timestamp: latestCurrentTimestamp || Date.now(),
+            totalTimeSpent: Math.floor(currentTotal),
+            siteTotals: currentSiteTotals,
+          },
+        ]
+      : [];
 
   const byDateKey = new Map<string, UsageTimelinePoint>();
-  todayOnlyPoint.forEach((point) => {
-    const key = new Date(point.timestamp).toISOString().slice(0, 10);
+  [...historyPoints, ...todayOnlyPoint].forEach((point) => {
+    const key = point.dayKey;
     const existing = byDateKey.get(key);
     if (!existing || point.timestamp >= existing.timestamp) {
       byDateKey.set(key, point);
