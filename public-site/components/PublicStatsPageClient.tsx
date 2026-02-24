@@ -201,15 +201,13 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-end gap-4">
-            <Link href="/" className="text-xl font-bold leading-none text-zinc-900 dark:text-zinc-50">
-              Intention Setter
-            </Link>
-            <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-              Public Stats
-            </span>
-          </div>
+        <div className="mx-auto flex max-w-7xl items-end justify-between px-6 py-4">
+          <Link href="/" className="text-xl font-bold leading-none text-zinc-900 dark:text-zinc-50">
+            Intention Setter
+          </Link>
+          <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium leading-none text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+            Public Stats
+          </span>
         </div>
       </header>
 

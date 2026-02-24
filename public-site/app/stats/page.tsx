@@ -102,11 +102,11 @@ export default function StatsPage() {
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-6">
+              <div className="flex items-baseline gap-6">
                 <Link href="/stats" className="text-3xl font-bold leading-none text-zinc-900 dark:text-zinc-50 sm:text-xl">
                   Intention Setter
                 </Link>
-                <nav className="hidden items-end gap-4 sm:flex">
+                <nav className="hidden items-baseline gap-4 sm:flex">
                   <Link
                     href="/stats"
                     className="text-sm font-medium leading-none text-zinc-900 dark:text-zinc-50"

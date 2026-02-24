@@ -26,7 +26,7 @@ const MOBILE_PADDING = { top: 12, right: 10, bottom: 34, left: 30 };
 const MOBILE_CHART_BREAKOUT_X = 0;
 const MOBILE_LEFT_FADE_AXIS_OFFSET = 10; // Offset for where the fade starts relative to the y axis
 const MOBILE_RIGHT_FADE_AXIS_OFFSET = 3;
-const MOBILE_PLOT_EDGE_INSET_X = 6;
+const MOBILE_PLOT_EDGE_INSET_X = 6; // Offset for where the first dot is: less is closer to x axis, more is farther
 const MOBILE_PLOT_CLIP_PADDING = 8;
 
 const formatYAxisTime = (seconds: number): string => {
@@ -179,6 +179,19 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   const chartWidth = isMobile ? mobileChartWidth : DESKTOP_CHART_WIDTH;
   const chartHeight = isMobile ? MOBILE_CHART_HEIGHT : DESKTOP_CHART_HEIGHT;
   const padding = isMobile ? MOBILE_PADDING : DESKTOP_PADDING;
+  const mobilePlotOverflowAllowance = isMobile
+    ? Math.max(0, -MOBILE_PLOT_EDGE_INSET_X)
+    : 0;
+  const mobileClipX = isMobile
+    ? padding.left - MOBILE_PLOT_CLIP_PADDING - mobilePlotOverflowAllowance
+    : padding.left;
+  const mobileClipY = isMobile ? padding.top - MOBILE_PLOT_CLIP_PADDING : padding.top;
+  const mobileClipWidth = isMobile
+    ? chartWidth - padding.left - padding.right + MOBILE_PLOT_CLIP_PADDING * 2 + mobilePlotOverflowAllowance * 2
+    : chartWidth - padding.left - padding.right;
+  const mobileClipHeight = isMobile
+    ? chartHeight - padding.top - padding.bottom + MOBILE_PLOT_CLIP_PADDING * 2
+    : chartHeight - padding.top - padding.bottom;
   const mobileChartFrameStyle = isMobile
     ? {
         marginLeft: `-${MOBILE_CHART_BREAKOUT_X}px`,
@@ -594,16 +607,10 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
               <defs>
                 <clipPath id={plotClipPathId}>
                   <rect
-                    x={isMobile ? padding.left - MOBILE_PLOT_CLIP_PADDING : padding.left}
-                    y={isMobile ? padding.top - MOBILE_PLOT_CLIP_PADDING : padding.top}
-                    width={
-                      chartWidth - padding.left - padding.right +
-                      (isMobile ? MOBILE_PLOT_CLIP_PADDING * 2 : 0)
-                    }
-                    height={
-                      chartHeight - padding.top - padding.bottom +
-                      (isMobile ? MOBILE_PLOT_CLIP_PADDING * 2 : 0)
-                    }
+                    x={mobileClipX}
+                    y={mobileClipY}
+                    width={mobileClipWidth}
+                    height={mobileClipHeight}
                   />
                 </clipPath>
               </defs>
