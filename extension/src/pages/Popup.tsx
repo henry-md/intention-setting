@@ -22,7 +22,7 @@ type RulesView = 'rules' | 'groups' | 'groupEdit';
  */
 const Popup: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const [currentTab, setCurrentTab] = useState<TabType>('home');
+  const [currentTab, setCurrentTab] = useState<TabType>('rules');
   const [rulesView, setRulesView] = useState<RulesView>('rules');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingFromRules, setEditingFromRules] = useState(false);
@@ -39,13 +39,22 @@ const Popup: React.FC = () => {
     }
   }, [user?.uid]);
 
-  // Start with AI panel collapsed by default.
+  // When a usage reset is applied, return UI to default state.
   useEffect(() => {
-    const rafId = requestAnimationFrame(() => {
-      aiPanelRef.current?.collapse();
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      if (!changes.usageResetAppliedAt) return;
+
+      setCurrentTab('rules');
+      setRulesView('rules');
+      setEditingGroupId(null);
+      setEditingFromRules(false);
+      setEditingRuleIdBeforeGroupEdit(null);
       setIsAIPanelCollapsed(true);
-    });
-    return () => cancelAnimationFrame(rafId);
+      aiPanelRef.current?.collapse();
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
 
   if (authLoading) {
@@ -180,8 +189,8 @@ const Popup: React.FC = () => {
           ref={aiPanelRef}
           id="ai-assistant"
           order={2}
-          defaultSize={40}
-          minSize={15}
+          defaultSize={0}
+          minSize={0}
           collapsible={true}
           collapsedSize={0}
           onCollapse={() => setIsAIPanelCollapsed(true)}
@@ -200,7 +209,8 @@ const Popup: React.FC = () => {
       {isAIPanelCollapsed && currentTab === 'rules' && (
         <button
           onClick={() => {
-            aiPanelRef.current?.expand();
+            aiPanelRef.current?.resize(40);
+            setIsAIPanelCollapsed(false);
           }}
           className="fixed bottom-4 right-4 w-14 h-14 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-50"
           title="Open AI Assistant"
