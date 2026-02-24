@@ -273,25 +273,43 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
 
     const mobileMaxXTicks = Math.min(10, Math.max(4, Math.floor(innerWidth / 110) + 1));
     const maxXTicks = isMobile ? mobileMaxXTicks : 5;
-    const xTickCount = Math.min(maxXTicks, Math.max(2, plotted.length));
-    const xTicks = isMobile
-      ? Array.from({ length: xTickCount }, (_, index) => {
-          const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
-          const pointIndex = Math.round(ratio * (plotted.length - 1));
-          const point = plotted[pointIndex];
-          return {
-            timestamp: point.point.timestamp,
-            x: point.x,
-          };
-        })
-      : Array.from({ length: xTickCount }, (_, index) => {
-          const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
-          const timestamp = minX + (maxX - minX) * ratio;
-          return {
-            timestamp,
-            x: scaleX(timestamp),
-          };
-        });
+    const xTicks =
+      plotted.length <= 1 || maxX === minX
+        ? [
+            {
+              timestamp: plotted[0].point.timestamp,
+              x: plotted[0].x,
+            },
+          ]
+        : (() => {
+            const xTickCount = Math.min(maxXTicks, plotted.length);
+            const rawTicks = isMobile
+              ? Array.from({ length: xTickCount }, (_, index) => {
+                  const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
+                  const pointIndex = Math.round(ratio * (plotted.length - 1));
+                  const point = plotted[pointIndex];
+                  return {
+                    timestamp: point.point.timestamp,
+                    x: point.x,
+                  };
+                })
+              : Array.from({ length: xTickCount }, (_, index) => {
+                  const ratio = xTickCount === 1 ? 0 : index / (xTickCount - 1);
+                  const timestamp = minX + (maxX - minX) * ratio;
+                  return {
+                    timestamp,
+                    x: scaleX(timestamp),
+                  };
+                });
+
+            const seenLabels = new Set<string>();
+            return rawTicks.filter((tick) => {
+              const label = formatDateTick(tick.timestamp);
+              if (seenLabels.has(label)) return false;
+              seenLabels.add(label);
+              return true;
+            });
+          })();
 
     return {
       plotted,
@@ -735,14 +753,23 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
               </g>
 
               {chart.xTicks.map((tick, index) => {
+                const isSingleTick = chart.xTicks.length === 1;
                 const isFirstMobileTick = isMobile && index === 0;
                 const isLastMobileTick = isMobile && index === chart.xTicks.length - 1;
-                const textAnchor = isFirstMobileTick
+                const textAnchor = isSingleTick
+                  ? 'middle'
+                  : isFirstMobileTick
                   ? 'start'
                   : isLastMobileTick
                     ? 'end'
                     : 'middle';
-                const textX = isFirstMobileTick ? tick.x + 5 : isLastMobileTick ? tick.x - 5 : tick.x;
+                const textX = isSingleTick
+                  ? tick.x
+                  : isFirstMobileTick
+                    ? tick.x + 5
+                    : isLastMobileTick
+                      ? tick.x - 5
+                      : tick.x;
 
                 return (
                   <g key={tick.x}>
