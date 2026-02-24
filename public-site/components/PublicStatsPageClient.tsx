@@ -75,7 +75,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
 
   if (shouldRequireSignInToView && authLoading) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -92,7 +92,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
 
   if (shouldRequireSignInToView && !user) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -128,7 +128,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
 
   if (loading || userIdLoading) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -145,7 +145,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
 
   if (error || userIdError) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -175,7 +175,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
 
   if (!userData) {
     return (
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -199,7 +199,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-7xl items-end justify-between px-6 py-4">
           <Link href="/" className="text-xl font-bold leading-none text-zinc-900 dark:text-zinc-50">

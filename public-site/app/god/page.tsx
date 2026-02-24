@@ -25,7 +25,7 @@ function GodContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
       <div className="flex-1" />
       <footer>
         <div className="px-6 pb-4 pt-3 text-center text-sm">

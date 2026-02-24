@@ -124,3 +124,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+.dark body {
+  background-color: #060608;
+  background-image:
+    radial-gradient(circle at 86% 14%, rgba(113, 113, 122, 0.12), transparent 72%),
+    radial-gradient(circle at 14% 86%, rgba(82, 82, 91, 0.11), transparent 78%),
+    radial-gradient(circle at 50% 52%, rgba(63, 63, 70, 0.075), transparent 74%),
+    linear-gradient(165deg, #0a0a0d 0%, #070709 55%, #050507 100%);
+  background-attachment: fixed;
+}

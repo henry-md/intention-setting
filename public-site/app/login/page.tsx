@@ -24,14 +24,14 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-transparent">
         <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-transparent">
       <div className="w-full px-4">
         <div className="mx-auto w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
           <h1 className="mb-6 text-3xl font-bold text-zinc-900 dark:text-zinc-50">

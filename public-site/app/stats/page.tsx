@@ -98,7 +98,7 @@ export default function StatsPage() {
     : [];
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
+    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">
         {/* Header */}
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4">

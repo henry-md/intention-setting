@@ -17,7 +17,7 @@ export default function HomePage() {
   }, [loading, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-transparent">
       <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading...</div>
     </div>
   );
