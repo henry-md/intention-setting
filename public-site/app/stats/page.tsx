@@ -28,6 +28,7 @@ export default function StatsPage() {
   const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
   const [isGodTabHidden, setIsGodTabHidden] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [failedProfileImageUrl, setFailedProfileImageUrl] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'dark';
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -37,7 +38,6 @@ export default function StatsPage() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', themeMode === 'dark');
   }, [themeMode]);
-
   const isGodUser =
     user?.email === 'henrymdeutsch@gmail.com';
 
@@ -86,6 +86,7 @@ export default function StatsPage() {
   };
 
   const isStatsLoading = !!user && loading;
+  const shouldShowProfileImage = !!user?.photoURL && failedProfileImageUrl !== user.photoURL;
   const usageTimeline = userData
     ? buildTotalTrackedUsageTimeline(
         userData.rules,
@@ -176,13 +177,30 @@ export default function StatsPage() {
                     >
                       Sign Out
                     </button>
-                    {user.photoURL && (
+                    {shouldShowProfileImage ? (
                       <img
-                        src={user.photoURL}
+                        src={user.photoURL || ''}
                         alt="Profile"
                         title={user.email || undefined}
                         className="h-8 w-8 rounded-full border border-zinc-300 dark:border-zinc-700"
+                        onError={() => setFailedProfileImageUrl(user.photoURL ?? null)}
                       />
+                    ) : (
+                      <div className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M20 21a8 8 0 1 0-16 0" />
+                          <circle cx="12" cy="8" r="4" />
+                        </svg>
+                      </div>
                     )}
                   </>
                 ) : (
@@ -271,16 +289,29 @@ export default function StatsPage() {
                 {user && (
                   <div className="mt-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
                     <div className="flex items-center gap-3 px-2 py-2">
-                      {user.photoURL ? (
+                      {shouldShowProfileImage ? (
                         <img
-                          src={user.photoURL}
+                          src={user.photoURL || ''}
                           alt="Profile"
                           title={user.email || undefined}
                           className="h-11 w-11 rounded-full border border-zinc-300 dark:border-zinc-700"
+                          onError={() => setFailedProfileImageUrl(user.photoURL ?? null)}
                         />
                       ) : (
-                        <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-zinc-200 text-base font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100">
-                          {(user.displayName?.[0] || user.email?.[0] || 'U').toUpperCase()}
+                        <div className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M20 21a8 8 0 1 0-16 0" />
+                            <circle cx="12" cy="8" r="4" />
+                          </svg>
                         </div>
                       )}
                       <div className="min-w-0">
