@@ -12,7 +12,7 @@ const Spinner: React.FC = () => {
   return (
     <div className={SPINNER_SIZE}>
       <svg
-        className="animate-spin text-blue-500"
+        className="animate-spin text-zinc-400"
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"

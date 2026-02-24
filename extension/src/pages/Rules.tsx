@@ -284,7 +284,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
   const editingRule = editingRuleId ? rules.find(r => r.id === editingRuleId) : null;
 
   return (
-    <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
+    <div className="h-full w-full flex flex-col space-y-4 bg-zinc-950 p-4 pb-20">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Rules</h3>
@@ -333,7 +333,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
       {!showCreateForm && (
         <div className="flex flex-col space-y-2">
         {rules.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">
+          <p className="text-zinc-400 text-sm text-center py-8">
             No rules set. Create one to get started!
           </p>
         ) : (
@@ -353,15 +353,24 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                   setEditingRuleId(rule.id);
                   setShowCreateForm(true);
                 }}
-                className="bg-slate-700 hover:bg-slate-600 rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors"
+                className="rounded-lg bg-zinc-800 p-3 flex items-center gap-3 cursor-pointer transition-colors hover:bg-zinc-700"
               >
                 {/* Icon */}
                 <div className={`p-2 rounded-lg ${
-                  rule.type === 'hard' ? 'bg-red-600' :
-                  rule.type === 'soft' ? 'bg-yellow-600' :
-                  'bg-blue-600'
+                  rule.type === 'hard' ? 'border border-red-500/50 bg-red-500/10' :
+                  rule.type === 'soft' ? 'border border-amber-500/50 bg-amber-500/12' :
+                  'border border-zinc-500 bg-zinc-700'
                 }`}>
-                  <Clock size={16} className="text-white" />
+                  <Clock
+                    size={16}
+                    className={
+                      rule.type === 'hard'
+                        ? 'text-red-200'
+                        : rule.type === 'soft'
+                          ? 'text-amber-200'
+                          : 'text-zinc-100'
+                    }
+                  />
                 </div>
 
                 {/* Info */}
@@ -398,7 +407,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                         {/* Display spare URLs on a single line with plus icon */}
                         {urlTargets.length > 0 && (
                           <div className="flex items-center gap-2">
-                            <Plus size={14} className="text-gray-400" />
+                            <Plus size={14} className="text-zinc-400" />
                             <div className="flex items-center gap-1">
                               {urlTargets.map((target, idx) => (
                                 <img
@@ -417,7 +426,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
 
                         {/* Rule info */}
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-zinc-400">
                             {rule.type.charAt(0).toUpperCase() + rule.type.slice(1)}
                             {rule.type !== 'session' && ` • ${rule.timeLimit} min`}
                             {rule.type === 'session' && ' • Set on visit'}
@@ -429,17 +438,17 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                         {/* Progress */}
                         <div className="mt-2">
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className={`${isOverLimit ? 'text-red-300' : 'text-gray-300'}`}>
+                            <span className={`${isOverLimit ? 'text-red-300' : 'text-zinc-300'}`}>
                               {formatProgressTime(safeUsed)} / {formatProgressTime(progressMax)}
                             </span>
-                            <span className={`${isOverLimit ? 'text-red-300' : 'text-gray-400'}`}>
+                            <span className={`${isOverLimit ? 'text-red-300' : 'text-zinc-400'}`}>
                               {percent}%
                             </span>
                           </div>
-                          <div className="mt-1 h-1.5 w-full rounded-full bg-slate-800/80 overflow-hidden">
+                          <div className="mt-1 h-1.5 w-full rounded-full bg-zinc-800/80 overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${
-                                isOverLimit ? 'bg-red-400' : 'bg-blue-400'
+                                isOverLimit ? 'bg-red-400' : 'bg-zinc-400'
                               }`}
                               style={{ width: `${safeUsed > 0 ? Math.max(4, ratio * 100) : 0}%` }}
                             />
@@ -457,7 +466,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                     setRuleToDelete(rule.id);
                     setDeleteDialogOpen(true);
                   }}
-                  className="text-gray-400 hover:text-red-400 transition-colors"
+                  className="text-zinc-400 hover:text-red-400 transition-colors"
                   title="Delete Rule"
                 >
                   <Trash2 size={16} />
@@ -471,10 +480,10 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="bg-gray-800 border-gray-600 text-white" showCloseButton={false}>
+        <DialogContent className="bg-zinc-800 border-zinc-600 text-white" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-white">Delete Rule?</DialogTitle>
-            <DialogDescription className="text-gray-300">
+            <DialogDescription className="text-zinc-300">
               Are you sure you want to delete this rule? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -485,7 +494,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                 setDeleteDialogOpen(false);
                 setRuleToDelete(null);
               }}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm"
             >
               Cancel
             </button>

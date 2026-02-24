@@ -254,7 +254,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   const groupSuggestions = getGroupSuggestions();
 
   return (
-    <div className="bg-gray-800 border border-gray-600 rounded-lg p-4 space-y-3">
+    <div className="bg-zinc-800 border border-zinc-600 rounded-lg p-4 space-y-3">
       {/* Rule Name - Always an input, styled based on whether we have a name */}
       {isEditMode && ruleName ? (
         <div className={isRuleNameFocused ? 'flex w-full items-center gap-3' : 'inline-flex items-center gap-1.5'}>
@@ -271,7 +271,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                 e.currentTarget.blur();
               }
             }}
-            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 min-w-0 text-white ${
+            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-zinc-500 rounded px-2 py-1 min-w-0 text-white ${
               isRuleNameFocused ? 'flex-1 mr-1' : 'w-fit'
             }`}
             style={
@@ -292,7 +292,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
             }}
             aria-label={isRuleNameFocused ? 'Save rule name' : 'Edit rule name'}
             title={isRuleNameFocused ? 'Save rule name' : 'Edit rule name'}
-            className={`text-gray-400 hover:text-white transition-colors ${isRuleNameFocused ? 'ml-auto pl-1' : ''}`}
+            className={`text-zinc-400 hover:text-white transition-colors ${isRuleNameFocused ? 'ml-auto pl-1' : ''}`}
           >
             <Pencil className={isRuleNameFocused ? 'h-4 w-4' : 'h-3 w-3'} />
           </button>
@@ -303,13 +303,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({
           value={ruleName}
           onChange={(e) => setRuleName(e.target.value)}
           placeholder="Rule name (optional)"
-          className="w-full px-3 py-2 border border-gray-600 bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-white placeholder-gray-400"
+          className="w-full px-3 py-2 border border-zinc-600 bg-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500 text-sm text-white placeholder-zinc-400"
         />
       )}
 
       {/* Target Input with List */}
       <div>
-        <label className="block text-gray-400 text-xs mb-1">URLs or Group Names</label>
+        <label className="block text-zinc-400 text-xs mb-1">URLs or Group Names</label>
         <div className="relative">
           <ItemListInput
             items={targetItems.map(t => t.id)}
@@ -333,8 +333,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 
               return (
                 <div
-                  className={`flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg ${
-                    isClickableGroup ? 'cursor-pointer hover:bg-slate-500 transition-colors' : ''
+                  className={`flex items-center gap-2 py-2 px-3 bg-zinc-600 rounded-lg ${
+                    isClickableGroup ? 'cursor-pointer hover:bg-zinc-500 transition-colors' : ''
                   }`}
                   onClick={() => {
                     if (isClickableGroup) {
@@ -362,7 +362,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                       e.stopPropagation();
                       handleRemoveTargetFromList(item.id);
                     }}
-                    className="text-gray-400 hover:text-white transition-colors"
+                    className="text-zinc-400 hover:text-white transition-colors"
                   >
                     <span className="text-xs">✕</span>
                   </button>
@@ -373,8 +373,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 
           {/* Group Suggestions */}
           {showSuggestions && groupSuggestions.length > 0 && (
-            <div className="absolute top-12 left-0 right-0 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-              <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-600">
+            <div className="absolute top-12 left-0 right-0 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+              <div className="px-3 py-1 text-xs text-zinc-400 border-b border-zinc-600">
                 Matching Groups
               </div>
               {groupSuggestions.map(group => (
@@ -407,10 +407,10 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                     setShowSuggestions(false);
                     setFormError('');
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2"
+                  className="w-full px-3 py-2 text-left text-sm text-white hover:bg-zinc-700 flex items-center gap-2"
                 >
                   <span className="font-medium">{group.name}</span>
-                  <span className="text-xs text-gray-400">({group.items.length} items)</span>
+                  <span className="text-xs text-zinc-400">({group.items.length} items)</span>
                 </button>
               ))}
             </div>
@@ -418,17 +418,17 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 
           {/* Typosquatting Warning */}
           {typosquattingWarning && (
-            <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3 mt-2">
+            <div className="mt-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 space-y-3">
               <div className="flex items-start gap-2">
-                <span className="text-yellow-500 text-xl">⚠️</span>
+                <span className="text-amber-400 text-xl">⚠️</span>
                 <div className="flex-1">
-                  <p className="text-yellow-100 text-sm font-medium mb-1">
+                  <p className="text-amber-100 text-sm font-medium mb-1">
                     Possible typo detected
                   </p>
-                  <p className="text-yellow-200 text-xs">
+                  <p className="text-amber-200 text-xs">
                     Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
                   </p>
-                  <p className="text-yellow-300 text-xs mt-1">
+                  <p className="text-amber-300 text-xs mt-1">
                     You entered: {formatUrlForDisplay(typosquattingWarning.url)}
                   </p>
                 </div>
@@ -439,7 +439,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                     const correctedUrl = 'https://' + typosquattingWarning.suggestion;
                     await addNormalizedUrlToList(correctedUrl);
                   }}
-                  className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+                  className="flex-1 px-3 py-2 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/10 text-sm rounded-lg"
                 >
                   Use {typosquattingWarning.suggestion}
                 </button>
@@ -447,7 +447,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   onClick={async () => {
                     await addNormalizedUrlToList(typosquattingWarning.url);
                   }}
-                  className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
+                  className="flex-1 px-3 py-2 bg-zinc-600 hover:bg-zinc-700 text-white text-sm rounded-lg"
                 >
                   Keep original
                 </button>
@@ -455,7 +455,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   onClick={() => {
                     setTyposquattingWarning(null);
                   }}
-                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+                  className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg"
                 >
                   Cancel
                 </button>
@@ -467,14 +467,14 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 
       {/* Rule Type Selection */}
       <div>
-        <label className="block text-gray-400 text-xs mb-1">Rule Type</label>
+        <label className="block text-zinc-400 text-xs mb-1">Rule Type</label>
         <div className="flex gap-2">
           <button
             onClick={() => setRuleType('hard')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
               ruleType === 'hard'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'border border-red-500/50 bg-red-500/10 text-red-200'
+                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
             }`}
           >
             Hard
@@ -483,8 +483,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({
             onClick={() => setRuleType('soft')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
               ruleType === 'soft'
-                ? 'bg-yellow-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'border border-amber-500/50 bg-amber-500/12 text-amber-200'
+                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
             }`}
           >
             Soft
@@ -493,8 +493,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({
             onClick={() => setRuleType('session')}
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
               ruleType === 'session'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'border border-blue-500/50 bg-blue-500/12 text-blue-200'
+                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
             }`}
           >
             Session
@@ -505,21 +505,21 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       {/* Time Limit (hidden for session rules) */}
       {ruleType !== 'session' && (
         <div>
-          <label className="block text-gray-400 text-xs mb-1">Time Limit (minutes)</label>
+          <label className="block text-zinc-400 text-xs mb-1">Time Limit (minutes)</label>
           <input
             type="number"
             value={timeLimit}
             onChange={(e) => setTimeLimit(e.target.value)}
             min="1"
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
         </div>
       )}
 
       {/* Session rule explanation */}
       {ruleType === 'session' && (
-        <div className="bg-blue-900 border border-blue-600 rounded-lg p-2">
-          <p className="text-blue-200 text-xs">
+        <div className="bg-zinc-900 border border-zinc-600 rounded-lg p-2">
+          <p className="text-zinc-200 text-xs">
             Session rules prompt you to set a time limit when you visit the site
           </p>
         </div>
@@ -539,15 +539,15 @@ export const RuleForm: React.FC<RuleFormProps> = ({
               appearance: textfield;
             }
             .time-input:focus {
-              background-color: rgba(59, 130, 246, 0.1);
+              background-color: rgba(113, 113, 122, 0.12);
               border-radius: 4px;
-              outline: 1px solid rgba(59, 130, 246, 0.3);
+              outline: 1px solid rgba(113, 113, 122, 0.4);
               outline-offset: 1px;
             }
           `}} />
 
           <div className="flex items-start gap-2 text-sm">
-            <span className="text-gray-300 pt-1">Allow</span>
+            <span className="text-zinc-300 pt-1">Allow</span>
 
             {/* Number of plus ones */}
             <div className="flex flex-col items-center">
@@ -557,17 +557,17 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                 onChange={(e) => setPlusOnes(e.target.value)}
                 min="0"
                 placeholder="3"
-                className="no-spinner w-12 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="no-spinner w-12 px-2 py-1 bg-zinc-700 border border-zinc-600 rounded text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-zinc-500"
                 onWheel={(e) => e.currentTarget.blur()}
               />
-              <span className="text-xs text-gray-400 mt-1">Number</span>
+              <span className="text-xs text-zinc-400 mt-1">Number</span>
             </div>
 
-            <span className="text-gray-300 pt-1">×</span>
+            <span className="text-zinc-300 pt-1">×</span>
 
             {/* Duration with built-in colon separator */}
             <div className="flex flex-col items-center">
-              <div className="flex items-center bg-gray-800 border border-gray-600 rounded px-2 py-1 shadow-inner focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+              <div className="flex items-center bg-zinc-800 border border-zinc-600 rounded px-2 py-1 shadow-inner focus-within:ring-2 focus-within:ring-zinc-500 focus-within:border-zinc-500">
                 <input
                   type="number"
                   value={plusOneMinutes}
@@ -577,7 +577,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   className="time-input no-spinner bg-transparent text-white text-sm text-center focus:outline-none w-7"
                   onWheel={(e) => e.currentTarget.blur()}
                 />
-                <span className="text-gray-400 text-sm font-semibold select-none">:</span>
+                <span className="text-zinc-400 text-sm font-semibold select-none">:</span>
                 <input
                   type="text"
                   value={formatSecondsDisplay(plusOneSeconds)}
@@ -593,10 +593,10 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   className="time-input no-spinner bg-transparent text-white text-sm text-center focus:outline-none w-7"
                 />
               </div>
-              <span className="text-xs text-gray-400 mt-1">Duration</span>
+              <span className="text-xs text-zinc-400 mt-1">Duration</span>
             </div>
 
-            <span className="text-gray-300 pt-1">extensions</span>
+            <span className="text-zinc-300 pt-1">extensions</span>
           </div>
         </div>
       )}
@@ -605,13 +605,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       <div className="flex gap-2">
         <button
           onClick={onCancel}
-          className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+          className="flex-1 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
-          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+          className="flex-1 rounded-lg border border-emerald-500/60 bg-emerald-500/12 px-4 py-2 text-sm text-emerald-200 hover:bg-emerald-500/18"
         >
           {isEditMode ? 'Save Changes' : 'Create Rule'}
         </button>

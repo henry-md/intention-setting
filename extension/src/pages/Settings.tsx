@@ -166,10 +166,10 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
       </div>
 
       {ALLOW_CUSTOM_RESET_TIME && (
-        <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
+        <div className="flex flex-col space-y-4 bg-zinc-800 border border-zinc-600 rounded-lg p-4">
           <div>
-            <h4 className="text-sm font-medium text-gray-200 mb-2">Daily Reset Time</h4>
-            <p className="text-xs text-gray-400 mb-4">
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">Daily Reset Time</h4>
+            <p className="text-xs text-zinc-400 mb-4">
               Set the time when your daily time tracking should reset. All time limits are "per day"
               and will reset at this time.
             </p>
@@ -177,7 +177,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
 
           <div className="flex items-center gap-3">
             <div>
-              <label htmlFor="reset-time" className="text-sm text-gray-300 mb-1 block">
+              <label htmlFor="reset-time" className="text-sm text-zinc-300 mb-1 block">
                 Reset at:
               </label>
               <input
@@ -185,12 +185,12 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
                 type="time"
                 value={resetTime}
                 onChange={(e) => setResetTime(e.target.value)}
-                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
+                className="px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-200 focus:outline-none focus:border-zinc-500"
               />
             </div>
 
             {timezoneAbbr && (
-              <div className="text-gray-300 font-medium mt-6">
+              <div className="text-zinc-300 font-medium mt-6">
                 {timezoneAbbr}
               </div>
             )}
@@ -204,24 +204,24 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
             </button>
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-zinc-500">
             {`Example: Setting "${DEFAULT_DAILY_RESET_TIME}" means your daily limits reset at that time each day.`}
           </div>
         </div>
       )}
 
       {/* Timer Display Setting */}
-      <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
+      <div className="flex flex-col space-y-4 bg-zinc-800 border border-zinc-600 rounded-lg p-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-200 mb-3">Timer Display Mode</h4>
-          <p className="text-xs text-gray-400 mb-4">
+          <h4 className="text-sm font-medium text-zinc-200 mb-3">Timer Display Mode</h4>
+          <p className="text-xs text-zinc-400 mb-4">
             Choose how time information is displayed in the timer badge.
           </p>
         </div>
 
         <div className="flex flex-col space-y-1">
           {/* Simple option */}
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-700 transition-colors">
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-zinc-700 transition-colors">
             <input
               type="radio"
               name="timerMode"
@@ -232,18 +232,18 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
                 setTimerDisplayMode(newMode);
                 await chrome.storage.local.set({ timerDisplayMode: newMode });
               }}
-              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
+              className="w-4 h-4 text-zinc-300 bg-zinc-700 border-zinc-600 focus:ring-zinc-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Simple Timer</div>
-              <div className="text-xs text-gray-400">
+              <div className="text-sm text-zinc-200 font-medium">Simple Timer</div>
+              <div className="text-xs text-zinc-400">
                 Just the time and progress bar
               </div>
             </div>
           </label>
 
           {/* Complex option */}
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-700 transition-colors">
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-zinc-700 transition-colors">
             <input
               type="radio"
               name="timerMode"
@@ -254,18 +254,18 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
                 setTimerDisplayMode(newMode);
                 await chrome.storage.local.set({ timerDisplayMode: newMode });
               }}
-              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
+              className="w-4 h-4 text-zinc-300 bg-zinc-700 border-zinc-600 focus:ring-zinc-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Complex Timer</div>
-              <div className="text-xs text-gray-400">
+              <div className="text-sm text-zinc-200 font-medium">Complex Timer</div>
+              <div className="text-xs text-zinc-400">
                 Rule name, time, and progress bar
               </div>
             </div>
           </label>
 
           {/* Compact option */}
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-700 transition-colors">
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-zinc-700 transition-colors">
             <input
               type="radio"
               name="timerMode"
@@ -276,23 +276,23 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
                 setTimerDisplayMode(newMode);
                 await chrome.storage.local.set({ timerDisplayMode: newMode });
               }}
-              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
+              className="w-4 h-4 text-zinc-300 bg-zinc-700 border-zinc-600 focus:ring-zinc-500"
             />
             <div>
-              <div className="text-sm text-gray-200 font-medium">Complexer Timer</div>
-              <div className="text-xs text-gray-400">
+              <div className="text-sm text-zinc-200 font-medium">Complexer Timer</div>
+              <div className="text-xs text-zinc-400">
                 Complex view plus explicit limit text below the bar
               </div>
             </div>
           </label>
         </div>
 
-        <div className="mt-2 border-t border-gray-700 pt-4">
+        <div className="mt-2 border-t border-zinc-700 pt-4">
           <div className="mb-2 flex items-center justify-between">
-            <label htmlFor="timer-badge-width-scale" className="text-sm font-medium text-gray-200">
+            <label htmlFor="timer-badge-width-scale" className="text-sm font-medium text-zinc-200">
               Badge Width
             </label>
-            <span className="text-xs text-gray-400">{Math.round(timerBadgeWidthScale * 100)}%</span>
+            <span className="text-xs text-zinc-400">{Math.round(timerBadgeWidthScale * 100)}%</span>
           </div>
           <input
             id="timer-badge-width-scale"
@@ -306,13 +306,13 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               setTimerBadgeWidthScale(nextScale);
               await chrome.storage.local.set({ timerBadgeWidthScale: nextScale });
             }}
-            className="w-full accent-blue-500"
+            className="w-full accent-zinc-500"
           />
           <div className="mt-4 mb-2 flex items-center justify-between">
-            <label htmlFor="timer-badge-text-scale" className="text-sm font-medium text-gray-200">
+            <label htmlFor="timer-badge-text-scale" className="text-sm font-medium text-zinc-200">
               Text Size
             </label>
-            <span className="text-xs text-gray-400">{Math.round(timerBadgeTextScale * 100)}%</span>
+            <span className="text-xs text-zinc-400">{Math.round(timerBadgeTextScale * 100)}%</span>
           </div>
           <input
             id="timer-badge-text-scale"
@@ -326,19 +326,19 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               setTimerBadgeTextScale(nextScale);
               await chrome.storage.local.set({ timerBadgeTextScale: nextScale });
             }}
-            className="w-full accent-blue-500"
+            className="w-full accent-zinc-500"
           />
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-zinc-500">
             Width and text scale are controlled independently. Timer text remains larger than labels.
           </div>
         </div>
 
-        <div className="mt-2 border-t border-gray-700 pt-4">
+        <div className="mt-2 border-t border-zinc-700 pt-4">
           <div className="mb-2 flex items-center justify-between">
-            <label htmlFor="upcoming-limit-reminder-seconds" className="text-sm font-medium text-gray-200">
+            <label htmlFor="upcoming-limit-reminder-seconds" className="text-sm font-medium text-zinc-200">
               Length of time for reminder of upcoming limit
             </label>
-            <span className="text-xs text-gray-400">{upcomingLimitReminderSeconds}s</span>
+            <span className="text-xs text-zinc-400">{upcomingLimitReminderSeconds}s</span>
           </div>
           <input
             id="upcoming-limit-reminder-seconds"
@@ -355,23 +355,23 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               setUpcomingLimitReminderSeconds(reminder);
               await chrome.storage.local.set({ upcomingLimitReminderSeconds: reminder });
             }}
-            className="w-full accent-blue-500"
+            className="w-full accent-zinc-500"
           />
-          <div className="mt-1 flex items-center justify-between text-xs text-gray-400">
+          <div className="mt-1 flex items-center justify-between text-xs text-zinc-400">
             <span>{MIN_UPCOMING_LIMIT_REMINDER_SECONDS}s</span>
             <span>{MAX_UPCOMING_LIMIT_REMINDER_SECONDS}s</span>
           </div>
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-zinc-500">
             Shows red warning flashes on screen and badge before the active limit is reached.
           </div>
         </div>
       </div>
 
       {/* Redirect URLs Setting */}
-      <div className="flex flex-col space-y-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
+      <div className="flex flex-col space-y-4 bg-zinc-800 border border-zinc-600 rounded-lg p-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-200 mb-2">Redirect URLs</h4>
-          <p className="text-xs text-gray-400 mb-4">
+          <h4 className="text-sm font-medium text-zinc-200 mb-2">Redirect URLs</h4>
+          <p className="text-xs text-zinc-400 mb-4">
             When you exceed your time limit, you'll be redirected to a random URL from this list.
             This applies to hard limits, soft limits (after all plus ones used), and session limits.
           </p>
@@ -383,7 +383,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
             {redirectUrls.map((url, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2 py-2 px-3 bg-gray-700 border border-gray-600 rounded-lg"
+                className="flex items-center gap-2 py-2 px-3 bg-zinc-700 border border-zinc-600 rounded-lg"
               >
                 <img
                   src={getFaviconUrl(url)}
@@ -393,7 +393,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
                     e.currentTarget.src = FAVICON_FALLBACK;
                   }}
                 />
-                <span className="flex-1 text-sm text-gray-200 truncate">{formatUrlForDisplay(url)}</span>
+                <span className="flex-1 text-sm text-zinc-200 truncate">{formatUrlForDisplay(url)}</span>
                 <button
                   onClick={() => handleRemoveRedirectUrl(index)}
                   className="text-red-400 hover:text-red-300 text-xs font-medium"
@@ -417,7 +417,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
               }
             }}
             placeholder="https://example.com"
-            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+            className="flex-1 px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 text-sm"
           />
           <button
             onClick={handleAddRedirectUrl}
@@ -428,7 +428,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
         </div>
 
         {redirectUrls.length === 0 && (
-          <div className="text-xs text-gray-500 italic">
+          <div className="text-xs text-zinc-500 italic">
             No redirect URLs configured. Add at least one URL to enable redirects when time limits are exceeded.
           </div>
         )}
@@ -436,8 +436,8 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
 
       {/* Additional info */}
       {user && (
-        <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
-          <p className="text-gray-300 text-sm">
+        <div className="bg-zinc-800 border border-zinc-600 rounded-lg p-4">
+          <p className="text-zinc-300 text-sm">
             Your time tracking data is synced to your account and will persist across devices.
           </p>
         </div>

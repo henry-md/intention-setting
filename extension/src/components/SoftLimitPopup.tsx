@@ -37,8 +37,8 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
     >
       <div
         style={{
-          backgroundColor: '#161616',
-          border: '1px solid #3a3a3a',
+          backgroundColor: '#18181b',
+          border: '1px solid #3f3f46',
           borderRadius: '14px',
           width: 'min(520px, 92vw)',
           padding: '28px',
@@ -70,8 +70,8 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
 
         <div
           style={{
-            backgroundColor: '#202020',
-            border: '1px solid #343434',
+            backgroundColor: '#27272a',
+            border: '1px solid #3f3f46',
             borderRadius: '10px',
             padding: '12px 14px',
             marginBottom: '18px',
@@ -90,7 +90,7 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
             style={{
               padding: '11px 14px',
               borderRadius: '9px',
-              border: '1px solid #454545',
+              border: '1px solid #52525b',
               background: 'transparent',
               color: 'rgba(255,255,255,0.92)',
               fontWeight: 600,
@@ -105,9 +105,9 @@ const SoftLimitPopup: React.FC<SoftLimitPopupProps> = ({
             style={{
               padding: '11px 14px',
               borderRadius: '9px',
-              border: '1px solid transparent',
-              background: derivedRemainingSnoozes > 0 ? '#2563eb' : '#4b5563',
-              color: 'white',
+              border: derivedRemainingSnoozes > 0 ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid #52525b',
+              background: derivedRemainingSnoozes > 0 ? 'rgba(16, 185, 129, 0.10)' : '#27272a',
+              color: derivedRemainingSnoozes > 0 ? '#a7f3d0' : '#d4d4d8',
               fontWeight: 700,
               cursor: derivedRemainingSnoozes > 0 ? 'pointer' : 'not-allowed',
               opacity: derivedRemainingSnoozes > 0 ? 1 : 0.7

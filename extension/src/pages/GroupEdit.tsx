@@ -108,7 +108,7 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     <div className="h-full w-full flex flex-col space-y-4 p-4 pb-20">
       {/* Header with Back Button */}
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="text-gray-400 hover:text-white">
+        <button onClick={onBack} className="text-zinc-400 hover:text-white">
           <ArrowLeft size={20} />
         </button>
       </div>

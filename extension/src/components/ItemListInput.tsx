@@ -42,7 +42,7 @@ export const ItemListInput: React.FC<ItemListInputProps> = ({
   };
 
   const defaultRenderItem = (item: string) => (
-    <div className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
+    <div className="flex items-center gap-2 py-2 px-3 bg-zinc-600 rounded-lg">
       <img
         src={getFaviconUrl(item)}
         alt=""
@@ -56,7 +56,7 @@ export const ItemListInput: React.FC<ItemListInputProps> = ({
       </span>
       <button
         onClick={() => onRemoveItem(item)}
-        className="text-gray-400 hover:text-white transition-colors"
+        className="text-zinc-400 hover:text-white transition-colors"
       >
         <X size={16} />
       </button>
@@ -73,7 +73,7 @@ export const ItemListInput: React.FC<ItemListInputProps> = ({
           onKeyPress={handleKeyPress}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          className="flex-1 px-3 py-2 border border-zinc-600 bg-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500 text-sm"
         />
         <button
           onClick={onAddItem}

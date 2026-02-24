@@ -203,7 +203,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
   const groupSuggestions = getGroupSuggestions();
 
   return (
-    <div className="bg-slate-700 rounded-lg p-4 space-y-3">
+    <div className="bg-zinc-700 rounded-lg p-4 space-y-3">
       {/* Group Name - Header or Input based on mode */}
       {isEditMode ? (
         <div className={isNameFocused ? 'flex w-full items-center gap-3' : 'inline-flex items-center gap-1.5'}>
@@ -224,7 +224,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                 e.currentTarget.blur();
               }
             }}
-            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 min-w-0 ${
+            className={`text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-zinc-500 rounded px-2 py-1 min-w-0 ${
               isNameFocused ? 'flex-1 mr-1' : 'w-fit'
             }`}
             style={
@@ -246,7 +246,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
             }}
             aria-label={isNameFocused ? 'Save group name' : 'Edit group name'}
             title={isNameFocused ? 'Save group name' : 'Edit group name'}
-            className={`text-gray-400 hover:text-white transition-colors ${isNameFocused ? 'ml-auto pl-1' : ''}`}
+            className={`text-zinc-400 hover:text-white transition-colors ${isNameFocused ? 'ml-auto pl-1' : ''}`}
           >
             <Pencil className={isNameFocused ? 'h-4 w-4' : 'h-3 w-3'} />
           </button>
@@ -257,7 +257,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
           value={groupName}
           onChange={(e) => setGroupName(e.target.value)}
           placeholder="Group name"
-          className="w-full px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          className="w-full px-3 py-2 border border-zinc-600 bg-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500 text-sm"
           autoFocus
         />
       )}
@@ -282,7 +282,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
               }}
               onFocus={() => setShowSuggestions(true)}
               placeholder="Enter URL or search for group (e.g., youtube.com)"
-              className="flex-1 px-3 py-2 border border-gray-600 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="flex-1 px-3 py-2 border border-zinc-600 bg-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-500 text-sm"
             />
             <button
               onClick={handleAddItemFromInput}
@@ -295,8 +295,8 @@ export const GroupForm: React.FC<GroupFormProps> = ({
 
           {/* Group Suggestions Dropdown */}
           {showSuggestions && groupSuggestions.length > 0 && (
-            <div className="absolute top-full mt-1 w-full bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-              <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-600">
+            <div className="absolute top-full mt-1 w-full bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+              <div className="px-3 py-1 text-xs text-zinc-400 border-b border-zinc-600">
                 Dump contents from existing group
               </div>
               {groupSuggestions.map(g => (
@@ -306,10 +306,10 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                     setNewItemInput(g.name);
                     setShowSuggestions(false);
                   }}
-                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2"
+                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-zinc-700 flex items-center gap-2"
                 >
                   <span className="font-medium">{g.name}</span>
-                  <span className="text-xs text-gray-400">({g.items.length} items)</span>
+                  <span className="text-xs text-zinc-400">({g.items.length} items)</span>
                 </button>
               ))}
             </div>
@@ -322,7 +322,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
             <ReorderList
               withDragHandle={false}
               className="gap-2"
-              itemClassName="bg-slate-600 rounded-lg"
+              itemClassName="bg-zinc-600 rounded-lg"
               onReorderFinish={handleReorderItems}
               children={items.map(item => (
                 <div
@@ -343,7 +343,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                   </span>
                   <button
                     onClick={() => handleRemoveItem(item)}
-                    className="text-gray-400 hover:text-white transition-colors"
+                    className="text-zinc-400 hover:text-white transition-colors"
                   >
                     <X size={16} />
                   </button>
@@ -353,7 +353,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
           ) : (
             <div className="space-y-2">
               {items.map((item, index) => (
-                <div key={index} className="flex items-center gap-2 py-2 px-3 bg-slate-600 rounded-lg">
+                <div key={index} className="flex items-center gap-2 py-2 px-3 bg-zinc-600 rounded-lg">
                   <img
                     src={getFaviconUrl(item)}
                     alt=""
@@ -367,7 +367,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                   </span>
                   <button
                     onClick={() => handleRemoveItem(item)}
-                    className="text-gray-400 hover:text-white transition-colors"
+                    className="text-zinc-400 hover:text-white transition-colors"
                   >
                     <X size={16} />
                   </button>
@@ -384,17 +384,17 @@ export const GroupForm: React.FC<GroupFormProps> = ({
 
         {/* Typosquatting Warning Dialog */}
         {typosquattingWarning && (
-          <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3 space-y-3">
+          <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 space-y-3">
             <div className="flex items-start gap-2">
-              <span className="text-yellow-500 text-xl">⚠️</span>
+              <span className="text-amber-400 text-xl">⚠️</span>
               <div className="flex-1">
-                <p className="text-yellow-100 text-sm font-medium mb-1">
+                <p className="text-amber-100 text-sm font-medium mb-1">
                   Possible typo detected
                 </p>
-                <p className="text-yellow-200 text-xs">
+                <p className="text-amber-200 text-xs">
                   Did you mean <span className="font-bold">{typosquattingWarning.suggestion}</span>?
                 </p>
-                <p className="text-yellow-300 text-xs mt-1">
+                <p className="text-amber-300 text-xs mt-1">
                   You entered: {formatUrlForDisplay(typosquattingWarning.url)}
                 </p>
               </div>
@@ -405,7 +405,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                   const correctedUrl = 'https://' + typosquattingWarning.suggestion;
                   await addNormalizedUrl(correctedUrl);
                 }}
-                className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+                className="flex-1 px-3 py-2 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/10 text-sm rounded-lg"
               >
                 Use {typosquattingWarning.suggestion}
               </button>
@@ -413,7 +413,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                 onClick={async () => {
                   await addNormalizedUrl(typosquattingWarning.url);
                 }}
-                className="flex-1 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg"
+                className="flex-1 px-3 py-2 bg-zinc-600 hover:bg-zinc-700 text-white text-sm rounded-lg"
               >
                 Keep original
               </button>
@@ -421,7 +421,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
                 onClick={() => {
                   setTyposquattingWarning(null);
                 }}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+                className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg"
               >
                 Cancel
               </button>
@@ -435,7 +435,7 @@ export const GroupForm: React.FC<GroupFormProps> = ({
         <div className="flex gap-2">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm"
+            className="flex-1 px-4 py-2 bg-zinc-600 hover:bg-zinc-700 text-white rounded-lg text-sm"
           >
             Cancel
           </button>

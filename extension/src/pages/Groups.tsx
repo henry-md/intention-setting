@@ -193,7 +193,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
           {onBack && (
             <button
               onClick={onBack}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
               title="Back to Rules"
             >
               <ArrowLeft size={20} />
@@ -222,7 +222,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
       {/* Groups List */}
       <div className="flex flex-col space-y-3">
         {groups.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">
+          <p className="text-zinc-400 text-sm text-center py-8">
             No groups yet. Create one to get started!
           </p>
         ) : (
@@ -231,7 +231,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
               <div
                 key={group.id}
                 onClick={() => onEditGroup(group.id)}
-                className="bg-slate-700 rounded-lg p-4 flex items-center gap-4 transition-colors hover:bg-slate-600 cursor-pointer"
+                className="bg-zinc-700 rounded-lg p-4 flex items-center gap-4 transition-colors hover:bg-zinc-600 cursor-pointer"
               >
                 {/* Site Icons */}
                 <GroupIcons group={group} />
@@ -248,20 +248,20 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
                       e.stopPropagation();
                       setOpenMenuId(openMenuId === group.id ? null : group.id);
                     }}
-                    className="text-gray-400 hover:text-white transition-colors"
+                    className="text-zinc-400 hover:text-white transition-colors"
                   >
                     <MoreVertical size={20} />
                   </button>
 
                   {openMenuId === group.id && (
-                    <div className="absolute right-0 mt-2 w-32 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10">
+                    <div className="absolute right-0 mt-2 w-32 bg-zinc-800 border border-zinc-600 rounded-lg shadow-lg z-10">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onEditGroup(group.id);
                           setOpenMenuId(null);
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2 rounded-t-lg"
+                        className="w-full px-4 py-2 text-left text-sm text-white hover:bg-zinc-700 flex items-center gap-2 rounded-t-lg"
                       >
                         <Edit2 size={14} />
                         Edit
@@ -273,7 +273,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
                           setDeleteDialogOpen(true);
                           setOpenMenuId(null);
                         }}
-                        className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2 rounded-b-lg"
+                        className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-zinc-700 flex items-center gap-2 rounded-b-lg"
                       >
                         <Trash2 size={14} />
                         Delete
@@ -289,10 +289,10 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="bg-gray-800 border-gray-600 text-white" showCloseButton={false}>
+        <DialogContent className="bg-zinc-800 border-zinc-600 text-white" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-white">Delete Group?</DialogTitle>
-            <DialogDescription className="text-gray-300">
+            <DialogDescription className="text-zinc-300">
               Are you sure you want to delete this group? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -303,7 +303,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
                 setDeleteDialogOpen(false);
                 setGroupToDelete(null);
               }}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm"
             >
               Cancel
             </button>

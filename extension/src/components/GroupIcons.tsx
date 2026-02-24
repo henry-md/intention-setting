@@ -29,7 +29,7 @@ export const GroupIcons: React.FC<GroupIconsProps> = ({
   };
 
   if (displayUrls.length === 0) {
-    return <div className={`${sizeClasses[iconSize]} rounded bg-gray-600`} />;
+    return <div className={`${sizeClasses[iconSize]} rounded bg-zinc-600`} />;
   }
 
   return (
@@ -46,7 +46,7 @@ export const GroupIcons: React.FC<GroupIconsProps> = ({
         />
       ))}
       {urls.length > maxIcons && (
-        <span className="text-xs text-gray-400 ml-1">
+        <span className="text-xs text-zinc-400 ml-1">
           +{urls.length - maxIcons}
         </span>
       )}

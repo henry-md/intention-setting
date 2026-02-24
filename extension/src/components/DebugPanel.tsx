@@ -33,7 +33,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
   return (
     <div
       style={{
-        backgroundColor: '#1a1a1a',
+        backgroundColor: '#18181b',
         color: 'white',
         padding: '12px 16px',
         borderRadius: '12px',
@@ -42,7 +42,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
         fontSize: '14px',
         fontWeight: 600,
         minWidth: '120px',
-        border: '2px solid #404040',
+        border: '2px solid #52525b',
         transition: 'all 0.3s ease',
       }}
     >

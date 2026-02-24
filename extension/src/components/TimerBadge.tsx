@@ -233,12 +233,12 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
     ? (isNearLimitFlashOn ? '#47272d' : '#3a1f24')
     : isOverLimit
       ? '#3b171d'
-      : '#1a1a1a';
+      : '#18181b';
   const borderColor = isNearLimit
     ? (isNearLimitFlashOn ? '#a05b66' : '#8b4b55')
     : isOverLimit
       ? '#b56a76'
-      : '#404040';
+      : '#52525b';
 
   return (
     <div
@@ -304,7 +304,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
               style={{
                 width: `${Math.min(percentage, 100)}%`,
                 height: '100%',
-                backgroundColor: isOverLimit ? '#fca5a5' : '#646cff',
+                backgroundColor: isOverLimit ? '#fca5a5' : '#71717a',
                 transition: 'width 0.3s ease',
               }}
             />

@@ -78,7 +78,7 @@ const Popup: React.FC = () => {
         >
           <div className="h-full flex flex-col">
             {/* Tabs */}
-            <div className="flex border-b border-gray-700 bg-gray-900">
+            <div className="flex border-b border-zinc-700 bg-zinc-900">
                 <button
                   onClick={() => {
                     setCurrentTab('rules');
@@ -87,8 +87,8 @@ const Popup: React.FC = () => {
                   }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     currentTab === 'rules'
-                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      ? 'text-white border-b-2 border-zinc-500 bg-zinc-800'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
                 >
                   Rules
@@ -100,8 +100,8 @@ const Popup: React.FC = () => {
                   }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     currentTab === 'home'
-                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      ? 'text-white border-b-2 border-zinc-500 bg-zinc-800'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
                 >
                   Account
@@ -113,8 +113,8 @@ const Popup: React.FC = () => {
                   }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     currentTab === 'settings'
-                      ? 'text-white border-b-2 border-blue-500 bg-gray-800'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      ? 'text-white border-b-2 border-zinc-500 bg-zinc-800'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
                 >
                   Settings
@@ -122,7 +122,7 @@ const Popup: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto bg-zinc-950">
               {currentTab === 'home' && (
                 <Home user={user} />
               )}
@@ -216,7 +216,7 @@ const Popup: React.FC = () => {
             aiPanelRef.current?.resize(40);
             setIsAIPanelCollapsed(false);
           }}
-          className="fixed bottom-4 right-4 w-14 h-14 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-50"
+          className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-white shadow-lg transition-all hover:scale-110 hover:bg-zinc-700"
           title="Open AI Assistant"
         >
           <Bot className="w-6 h-6" />

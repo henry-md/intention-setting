@@ -1273,10 +1273,10 @@ IMPORTANT GUIDELINES:
     const [isExpanded, setIsExpanded] = useState(false);
 
     return (
-      <div className="mt-2 border-t border-gray-600 pt-2">
+      <div className="mt-2 border-t border-zinc-600 pt-2">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+          className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
         >
           {isExpanded ? (
             <ChevronDown className="w-3 h-3" />
@@ -1293,20 +1293,20 @@ IMPORTANT GUIDELINES:
             {toolCalls.map((tool, idx) => (
               <div
                 key={idx}
-                className="bg-gray-900/50 border border-gray-600 rounded px-2 py-1.5"
+                className="bg-zinc-900/50 border border-zinc-600 rounded px-2 py-1.5"
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="text-purple-400 text-xs font-semibold">🔧</span>
                   <span className="text-purple-300 text-xs font-medium">{tool.name}</span>
                 </div>
                 {tool.args && (
-                  <div className="text-xs text-gray-400 mb-1.5 font-mono bg-gray-900 rounded px-1.5 py-1 overflow-x-auto">
+                  <div className="text-xs text-zinc-400 mb-1.5 font-mono bg-zinc-900 rounded px-1.5 py-1 overflow-x-auto">
                     {JSON.stringify(tool.args, null, 2)}
                   </div>
                 )}
                 {tool.result && (
-                  <div className="text-xs text-gray-300 bg-gray-900 rounded px-1.5 py-1">
-                    <span className="text-gray-500">→ </span>
+                  <div className="text-xs text-zinc-300 bg-zinc-900 rounded px-1.5 py-1">
+                    <span className="text-zinc-500">→ </span>
                     {tool.result}
                   </div>
                 )}
@@ -1319,14 +1319,14 @@ IMPORTANT GUIDELINES:
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 border-t border-gray-700">
+    <div className="flex flex-col h-full bg-zinc-900 border-t border-zinc-700">
       {/* Header */}
-      <div className="px-4 py-2 border-b border-gray-700 bg-gray-800 flex items-center justify-between">
+      <div className="px-4 py-2 border-b border-zinc-700 bg-zinc-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">AI Assistant</h3>
         <div className="flex items-center gap-1">
           <button
             onClick={clearChat}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
             title="Clear chat"
           >
             <Trash2 className="w-4 h-4" />
@@ -1334,7 +1334,7 @@ IMPORTANT GUIDELINES:
           {onCollapse && (
             <button
               onClick={onCollapse}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
               title="Collapse AI Assistant"
             >
               <ChevronDown className="w-4 h-4" />
@@ -1346,7 +1346,7 @@ IMPORTANT GUIDELINES:
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {groupedMessages.length === 0 && (
-          <div className="text-center text-gray-500 text-sm mt-8">
+          <div className="text-center text-zinc-500 text-sm mt-8">
             Start a conversation with the AI assistant
           </div>
         )}
@@ -1358,8 +1358,8 @@ IMPORTANT GUIDELINES:
             <div
               className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                 message.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-100 border border-gray-700'
+                  ? 'bg-zinc-700 text-white'
+                  : 'bg-zinc-800 text-zinc-100 border border-zinc-700'
               }`}
             >
               <div className="whitespace-pre-wrap break-words">{message.content}</div>
@@ -1371,15 +1371,15 @@ IMPORTANT GUIDELINES:
         ))}
         {streamingContent && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] bg-gray-800 text-gray-100 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+            <div className="max-w-[80%] bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
               <div className="whitespace-pre-wrap break-words">{streamingContent}</div>
-              <span className="inline-block w-2 h-4 ml-1 bg-blue-500 animate-pulse" />
+              <span className="inline-block w-2 h-4 ml-1 bg-zinc-500 animate-pulse" />
             </div>
           </div>
         )}
         {loading && !streamingContent && (
           <div className="flex justify-start">
-            <div className="bg-gray-800 text-gray-100 border border-gray-700 rounded-lg px-3 py-2 text-sm flex items-center gap-2">
+            <div className="bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Thinking...</span>
             </div>
@@ -1394,7 +1394,7 @@ IMPORTANT GUIDELINES:
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-700 bg-gray-800">
+      <div className="p-4 border-t border-zinc-700 bg-zinc-800">
         <div className="flex gap-2">
           <textarea
             ref={inputRef}
@@ -1402,14 +1402,14 @@ IMPORTANT GUIDELINES:
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type your message..."
-            className="flex-1 bg-gray-900 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 bg-zinc-900 text-white border border-zinc-700 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-zinc-500"
             rows={2}
             disabled={loading}
           />
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors self-end"
+            className="px-4 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors self-end"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
           </button>

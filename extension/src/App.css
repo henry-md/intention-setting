@@ -1,16 +1,18 @@
 .purple-button {
   border-radius: 8px;
-  border: 1px solid transparent;
-  background-color: #1a1a1a;
+  border: 1px solid #3f3f46;
+  background-color: #18181b;
+  color: #fafafa;
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: border-color 0.2s, background-color 0.2s;
 }
 
 .purple-button:hover {
-  border-color: #646cff;
+  border-color: #71717a;
+  background-color: #27272a;
 }
 
 .no-focus {

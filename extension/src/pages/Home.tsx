@@ -86,17 +86,19 @@ const Home: React.FC<HomeProps> = () => {
       </div>
 
       {/* Account Information */}
-      <div className="flex flex-col space-y-3 bg-gray-800 border border-gray-600 rounded-lg p-4">
+      <div className="flex flex-col space-y-3 bg-zinc-800 border border-zinc-600 rounded-lg p-4">
         <div className="text-center">
-          <p className="text-sm text-gray-400 mb-1">Signed in as:</p>
-          <p className="text-sm font-medium text-gray-200">{user.email}</p>
+          <p className="text-sm text-zinc-400 mb-1">Signed in as:</p>
+          <p className="text-sm font-medium text-zinc-200">{user.email}</p>
         </div>
 
         {paymentStatus === 'loading' && (
-          <div className="text-sm text-gray-400 text-center">Checking payment status...</div>
+          <div className="text-sm text-zinc-400 text-center">Checking payment status...</div>
         )}
         {paymentStatus === 'paid' && (
-          <div className="text-sm text-green-400 text-center font-medium">Premium Active</div>
+          <div className="mx-auto inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
+            Premium Active
+          </div>
         )}
         {paymentStatus === 'unpaid' && (
           <button
@@ -125,12 +127,12 @@ const Home: React.FC<HomeProps> = () => {
         )}
 
         {/* Info message about using Rules */}
-        <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
-          <p className="text-gray-300 text-sm mb-2">
+        <div className="bg-zinc-800 border border-zinc-600 rounded-lg p-4">
+          <p className="text-zinc-300 text-sm mb-2">
             To manage URLs and time rules:
           </p>
-          <ul className="text-gray-400 text-sm space-y-1 list-disc list-inside">
-            <li>Use the <span className="text-blue-400 font-medium">Rules</span> tab to manage groups and set time restrictions</li>
+          <ul className="text-zinc-400 text-sm space-y-1 list-disc list-inside">
+            <li>Use the <span className="text-zinc-300 font-medium">Rules</span> tab to manage groups and set time restrictions</li>
           </ul>
         </div>
       </div>

@@ -55,7 +55,8 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
       >
       <div
         style={{
-          backgroundColor: '#1a1a1a',
+          backgroundColor: '#18181b',
+          border: '1px solid #3f3f46',
           borderRadius: '12px',
           padding: '32px',
           maxWidth: '500px',
@@ -110,9 +111,9 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
               maxWidth: '200px',
               padding: '12px 16px',
               fontSize: '32px',
-              border: '1px solid #404040',
+              border: '1px solid #3f3f46',
               borderRadius: '8px',
-              backgroundColor: '#2a2a2a',
+              backgroundColor: '#27272a',
               color: 'rgba(255, 255, 255, 0.87)',
               boxSizing: 'border-box',
               outline: 'none',
@@ -146,9 +147,9 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
               width: '100%',
               padding: '12px 16px',
               fontSize: '16px',
-              border: '1px solid #404040',
+              border: '1px solid #3f3f46',
               borderRadius: '8px',
-              backgroundColor: '#2a2a2a',
+              backgroundColor: '#27272a',
               color: 'rgba(255, 255, 255, 0.87)',
               boxSizing: 'border-box',
               outline: 'none',
@@ -169,7 +170,7 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
               padding: '12px 24px',
               fontSize: '14px',
               fontWeight: 500,
-              border: '1px solid #404040',
+              border: '1px solid #3f3f46',
               borderRadius: '8px',
               backgroundColor: 'transparent',
               color: 'rgba(255, 255, 255, 0.87)',
@@ -177,10 +178,10 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
               transition: 'border-color 0.2s',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#646cff';
+              e.currentTarget.style.borderColor = '#71717a';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#404040';
+              e.currentTarget.style.borderColor = '#3f3f46';
             }}
           >
             Go Back
@@ -191,18 +192,18 @@ const IntentionPopup: React.FC<IntentionPopupProps> = ({ onContinue, onCancel })
               padding: '12px 24px',
               fontSize: '14px',
               fontWeight: 500,
-              border: '1px solid transparent',
+              border: '1px solid #52525b',
               borderRadius: '8px',
-              backgroundColor: '#646cff',
+              backgroundColor: '#27272a',
               color: 'white',
               cursor: 'pointer',
               transition: 'background-color 0.2s',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#535bf2';
+              e.currentTarget.style.backgroundColor = '#3f3f46';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#646cff';
+              e.currentTarget.style.backgroundColor = '#27272a';
             }}
           >
             Continue
