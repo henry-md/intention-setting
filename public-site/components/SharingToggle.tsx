@@ -14,7 +14,7 @@ export default function SharingToggle() {
   const handleCopyLink = async () => {
     if (!shareSettings?.shareId) return;
 
-    const publicUrl = `${window.location.origin}/public/${shareSettings.shareId}`;
+    const publicUrl = `${window.location.origin}/${encodeURIComponent(shareSettings.shareId)}`;
     await navigator.clipboard.writeText(publicUrl);
 
     setCopying(true);
@@ -65,7 +65,7 @@ export default function SharingToggle() {
             <input
               type="text"
               readOnly
-              value={`${window.location.origin}/public/${shareSettings.shareId}`}
+              value={`${window.location.origin}/${encodeURIComponent(shareSettings.shareId)}`}
               className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <button

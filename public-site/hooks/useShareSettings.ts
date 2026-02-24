@@ -7,13 +7,47 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { ShareSettings } from '@/lib/sharingTypes';
 
 /**
- * Generates a unique share ID for a user
- * Uses a combination of timestamp and random string for uniqueness
+ * Reserved top-level paths that should never be used as public share IDs.
  */
-function generateShareId(): string {
-  const timestamp = Date.now().toString(36);
-  const randomStr = Math.random().toString(36).substring(2, 10);
-  return `${timestamp}-${randomStr}`;
+const RESERVED_SHARE_IDS = new Set(['public', 'stats', 'login', 'privacy', 'god']);
+
+function normalizeShareSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
+function getShareBaseSlug(email: string | null | undefined): string {
+  const emailPrefix = (email || '').split('@')[0] || '';
+  const normalized = normalizeShareSlug(emailPrefix);
+
+  if (!normalized || RESERVED_SHARE_IDS.has(normalized)) {
+    return 'user';
+  }
+
+  return normalized;
+}
+
+async function resolveUniqueShareId(baseSlug: string, userId: string): Promise<string> {
+  for (let suffix = 0; suffix < 500; suffix += 1) {
+    const candidate = suffix === 0 ? baseSlug : `${baseSlug}-${suffix + 1}`;
+    const mappingDocRef = doc(db, 'shareIdMappings', candidate);
+    const mappingDoc = await getDoc(mappingDocRef);
+
+    if (!mappingDoc.exists()) {
+      return candidate;
+    }
+
+    const mappingData = mappingDoc.data() as { userId?: string };
+    if (mappingData.userId === userId) {
+      return candidate;
+    }
+  }
+
+  const fallback = `${baseSlug}-${Date.now().toString(36)}`;
+  return normalizeShareSlug(fallback);
 }
 
 export function useShareSettings() {
@@ -24,6 +58,7 @@ export function useShareSettings() {
 
   useEffect(() => {
     if (!user?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear sharing data when user is not authenticated
       setShareSettings(null);
       setLoading(false);
       return;
@@ -66,21 +101,17 @@ export function useShareSettings() {
 
       // Check if share settings already exist
       const existingDoc = await getDoc(shareDocRef);
-      let shareId: string;
+      const existingSettings = existingDoc.exists() ? (existingDoc.data() as ShareSettings) : null;
+      const previousShareId = existingSettings?.shareId;
 
-      if (existingDoc.exists()) {
-        // Use existing shareId
-        shareId = (existingDoc.data() as ShareSettings).shareId;
-      } else {
-        // Generate new shareId
-        shareId = generateShareId();
-      }
+      const baseSlug = getShareBaseSlug(user.email);
+      const shareId = await resolveUniqueShareId(baseSlug, user.uid);
 
       const settings: ShareSettings = {
         enabled: true,
         shareId,
-        createdAt: existingDoc.exists()
-          ? (existingDoc.data() as ShareSettings).createdAt
+        createdAt: existingSettings
+          ? existingSettings.createdAt
           : Date.now(),
         updatedAt: Date.now(),
       };
@@ -94,6 +125,19 @@ export function useShareSettings() {
         enabled: true,
         updatedAt: Date.now(),
       });
+
+      if (previousShareId && previousShareId !== shareId) {
+        const previousMappingDocRef = doc(db, 'shareIdMappings', previousShareId);
+        await setDoc(
+          previousMappingDocRef,
+          {
+            userId: user.uid,
+            enabled: false,
+            updatedAt: Date.now(),
+          },
+          { merge: true }
+        );
+      }
 
       return shareId;
     } catch (err) {

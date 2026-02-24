@@ -378,7 +378,7 @@ async function resetAllSiteTime(
     });
 
     console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
-    console.log(`[DailyReset] Stored snapshot ${historyKey}: ${totalTimeSpent}s across ${historyEntry.trackedSiteCount} sites`);
+    console.log(`[DailyReset] Stored snapshot ${historyKey}: ${historyEntry.totalTimeSpent}s across ${historyEntry.trackedSiteCount} sites`);
 
     // Also sync to Firestore if user is logged in
     if (userId) {

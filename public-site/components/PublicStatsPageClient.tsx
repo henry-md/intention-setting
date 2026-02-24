@@ -4,15 +4,16 @@ import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePublicUserData } from '@/hooks/useShareSettings';
-import { useParams } from 'next/navigation';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
 import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import type { UserData } from '@/hooks/useUserData';
 import Link from 'next/link';
 
-export default function PublicStatsPage() {
-  const params = useParams();
-  const shareId = params.shareId as string;
+interface PublicStatsPageClientProps {
+  shareId: string;
+}
+
+export default function PublicStatsPageClient({ shareId }: PublicStatsPageClientProps) {
   const { userId, loading: userIdLoading, error: userIdError } = usePublicUserData(shareId);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +126,6 @@ export default function PublicStatsPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
-      {/* Header */}
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-end gap-4">
@@ -149,7 +149,6 @@ export default function PublicStatsPage() {
           </p>
         </div>
 
-        {/* Info Banner */}
         <div className="mb-8 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
           <div className="flex items-start gap-3">
             <svg
@@ -181,7 +180,6 @@ export default function PublicStatsPage() {
 
         <TotalUsageTimelineChart points={usageTimeline} />
 
-        {/* Last Reset Info */}
         {userData.lastDailyResetTimestamp && (
           <div className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
             Last daily reset: {new Date(userData.lastDailyResetTimestamp).toLocaleString()}
@@ -189,7 +187,6 @@ export default function PublicStatsPage() {
         )}
       </main>
 
-      {/* Footer */}
       <footer>
         <div className="mx-auto max-w-7xl px-6 pb-4 pt-3 text-center text-sm">
           <div className="mx-auto mb-3 h-px w-full max-w-xs bg-gradient-to-r from-transparent via-zinc-300/70 to-transparent dark:via-zinc-700/70" />
