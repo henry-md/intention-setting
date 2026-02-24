@@ -39,6 +39,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
+  const [ruleProgressById, setRuleProgressById] = useState<Record<string, { usedSeconds: number; maxSeconds: number }>>({});
   const isInitialLoad = useRef(true);
 
   // Fetch rules, groups, and URLs from Firestore
@@ -102,6 +103,69 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
       setShowCreateForm(true);
     }
   }, [initialEditingRuleId, rules]);
+
+  const formatProgressTime = (seconds: number): string => {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    const mins = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const getRuleMaxSeconds = (rule: Rule): number => {
+    const base = Math.max(0, Math.floor((rule.timeLimit || 0) * 60));
+    if (rule.type !== 'soft') return base;
+
+    const plusOnes = Math.max(0, Math.floor(rule.plusOnes || 0));
+    const plusOneDuration = Math.max(0, Math.floor(rule.plusOneDuration || 0));
+    return base + (plusOnes * plusOneDuration);
+  };
+
+  const refreshRuleProgress = useCallback(async () => {
+    try {
+      const storage = await chrome.storage.local.get(['ruleUsageData', 'compiledRules', 'siteTimeData']);
+      const ruleUsageData: Record<string, { timeSpent?: number }> = storage.ruleUsageData || {};
+      const compiledRules: Record<string, { siteKeys?: string[] }> = storage.compiledRules || {};
+      const siteTimeData: Record<string, { timeSpent?: number }> = storage.siteTimeData || {};
+
+      const nextProgress: Record<string, { usedSeconds: number; maxSeconds: number }> = {};
+
+      for (const rule of rules) {
+        const maxSeconds = getRuleMaxSeconds(rule);
+        const compiled = compiledRules[rule.id];
+        const computedFromSites = (compiled?.siteKeys || []).reduce((sum, siteKey) => {
+          return sum + Math.max(0, Math.floor(siteTimeData[siteKey]?.timeSpent || 0));
+        }, 0);
+        const usageFromRuleCounters = Math.max(0, Math.floor(ruleUsageData[rule.id]?.timeSpent || 0));
+        const usedSeconds = rule.type === 'session'
+          ? computedFromSites
+          : Math.max(usageFromRuleCounters, computedFromSites);
+
+        nextProgress[rule.id] = {
+          usedSeconds,
+          maxSeconds
+        };
+      }
+
+      setRuleProgressById(nextProgress);
+    } catch (error) {
+      console.error('Error refreshing rule progress:', error);
+    }
+  }, [rules]);
+
+  useEffect(() => {
+    refreshRuleProgress();
+  }, [refreshRuleProgress]);
+
+  useEffect(() => {
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      if (changes.ruleUsageData || changes.siteTimeData || changes.compiledRules) {
+        refreshRuleProgress();
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+  }, [refreshRuleProgress]);
 
   // Save rules to Firestore
   const saveRulesToFirestore = async (newRules: Rule[]) => {
@@ -275,6 +339,12 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
         ) : (
           rules.map((rule) => {
             const ruleTargets = rule.targets || [];
+            const progress = ruleProgressById[rule.id] || { usedSeconds: 0, maxSeconds: getRuleMaxSeconds(rule) };
+            const progressMax = Math.max(progress.maxSeconds, 0);
+            const safeUsed = Math.max(0, progress.usedSeconds);
+            const ratio = progressMax > 0 ? Math.min(safeUsed / progressMax, 1) : 0;
+            const percent = Math.round(ratio * 100);
+            const isOverLimit = progressMax > 0 && safeUsed > progressMax;
 
             return (
               <div
@@ -354,6 +424,26 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                             {rule.type === 'soft' && rule.plusOnes !== undefined && ` • ${rule.plusOnes} plus ones`}
                             {rule.type === 'soft' && rule.plusOneDuration !== undefined && ` (${formatPlusOneDuration(rule.plusOneDuration)} each)`}
                           </span>
+                        </div>
+
+                        {/* Progress */}
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className={`${isOverLimit ? 'text-red-300' : 'text-gray-300'}`}>
+                              {formatProgressTime(safeUsed)} / {formatProgressTime(progressMax)}
+                            </span>
+                            <span className={`${isOverLimit ? 'text-red-300' : 'text-gray-400'}`}>
+                              {percent}%
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 w-full rounded-full bg-slate-800/80 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                isOverLimit ? 'bg-red-400' : 'bg-blue-400'
+                              }`}
+                              style={{ width: `${safeUsed > 0 ? Math.max(4, ratio * 100) : 0}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
