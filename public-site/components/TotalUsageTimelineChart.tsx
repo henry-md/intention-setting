@@ -49,6 +49,53 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [referenceNow] = useState<number>(() => Date.now());
 
+  const historicalSummary = useMemo(() => {
+    if (points.length <= 7) return null;
+
+    const dailyTotals = points.map((point) => Math.max(0, Math.floor(point.totalTimeSpent)));
+    if (dailyTotals.length === 0) return null;
+
+    const mean = dailyTotals.reduce((sum, value) => sum + value, 0) / dailyTotals.length;
+    const variance =
+      dailyTotals.reduce((sum, value) => sum + (value - mean) ** 2, 0) / dailyTotals.length;
+    const standardDeviation = Math.sqrt(variance);
+
+    const sorted = [...dailyTotals].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median =
+      sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+    const weekdayTotals: number[] = [];
+    const weekendTotals: number[] = [];
+
+    points.forEach((point) => {
+      const day = new Date(point.timestamp).getDay();
+      const total = Math.max(0, Math.floor(point.totalTimeSpent));
+      if (day === 0 || day === 6) {
+        weekendTotals.push(total);
+      } else {
+        weekdayTotals.push(total);
+      }
+    });
+
+    const weekdayAverage =
+      weekdayTotals.length > 0
+        ? Math.round(weekdayTotals.reduce((sum, value) => sum + value, 0) / weekdayTotals.length)
+        : null;
+    const weekendAverage =
+      weekendTotals.length > 0
+        ? Math.round(weekendTotals.reduce((sum, value) => sum + value, 0) / weekendTotals.length)
+        : null;
+
+    return {
+      average: Math.round(mean),
+      standardDeviation: Math.round(standardDeviation),
+      median: Math.round(median),
+      weekdayAverage,
+      weekendAverage,
+    };
+  }, [points]);
+
   const filteredPoints = useMemo(() => {
     if (points.length === 0) return [];
     if (range === 'all') return points;
@@ -137,6 +184,52 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
           </select>
         </div>
       </div>
+
+      {historicalSummary && (
+        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Avg Daily Time
+            </div>
+            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {formatTime(historicalSummary.average)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Std Dev (Daily)
+            </div>
+            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {formatTime(historicalSummary.standardDeviation)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Median Daily Time
+            </div>
+            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {formatTime(historicalSummary.median)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/40">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Weekday vs Weekend Avg
+            </div>
+            <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {historicalSummary.weekdayAverage == null
+                ? 'N/A'
+                : formatTime(historicalSummary.weekdayAverage)}{' '}
+              /{' '}
+              {historicalSummary.weekendAverage == null
+                ? 'N/A'
+                : formatTime(historicalSummary.weekendAverage)}
+            </div>
+            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+              Weekday / Weekend
+            </div>
+          </div>
+        </div>
+      )}
 
       {chart ? (
         <>

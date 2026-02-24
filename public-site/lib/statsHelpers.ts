@@ -210,6 +210,7 @@ export function buildRuleProgressStats(
           siteKey,
           timeSpent: timeTracking[siteKey]?.timeSpent || 0,
         }))
+        .filter((site) => site.timeSpent > 0)
         .sort((a, b) => b.timeSpent - a.timeSpent);
 
       const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);

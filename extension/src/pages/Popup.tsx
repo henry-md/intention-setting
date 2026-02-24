@@ -73,7 +73,7 @@ const Popup: React.FC = () => {
         <ResizablePanel
           id="main-content"
           order={1}
-          defaultSize={60}
+          defaultSize={100}
           minSize={20}
         >
           <div className="h-full flex flex-col">
@@ -182,7 +182,11 @@ const Popup: React.FC = () => {
           </div>
         </ResizablePanel>
 
-        {!isAIPanelCollapsed && <ResizableHandle withHandle />}
+        <ResizableHandle
+          withHandle
+          disabled={isAIPanelCollapsed}
+          className={isAIPanelCollapsed ? 'opacity-0 pointer-events-none' : ''}
+        />
 
         {/* Bottom panel with LLM */}
         <ResizablePanel
