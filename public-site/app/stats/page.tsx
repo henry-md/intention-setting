@@ -216,7 +216,7 @@ export default function StatsPage() {
                   No Synced Data Yet
                 </h2>
                 <p className="mb-6 text-zinc-600 dark:text-zinc-400">
-                  We could not find usage data for this account yet. Download the Chrome extension that syncs data to this page{' '}
+                  Download the Chrome extension that sets limits and syncs data to this page{' '}
                   <AlertDialog open={showPendingReviewModal} onOpenChange={setShowPendingReviewModal}>
                     <AlertDialogTrigger asChild>
                       <button

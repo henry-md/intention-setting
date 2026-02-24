@@ -6,7 +6,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 /*
 ex. usage:
-GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run seed:usage-history -- --email henrymdeutsch@gmail.com --days 120
+GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run seed:usage-history -- --email hdeutsch13@gmail.com --days 120
 */
 
 const SOCIAL_SITES = [
