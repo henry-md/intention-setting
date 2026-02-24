@@ -8,27 +8,33 @@ interface TotalUsageTimelineChartProps {
 
 type RangeFilter = 'week' | 'month' | 'year' | 'all';
 
+// Time windows used by the range dropdown for filtering points.
 const RANGE_MS: Record<Exclude<RangeFilter, 'all'>, number> = {
   week: 7 * 24 * 60 * 60 * 1000,
   month: 30 * 24 * 60 * 60 * 1000,
   year: 365 * 24 * 60 * 60 * 1000,
 };
 
-const MOBILE_BREAKPOINT_MAX_WIDTH = 639;
-const DESKTOP_CHART_WIDTH = 1000;
-const DESKTOP_CHART_HEIGHT = 260;
-const DESKTOP_PADDING = { top: 18, right: 16, bottom: 42, left: 68 };
-const MOBILE_MAX_CHART_WIDTH = 1200;
-const MOBILE_MIN_CHART_WIDTH = 320;
-const MOBILE_POINT_SPACING = 10;
-const MOBILE_CHART_HEIGHT = 240;
-const MOBILE_PADDING = { top: 12, right: 10, bottom: 34, left: 30 };
-const MOBILE_CHART_BREAKOUT_X = 0;
-const MOBILE_LEFT_FADE_AXIS_OFFSET = 10; // Offset for where the fade starts relative to the y axis
-const MOBILE_RIGHT_FADE_AXIS_OFFSET = 3;
-const MOBILE_PLOT_EDGE_INSET_X = 6; // Offset for where the first dot is: less is closer to x axis, more is farther
-const MOBILE_PLOT_CLIP_PADDING = 8;
-const DESKTOP_PLOT_CLIP_PADDING = 8;
+
+const MOBILE_BREAKPOINT_MAX_WIDTH = 639; // Max width (px) considered mobile for chart and layout behavior.
+const DESKTOP_CHART_WIDTH = 1000; // Fixed desktop chart SVG width (px).
+const DESKTOP_CHART_HEIGHT = 260; // Fixed desktop chart SVG height (px).
+const DESKTOP_PADDING = { top: 18, right: 16, bottom: 42, left: 68 }; // Desktop chart inner spacing for axes/labels: top/right/bottom/left.
+const MOBILE_MAX_CHART_WIDTH = 1200; // Hard cap for mobile chart width so long ranges do not grow unbounded.
+const MOBILE_MIN_CHART_WIDTH = 320; // Minimum mobile chart width so sparse datasets still render legibly.
+const MOBILE_POINT_SPACING = 10; // Pixel distance between adjacent points on mobile timelines.
+const MOBILE_CHART_HEIGHT = 240; // Fixed mobile chart SVG height (px).
+const MOBILE_PADDING = { top: 12, right: 10, bottom: 34, left: 30 }; // Mobile chart inner spacing for axes/labels: top/right/bottom/left.
+const MOBILE_CHART_BREAKOUT_X = 0; // Horizontal breakout (px) that lets the mobile chart ignore card padding.
+const MOBILE_LEFT_FADE_AXIS_OFFSET = 10; // Pixels to shift the left fade start relative to the y-axis position.
+const MOBILE_RIGHT_FADE_AXIS_OFFSET = 3; // Pixels to shift the right fade start relative to the right x-axis edge.
+const MOBILE_PLOT_EDGE_INSET_X = 6; // Horizontal inset (px) that controls how far first/last mobile points sit from edges.
+const MOBILE_PLOT_CLIP_PADDING = 8; // Extra clip padding (px) around the mobile plot so edge dots are not cut off.
+const DESKTOP_PLOT_CLIP_PADDING = 8; // Extra clip padding (px) around the desktop plot so edge dots are not cut off.
+const DESKTOP_TOOLTIP_EDGE_THRESHOLD = 110; // Distance from left/right edges (px) where desktop tooltip changes side.
+const DESKTOP_TOOLTIP_OFFSET_X = 10; // Horizontal tooltip offset (px) from the hovered point when side-anchored.
+const DESKTOP_TOOLTIP_OFFSET_Y = 10; // Vertical tooltip offset (px) above or below the hovered point.
+const DESKTOP_TOOLTIP_TOP_THRESHOLD = 34; // Top-edge threshold (px) for flipping desktop tooltip below the point.
 
 const formatYAxisTime = (seconds: number): string => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -321,6 +327,29 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   }, [chartHeight, chartWidth, filteredPoints, isMobile, padding.bottom, padding.left, padding.right, padding.top]);
 
   const hoveredPoint = hoveredIndex == null || !chart ? null : chart.plotted[hoveredIndex];
+  const hoveredTooltipStyle = useMemo(() => {
+    if (!hoveredPoint) return null;
+
+    const nearLeftEdge = hoveredPoint.x <= padding.left + DESKTOP_TOOLTIP_EDGE_THRESHOLD;
+    const nearRightEdge = hoveredPoint.x >= chartWidth - padding.right - DESKTOP_TOOLTIP_EDGE_THRESHOLD;
+    const nearTopEdge = hoveredPoint.y <= padding.top + DESKTOP_TOOLTIP_TOP_THRESHOLD;
+
+    const left = nearLeftEdge
+      ? hoveredPoint.x + DESKTOP_TOOLTIP_OFFSET_X
+      : nearRightEdge
+        ? hoveredPoint.x - DESKTOP_TOOLTIP_OFFSET_X
+        : hoveredPoint.x;
+    const translateX = nearLeftEdge ? '0%' : nearRightEdge ? '-100%' : '-50%';
+    const translateY = nearTopEdge
+      ? `${DESKTOP_TOOLTIP_OFFSET_Y}px`
+      : `calc(-100% - ${DESKTOP_TOOLTIP_OFFSET_Y}px)`;
+
+    return {
+      left: `${(left / chartWidth) * 100}%`,
+      top: `${(hoveredPoint.y / chartHeight) * 100}%`,
+      transform: `translate(${translateX}, ${translateY})`,
+    };
+  }, [chartHeight, chartWidth, hoveredPoint, padding.left, padding.right, padding.top]);
   const mobilePulsePoint = useMemo(() => {
     if (!isMobile || !chart || selectedTimestamp == null) return null;
     return chart.plotted.find((entry) => entry.point.timestamp === selectedTimestamp) ?? null;
@@ -591,14 +620,10 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 ))}
               </svg>
             )}
-            {!isMobile && hoveredPoint && (
+            {!isMobile && hoveredPoint && hoveredTooltipStyle && (
               <div
-                className="pointer-events-none absolute z-10 rounded-md border border-zinc-200 bg-white/95 px-2 py-1 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900/95"
-                style={{
-                  left: `${(hoveredPoint.x / chartWidth) * 100}%`,
-                  top: `${(hoveredPoint.y / chartHeight) * 100}%`,
-                  transform: 'translate(-50%, calc(-100% - 10px))',
-                }}
+                className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-zinc-200 bg-white/95 px-2 py-1 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900/95"
+                style={hoveredTooltipStyle}
               >
                 <div className="font-medium text-zinc-900 dark:text-zinc-50">
                   {formatUsageDay(hoveredPoint.point.timestamp)}
