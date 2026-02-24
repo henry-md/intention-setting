@@ -28,6 +28,7 @@ const MOBILE_LEFT_FADE_AXIS_OFFSET = 10; // Offset for where the fade starts rel
 const MOBILE_RIGHT_FADE_AXIS_OFFSET = 3;
 const MOBILE_PLOT_EDGE_INSET_X = 6; // Offset for where the first dot is: less is closer to x axis, more is farther
 const MOBILE_PLOT_CLIP_PADDING = 8;
+const DESKTOP_PLOT_CLIP_PADDING = 8;
 
 const formatYAxisTime = (seconds: number): string => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -182,16 +183,16 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
   const mobilePlotOverflowAllowance = isMobile
     ? Math.max(0, -MOBILE_PLOT_EDGE_INSET_X)
     : 0;
-  const mobileClipX = isMobile
-    ? padding.left - MOBILE_PLOT_CLIP_PADDING - mobilePlotOverflowAllowance
-    : padding.left;
-  const mobileClipY = isMobile ? padding.top - MOBILE_PLOT_CLIP_PADDING : padding.top;
-  const mobileClipWidth = isMobile
-    ? chartWidth - padding.left - padding.right + MOBILE_PLOT_CLIP_PADDING * 2 + mobilePlotOverflowAllowance * 2
-    : chartWidth - padding.left - padding.right;
-  const mobileClipHeight = isMobile
-    ? chartHeight - padding.top - padding.bottom + MOBILE_PLOT_CLIP_PADDING * 2
-    : chartHeight - padding.top - padding.bottom;
+  const plotClipPadding = isMobile ? MOBILE_PLOT_CLIP_PADDING : DESKTOP_PLOT_CLIP_PADDING;
+  const plotClipX = padding.left - plotClipPadding - mobilePlotOverflowAllowance;
+  const plotClipY = padding.top - plotClipPadding;
+  const plotClipWidth =
+    chartWidth -
+    padding.left -
+    padding.right +
+    plotClipPadding * 2 +
+    mobilePlotOverflowAllowance * 2;
+  const plotClipHeight = chartHeight - padding.top - padding.bottom + plotClipPadding * 2;
   const mobileChartFrameStyle = isMobile
     ? {
         marginLeft: `-${MOBILE_CHART_BREAKOUT_X}px`,
@@ -607,10 +608,10 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
               <defs>
                 <clipPath id={plotClipPathId}>
                   <rect
-                    x={mobileClipX}
-                    y={mobileClipY}
-                    width={mobileClipWidth}
-                    height={mobileClipHeight}
+                    x={plotClipX}
+                    y={plotClipY}
+                    width={plotClipWidth}
+                    height={plotClipHeight}
                   />
                 </clipPath>
               </defs>
