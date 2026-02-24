@@ -23,15 +23,15 @@ export default function SharingToggle() {
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="rounded-lg border border-zinc-200 bg-white p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="text-sm text-zinc-600 dark:text-zinc-400">Loading sharing settings...</div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-start justify-between">
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             Public Sharing
@@ -57,20 +57,20 @@ export default function SharingToggle() {
       </div>
 
       {isEnabled && shareSettings?.shareId && (
-        <div className="mt-4 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">
+        <div className="mt-4 rounded-lg bg-zinc-50 p-3 sm:p-4 dark:bg-zinc-800">
           <div className="mb-2 text-xs font-medium uppercase text-zinc-600 dark:text-zinc-400">
             Your Public Link
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               type="text"
               readOnly
               value={`${window.location.origin}/${encodeURIComponent(shareSettings.shareId)}`}
-              className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <button
               onClick={handleCopyLink}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 sm:w-auto"
             >
               {copying ? 'Copied!' : 'Copy'}
             </button>
