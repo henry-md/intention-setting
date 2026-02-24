@@ -34,13 +34,11 @@ const formatDateTick = (timestamp: number): string => {
   });
 };
 
-const formatTooltipDate = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleString([], {
+const formatUsageDay = (timestamp: number): string => {
+  return new Date(timestamp).toLocaleDateString([], {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
   });
 };
 
@@ -266,7 +264,7 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 }}
               >
                 <div className="font-medium text-zinc-900 dark:text-zinc-50">
-                  {formatTooltipDate(hoveredPoint.point.timestamp)}
+                  {formatUsageDay(hoveredPoint.point.timestamp)}
                 </div>
                 <div className="text-zinc-600 dark:text-zinc-300">
                   {formatTime(hoveredPoint.point.totalTimeSpent)}

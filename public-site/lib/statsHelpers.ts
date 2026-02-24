@@ -248,10 +248,63 @@ export function buildTotalTrackedUsageTimeline(
   rules: Rule[],
   groups: Group[],
   timeTracking: Record<string, SiteTimeData>,
-  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {},
+  lastDailyResetTimestamp?: number
 ): UsageTimelinePoint[] {
+  const getLocalDayKey = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getDayBounds = (dayKey: string): { start: number; end: number } | null => {
+    const parts = dayKey.split('-').map((part) => Number(part));
+    if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+      return null;
+    }
+
+    const [year, month, day] = parts;
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+    const end = new Date(year, month - 1, day + 1, 0, 0, 0, 0).getTime() - 1;
+
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return null;
+    }
+
+    return { start, end };
+  };
+
   const now = Date.now();
-  const todayKey = new Date(now).toISOString().slice(0, 10);
+  const getUsageDayKeyForTimestamp = (timestamp: number): string => {
+    const usageDate = new Date(timestamp);
+    const resetBoundary = new Date(timestamp);
+    resetBoundary.setHours(4, 0, 0, 0);
+    if (usageDate < resetBoundary) {
+      usageDate.setDate(usageDate.getDate() - 1);
+    }
+    return getLocalDayKey(usageDate.getTime());
+  };
+
+  const boundaryDerivedTodayKey = getUsageDayKeyForTimestamp(now);
+  const resetDerivedDayKey =
+    Number.isFinite(Number(lastDailyResetTimestamp)) &&
+    Number(lastDailyResetTimestamp) > 0 &&
+    Number(lastDailyResetTimestamp) <= now
+      ? getLocalDayKey(Number(lastDailyResetTimestamp))
+      : null;
+  const todayKey =
+    resetDerivedDayKey && resetDerivedDayKey > boundaryDerivedTodayKey
+      ? resetDerivedDayKey
+      : boundaryDerivedTodayKey;
+
+  const getChartTimestampForDay = (dayKey: string): number | null => {
+    const bounds = getDayBounds(dayKey);
+    if (!bounds) return null;
+    // Timeline points are daily buckets (not time-of-day events), so anchor at local day start.
+    return bounds.start;
+  };
 
   const trackedSiteKeys = new Set<string>();
   for (const rule of rules) {
@@ -279,16 +332,11 @@ export function buildTotalTrackedUsageTimeline(
       // Never render future calendar days, even if bad/old test data exists.
       if (dayKey > todayKey) return null;
 
-      const fallbackPeriodEnd = new Date(`${dayKey}T23:59:59`).getTime();
-      const rawTimestamp = Number(
-        entry?.periodEnd != null
-          ? entry.periodEnd - 1
-          : (entry?.capturedAt ?? fallbackPeriodEnd)
-      );
-      // If today's period end points to a future reset boundary, clamp to now.
-      const safeTimestamp = Math.min(rawTimestamp, now);
       const rawTotal = Number(entry?.totalTimeSpent ?? 0);
-      if (!Number.isFinite(safeTimestamp) || !Number.isFinite(rawTotal)) return null;
+      const safeTimestamp = getChartTimestampForDay(dayKey);
+      if (safeTimestamp == null || !Number.isFinite(rawTotal)) {
+        return null;
+      }
       const siteTotals = sanitizeSiteTotals(entry?.siteTotals);
       return {
         dayKey,
@@ -298,15 +346,10 @@ export function buildTotalTrackedUsageTimeline(
       };
     })
     .filter((point): point is UsageTimelinePoint => point !== null)
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  if (trackedSiteKeys.size === 0) {
-    return historyPoints;
-  }
+    .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 
   const currentSiteTotals: Record<string, number> = {};
   let currentTotal = 0;
-  let latestCurrentTimestamp = 0;
   trackedSiteKeys.forEach((siteKey) => {
     const tracking = timeTracking[siteKey];
     if (!tracking) return;
@@ -315,23 +358,17 @@ export function buildTotalTrackedUsageTimeline(
       currentSiteTotals[siteKey] = currentSeconds;
       currentTotal += currentSeconds;
     }
-    const rawTimestamp = Number(tracking.lastUpdated);
-    if (Number.isFinite(rawTimestamp) && rawTimestamp > latestCurrentTimestamp) {
-      latestCurrentTimestamp = rawTimestamp;
-    }
   });
 
-  const todayOnlyPoint: UsageTimelinePoint[] =
-    currentTotal > 0
-      ? [
-          {
-            dayKey: todayKey,
-            timestamp: latestCurrentTimestamp || Date.now(),
-            totalTimeSpent: Math.floor(currentTotal),
-            siteTotals: currentSiteTotals,
-          },
-        ]
-      : [];
+  const todayTimestamp = getChartTimestampForDay(todayKey) ?? now;
+  const todayOnlyPoint: UsageTimelinePoint[] = [
+    {
+      dayKey: todayKey,
+      timestamp: todayTimestamp,
+      totalTimeSpent: Math.floor(currentTotal),
+      siteTotals: currentSiteTotals,
+    },
+  ];
 
   const byDateKey = new Map<string, UsageTimelinePoint>();
   [...historyPoints, ...todayOnlyPoint].forEach((point) => {
@@ -342,7 +379,7 @@ export function buildTotalTrackedUsageTimeline(
     }
   });
 
-  return Array.from(byDateKey.values()).sort((a, b) => a.timestamp - b.timestamp);
+  return Array.from(byDateKey.values()).sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 }
 
 /**

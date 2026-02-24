@@ -84,7 +84,8 @@ export default function StatsPage() {
         userData.rules,
         userData.groups,
         userData.timeTracking,
-        userData.dailyUsageHistory
+        userData.dailyUsageHistory,
+        userData.lastDailyResetTimestamp
       )
     : [];
 

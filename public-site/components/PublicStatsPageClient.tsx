@@ -194,7 +194,8 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
     userData.rules,
     userData.groups,
     userData.timeTracking,
-    userData.dailyUsageHistory
+    userData.dailyUsageHistory,
+    userData.lastDailyResetTimestamp
   );
 
   return (
