@@ -25,3 +25,6 @@ todo
 *.njsproj
 *.sln
 *.sw?
+
+# Extension config
+extension.zip
