@@ -211,7 +211,7 @@ These events trigger the background worker to start/stop timers.
 **Firestore (Remote)**:
 - Synced every 5 seconds
 - User document at `users/{userId}`
-- Time tracking data stored in `timeTracking` field
+- Time usage data stored in `dailyUsageHistory.{YYYY-MM-DD}`
 
 ---
 
@@ -401,7 +401,7 @@ async function timerTick() {
 **Purpose**: Persistent, cross-device storage
 
 **Data**:
-- `users/{userId}/timeTracking`: Same structure as `siteTimeData`
+- `users/{userId}/dailyUsageHistory.{YYYY-MM-DD}`: Daily aggregate with per-site totals
 
 **Update frequency**: Every 5 seconds (batched)
 

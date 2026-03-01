@@ -5,12 +5,6 @@ import type {
 } from '@/hooks/useUserData';
 import type { DailyUsageHistoryEntry } from '@/lib/dailyUsageHistory';
 
-interface SiteTimeData {
-  timeSpent: number;
-  timeLimit: number;
-  lastUpdated: number;
-}
-
 /**
  * Get the normalized hostname from a URL
  */
@@ -160,24 +154,33 @@ export interface UsageTimelinePoint {
   siteTotals: Record<string, number>;
 }
 
+function getMostRecentHistoryEntry(
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
+): DailyUsageHistoryEntry | null {
+  const keys = Object.keys(dailyUsageHistory).sort();
+  if (keys.length === 0) return null;
+  return dailyUsageHistory[keys[keys.length - 1]] || null;
+}
+
 /**
  * Build comprehensive site statistics from user data
  */
 export function buildSiteStats(
   rules: Rule[],
   groups: Group[],
-  timeTracking: Record<string, SiteTimeData>
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
 ): SiteStats[] {
   const stats: SiteStats[] = [];
+  const latestEntry = getMostRecentHistoryEntry(dailyUsageHistory);
+  const latestSiteTotals = latestEntry?.siteTotals || {};
 
   for (const rule of rules) {
     const urls = expandTargetsToUrls(rule.targets, groups);
 
     for (const url of urls) {
       const siteKey = getNormalizedHostname(url);
-      const tracking = timeTracking[siteKey];
 
-      const timeSpent = tracking?.timeSpent || 0;
+      const timeSpent = Math.max(0, Math.floor(Number(latestSiteTotals[siteKey]) || 0));
       const timeLimit = rule.timeLimit * 60; // Convert minutes to seconds
       const percentage = calculateProgress(timeSpent, timeLimit);
       const remaining = Math.max(timeLimit - timeSpent, 0);
@@ -205,8 +208,11 @@ export function buildSiteStats(
 export function buildRuleProgressStats(
   rules: Rule[],
   groups: Group[],
-  timeTracking: Record<string, SiteTimeData>
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
 ): RuleProgressStats[] {
+  const latestEntry = getMostRecentHistoryEntry(dailyUsageHistory);
+  const latestSiteTotals = latestEntry?.siteTotals || {};
+
   return rules
     .filter((rule) => rule.timeLimit > 0)
     .map((rule) => {
@@ -215,7 +221,7 @@ export function buildRuleProgressStats(
       const siteBreakdown = uniqueSiteKeys
         .map((siteKey) => ({
           siteKey,
-          timeSpent: timeTracking[siteKey]?.timeSpent || 0,
+          timeSpent: Math.max(0, Math.floor(Number(latestSiteTotals[siteKey]) || 0)),
         }))
         .filter((site) => site.timeSpent > 0)
         .sort((a, b) => b.timeSpent - a.timeSpent);

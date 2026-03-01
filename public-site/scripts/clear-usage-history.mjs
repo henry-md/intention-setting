@@ -66,7 +66,7 @@ async function main() {
   const usageResetRequestedAt = Date.now();
   const payload = {
     dailyUsageHistory: FieldValue.delete(),
-    timeTracking: FieldValue.delete(),
+    lastDailyResetTimestamp: FieldValue.delete(),
     usageResetRequestedAt
   };
 

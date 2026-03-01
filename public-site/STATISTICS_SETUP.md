@@ -16,7 +16,7 @@ const { userData, loading, error } = useUserData();
 - `userData`: Object containing:
   - `rules`: Array of time limit rules configured in the extension
   - `groups`: Array of site groups
-  - `timeTracking`: Object mapping site keys to usage data (time spent, limits, etc.)
+  - `dailyUsageHistory`: Map of day keys (`YYYY-MM-DD`) to daily usage entries
   - `lastDailyResetTimestamp`: When the daily reset last occurred
 - `loading`: Boolean indicating if data is still loading
 - `error`: Any error that occurred during fetch
@@ -107,7 +107,7 @@ Updated navigation across pages:
 1. **Chrome Extension** tracks time spent on sites
    - Stores data locally in Chrome storage
    - Syncs to Firebase every 5 seconds
-   - Writes to: `users/{userId}/timeTracking/{siteKey}`
+   - Writes to: `users/{userId}/dailyUsageHistory/{YYYY-MM-DD}` (field map entry)
 
 2. **Next.js App** subscribes to changes
    - `useUserData` hook listens to the user's document
@@ -126,13 +126,15 @@ Updated navigation across pages:
 users/{userId}/
   ├── rules: Rule[]           // Time limit rules
   ├── groups: Group[]         // Site groupings
-  ├── timeTracking: {         // Usage data
-  │     "instagram.com": {
-  │       timeSpent: 3600,     // seconds
-  │       timeLimit: 5400,     // seconds
-  │       lastUpdated: 1234567890
-  │     },
-  │     "twitter.com": { ... }
+  ├── dailyUsageHistory: {    // Historical + current day usage
+  │     "2026-03-01": {
+  │       totalTimeSpent: 1827,
+  │       trackedSiteCount: 3,
+  │       siteTotals: { "tiktok.com": 1740, "youtube.com": 60, "snapchat.com": 27 },
+  │       periodStart: 1772269200000,
+  │       periodEnd: 1772335784066,
+  │       capturedAt: 1772335784066
+  │     }
   │   }
   └── lastDailyResetTimestamp: number
 ```

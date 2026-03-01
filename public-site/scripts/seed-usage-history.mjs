@@ -204,6 +204,24 @@ function dayKey(date) {
   return `${y}-${m}-${d}`;
 }
 
+function getMostRecentResetBoundary(timestamp) {
+  const date = new Date(timestamp);
+  const todayReset = new Date(date);
+  todayReset.setHours(RESET_HOUR, RESET_MINUTE, 0, 0);
+
+  if (date < todayReset) {
+    const yesterdayReset = new Date(todayReset);
+    yesterdayReset.setDate(yesterdayReset.getDate() - 1);
+    return yesterdayReset.getTime();
+  }
+
+  return todayReset.getTime();
+}
+
+function dayKeyForPeriodEnd(periodEndMs) {
+  return dayKey(new Date(periodEndMs - 1));
+}
+
 function ensureAdmin() {
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     throw new Error(
@@ -231,25 +249,24 @@ async function main() {
 
   const now = Date.now();
   const dailyUsageHistory = {};
+  const currentBoundary = getMostRecentResetBoundary(now);
+  const oneDayMs = 24 * 60 * 60 * 1000;
 
   // Seed past days and include the current day.
   for (let offset = days; offset >= 0; offset -= 1) {
     const dayIndex = days - offset;
-    const date = new Date(now - (offset * 24 * 60 * 60 * 1000));
-    const start = new Date(date);
-    start.setHours(RESET_HOUR, RESET_MINUTE, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    const periodStart = currentBoundary - (offset * oneDayMs);
+    const periodEnd = periodStart + oneDayMs;
 
     const minutes = generateDailyMinutes(dayIndex);
     const totalSeconds = Math.round(minutes * 60);
     const sites = pickRandomSites();
     const rawSiteTotals = buildSiteTotals(sites, totalSeconds);
-    dailyUsageHistory[dayKey(date)] = createDailyUsageHistoryEntry(
+    dailyUsageHistory[dayKeyForPeriodEnd(periodEnd)] = createDailyUsageHistoryEntry(
       rawSiteTotals,
-      start.getTime(),
-      end.getTime(),
-      end.getTime()
+      periodStart,
+      periodEnd,
+      periodEnd
     );
   }
 
