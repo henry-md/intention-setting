@@ -4,6 +4,7 @@ import {
   createCheckoutSession,
   getActiveSubscription,
   cancelSubscriptionAtPeriodEnd,
+  superCancelSubscriptionForDebug,
   type StripeSubscription
 } from '../utils/stripe';
 import type { User } from '../types/User';
@@ -12,6 +13,7 @@ export const useStripe = (user: User | null, authLoading: boolean) => {
   const [paymentStatus, setPaymentStatus] = useState<'loading' | 'paid' | 'unpaid'>('loading');
   const [isProcessing, setIsProcessing] = useState(false); // Whether user is in process of upgrading on Stripe
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isSuperCancelling, setIsSuperCancelling] = useState(false);
   const [subscription, setSubscription] = useState<StripeSubscription | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -94,13 +96,32 @@ export const useStripe = (user: User | null, authLoading: boolean) => {
     }
   };
 
+  const handleSuperCancelSubscription = async () => {
+    if (!user) return;
+
+    setIsSuperCancelling(true);
+    setCancelError(null);
+    try {
+      await superCancelSubscriptionForDebug(user.uid);
+      await checkUserPaymentStatus();
+    } catch (error) {
+      console.error('Error super-canceling subscription:', error);
+      const message = error instanceof Error ? error.message : 'Could not super-cancel subscription';
+      setCancelError(message);
+    } finally {
+      setIsSuperCancelling(false);
+    }
+  };
+
   return {
     paymentStatus,
     isProcessing,
     isCancelling,
+    isSuperCancelling,
     subscription,
     cancelError,
     handleUpgrade,
-    handleCancelSubscription
+    handleCancelSubscription,
+    handleSuperCancelSubscription
   };
 };

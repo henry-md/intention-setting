@@ -8,6 +8,7 @@ import {
   onSnapshot,
   doc,
   updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 // Firebase auth types imported on demand to avoid unused imports
@@ -264,4 +265,42 @@ export async function cancelSubscriptionAtPeriodEnd(userId: string): Promise<Str
     ...subscription,
     cancelAtPeriodEnd: true
   };
+}
+
+/**
+ * Debug-only helper that removes subscription/payment records for a user.
+ * This is for local testing and should never be exposed in production UI.
+ */
+export async function superCancelSubscriptionForDebug(userId: string): Promise<void> {
+  await ensureFirebaseAuth(userId);
+
+  // Best-effort: if a cancellable subscription exists, schedule cancel first.
+  try {
+    await cancelSubscriptionAtPeriodEnd(userId);
+  } catch (error) {
+    console.warn('Could not schedule cancellation before debug purge:', error);
+  }
+
+  const subscriptionsRef = collection(db, 'customers', userId, 'subscriptions');
+  const nestedPaymentsRef = collection(db, 'customers', userId, 'payments');
+  const rootPaymentsRef = collection(db, 'payments');
+
+  const [subscriptionSnapshot, nestedPaymentSnapshot, rootPaymentSnapshot] = await Promise.all([
+    getDocs(subscriptionsRef),
+    getDocs(nestedPaymentsRef),
+    getDocs(query(rootPaymentsRef, where('customer', '==', userId)))
+  ]);
+
+  const deleteTasks: Array<Promise<void>> = [];
+  for (const subscriptionDoc of subscriptionSnapshot.docs) {
+    deleteTasks.push(deleteDoc(subscriptionDoc.ref));
+  }
+  for (const paymentDoc of nestedPaymentSnapshot.docs) {
+    deleteTasks.push(deleteDoc(paymentDoc.ref));
+  }
+  for (const paymentDoc of rootPaymentSnapshot.docs) {
+    deleteTasks.push(deleteDoc(paymentDoc.ref));
+  }
+
+  await Promise.all(deleteTasks);
 }

@@ -11,9 +11,11 @@ const ManageSubscription: React.FC<ManageSubscriptionProps> = ({ user, onBack })
   const {
     paymentStatus,
     isCancelling,
+    isSuperCancelling,
     subscription,
     cancelError,
-    handleCancelSubscription
+    handleCancelSubscription,
+    handleSuperCancelSubscription
   } = useStripe(user, false);
 
   if (!user) {
@@ -63,8 +65,19 @@ const ManageSubscription: React.FC<ManageSubscriptionProps> = ({ user, onBack })
               </button>
             )}
 
+            <button
+              onClick={handleSuperCancelSubscription}
+              disabled={isSuperCancelling}
+              className="w-full px-4 py-2 border border-red-500 bg-red-100 hover:bg-red-200 disabled:opacity-70 text-red-900 font-medium rounded-lg transition-colors"
+            >
+              {isSuperCancelling ? 'Debug Cancelling...' : 'Debug Cancel'}
+            </button>
+
             <p className="text-xs text-zinc-500">
               Cancellation takes effect at the end of the current billing period.
+            </p>
+            <p className="text-xs text-zinc-500">
+              Testing only: Debug Cancel also deletes subscription/payment docs in Firebase.
             </p>
           </>
         )}
