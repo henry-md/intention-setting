@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ShareSettings } from '@/lib/sharingTypes';
@@ -209,14 +209,18 @@ export function usePublicUserData(shareId: string | null) {
   useEffect(() => {
     if (!shareId) {
       setUserId(null);
+      setError(null);
       setLoading(false);
       return;
     }
 
     const fetchUserId = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        setUserId(null);
         const mappingDocRef = doc(db, 'shareIdMappings', shareId);
-        const mappingDoc = await getDoc(mappingDocRef);
+        const mappingDoc = await getDocFromServer(mappingDocRef);
 
         if (mappingDoc.exists()) {
           const data = mappingDoc.data();

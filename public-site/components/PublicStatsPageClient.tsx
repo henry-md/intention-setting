@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePublicUserData } from '@/hooks/useShareSettings';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
@@ -42,14 +42,19 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
     }
 
     if (!userId) {
+      setUserData(null);
+      setError(null);
       setLoading(userIdLoading);
       return;
     }
 
     const fetchUserData = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        setUserData(null);
         const userDocRef = doc(db, 'users', userId);
-        const userDoc = await getDoc(userDocRef);
+        const userDoc = await getDocFromServer(userDocRef);
 
         if (userDoc.exists()) {
           const data = userDoc.data();
