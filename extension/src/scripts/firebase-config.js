@@ -68,6 +68,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getAuthFromOffscreen()
       .then((user) => {
         chrome.storage.local.set({ user: user }, () => {
+          chrome.runtime.sendMessage({
+            action: "sync-user-profile",
+            user: {
+              uid: user?.uid,
+              email: user?.email || "",
+              displayName: user?.displayName || "",
+              photoURL: user?.photoURL || "",
+            },
+          });
           sendResponse({ user: user });
         });
       })

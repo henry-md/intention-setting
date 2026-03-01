@@ -133,6 +133,22 @@ const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
 
 let lastUsageResetCheckAt = 0;
 
+async function syncStoredUserEmailToFirestore(): Promise<void> {
+  try {
+    const storage = await chrome.storage.local.get(['user']);
+    const storedUser = storage.user as { uid?: string; email?: string } | undefined;
+    const userId = storedUser?.uid;
+    if (!userId) return;
+
+    const userDocRef = doc(db, 'users', userId);
+    await setDoc(userDocRef, {
+      email: storedUser?.email || ''
+    }, { merge: true });
+  } catch (error) {
+    console.error('[Auth] Failed to sync stored email:', error);
+  }
+}
+
 async function clearAllUsageFromLocalStorage(appliedAt: number): Promise<void> {
   await chrome.storage.local.set({
     siteTimeData: {},
@@ -465,6 +481,9 @@ async function resetAllSiteTime(
 
     // Also sync to Firestore if user is logged in
     if (userId) {
+      const storageForProfile = await chrome.storage.local.get(['user']);
+      const storedUser = storageForProfile.user as { uid?: string; email?: string } | undefined;
+      const safeEmail = storedUser?.uid === userId ? (storedUser.email || '') : '';
       const userDocRef = doc(db, 'users', userId);
       const timeTrackingData: Record<string, SiteTimeData> = {};
       for (const siteKey in resetSiteTimeData) {
@@ -474,6 +493,7 @@ async function resetAllSiteTime(
       await setDoc(userDocRef, {
         timeTracking: timeTrackingData,
         lastDailyResetTimestamp: now,
+        email: safeEmail,
         dailyUsageHistory: {
           [historyKey]: historyEntry
         }
@@ -535,6 +555,7 @@ async function syncToFirestore(): Promise<void> {
     console.log(`[Timer] Writing to Firestore: users/${user.uid}/timeTracking/${siteKey}`, siteTimeData[siteKey]);
 
     await setDoc(userDocRef, {
+      email: user.email || '',
       timeTracking: {
         [siteKey]: siteTimeData[siteKey]
       },
@@ -1024,6 +1045,7 @@ async function startTimerForTab(
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
+  syncStoredUserEmailToFirestore();
   checkAndApplyRemoteUsageReset(true);
   checkAndApplyScheduledDailyReset('onInstalled');
   hydrateCompiledRuleIndexes();
@@ -1075,9 +1097,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'signIn') {
+    syncStoredUserEmailToFirestore();
     checkAndApplyRemoteUsageReset(true);
     checkAndApplyScheduledDailyReset('signIn');
     return false;
+  }
+
+  if (message.action === 'sync-user-profile') {
+    (async () => {
+      try {
+        const payload = (message.user || {}) as {
+          uid?: string;
+          email?: string;
+          displayName?: string;
+          photoURL?: string;
+        };
+
+        if (!payload.uid) {
+          sendResponse({ success: false, error: 'Missing user uid' });
+          return;
+        }
+
+        const userDocRef = doc(db, 'users', payload.uid);
+        await setDoc(userDocRef, {
+          email: payload.email || '',
+          displayName: payload.displayName || '',
+          photoURL: payload.photoURL || '',
+          profileSyncedAt: Date.now()
+        }, { merge: true });
+
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Auth] Failed to sync user profile:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
   }
 
   if (message.action === 'soft-limit-snooze') {
@@ -1249,6 +1304,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Timer] Service worker starting up');
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
+  await syncStoredUserEmailToFirestore();
   await checkAndApplyRemoteUsageReset(true);
   await checkAndApplyScheduledDailyReset('onStartup');
   await hydrateCompiledRuleIndexes();

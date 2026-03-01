@@ -8,7 +8,8 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -36,10 +37,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const syncUserProfile = async (authUser: User): Promise<void> => {
+    const userDocRef = doc(db, 'users', authUser.uid);
+    await setDoc(userDocRef, {
+      email: authUser.email || '',
+      displayName: authUser.displayName || '',
+      photoURL: authUser.photoURL || '',
+      profileSyncedAt: Date.now()
+    }, { merge: true });
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
+
+      if (user) {
+        syncUserProfile(user).catch((error) => {
+          console.error('Error syncing user profile:', error);
+        });
+      }
     });
 
     return unsubscribe;
