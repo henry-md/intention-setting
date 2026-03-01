@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { initializeApp, applicationDefault, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
@@ -8,6 +10,8 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 ex. usage from /public-site:
 GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run clear:usage-history -- --email hdeutsch13@gmail.com
 */
+
+const __filename = fileURLToPath(import.meta.url);
 
 function parseArgs(argv) {
   const args = { user: '', email: '' };
@@ -27,7 +31,7 @@ function parseArgs(argv) {
   return args;
 }
 
-async function resolveUserId(user, email) {
+export async function resolveUserId(user, email) {
   if (user) return user;
   if (!email) {
     throw new Error('Missing user selector. Pass --user <uid> or --email <email>');
@@ -38,7 +42,7 @@ async function resolveUserId(user, email) {
   return record.uid;
 }
 
-function ensureAdmin() {
+export function ensureAdmin() {
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     throw new Error(
       'GOOGLE_APPLICATION_CREDENTIALS is required. Point it to a Firebase service-account JSON file.'
@@ -50,11 +54,7 @@ function ensureAdmin() {
   }
 }
 
-async function main() {
-  const { user, email } = parseArgs(process.argv.slice(2));
-
-  ensureAdmin();
-  const userId = await resolveUserId(user, email);
+export async function clearUsageHistoryForUser(userId) {
   const db = getFirestore();
   const userRef = db.collection('users').doc(userId);
   const snap = await userRef.get();
@@ -71,6 +71,15 @@ async function main() {
   };
 
   await userRef.set(payload, { merge: true });
+  return usageResetRequestedAt;
+}
+
+async function main() {
+  const { user, email } = parseArgs(process.argv.slice(2));
+
+  ensureAdmin();
+  const userId = await resolveUserId(user, email);
+  const usageResetRequestedAt = await clearUsageHistoryForUser(userId);
 
   console.log(`Cleared all usage history (including current day) for users/${userId}.`);
   console.log(`Requested extension local usage reset via usageResetRequestedAt=${usageResetRequestedAt}.`);
@@ -79,7 +88,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('Clear failed:', error.message || error);
-  process.exit(1);
-});
+if (path.resolve(process.argv[1] || '') === __filename) {
+  main().catch((error) => {
+    console.error('Clear failed:', error.message || error);
+    process.exit(1);
+  });
+}

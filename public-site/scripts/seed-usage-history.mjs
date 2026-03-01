@@ -3,9 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initializeApp, applicationDefault, getApps } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { clearUsageHistoryForUser, ensureAdmin, resolveUserId } from './clear-usage-history.mjs';
 
 /*
 ex. usage from /public-site:
@@ -48,7 +47,7 @@ const DEFAULT_DAILY_RESET_TIME = readDefaultResetTime();
 const [RESET_HOUR, RESET_MINUTE] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
 
 function parseArgs(argv) {
-  const args = { user: '', email: '', days: 90 };
+  const args = { user: '', email: '', days: 90, clearExisting: true };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--user' || token === '-u') {
@@ -67,20 +66,13 @@ function parseArgs(argv) {
         args.days = Math.floor(parsed);
       }
       i += 1;
+      continue;
+    }
+    if (token === '--no-clear') {
+      args.clearExisting = false;
     }
   }
   return args;
-}
-
-async function resolveUserId(user, email) {
-  if (user) return user;
-  if (!email) {
-    throw new Error('Missing user selector. Pass --user <uid> or --email <email>');
-  }
-
-  const auth = getAuth();
-  const record = await auth.getUserByEmail(email);
-  return record.uid;
 }
 
 function randInt(min, max) {
@@ -230,23 +222,15 @@ function getUsageDayKeyForTimestamp(timestamp) {
   return dayKey(usageDate);
 }
 
-function ensureAdmin() {
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    throw new Error(
-      'GOOGLE_APPLICATION_CREDENTIALS is required. Point it to a Firebase service-account JSON file.'
-    );
-  }
-
-  if (getApps().length === 0) {
-    initializeApp({ credential: applicationDefault() });
-  }
-}
-
 async function main() {
-  const { user, email, days } = parseArgs(process.argv.slice(2));
+  const { user, email, days, clearExisting } = parseArgs(process.argv.slice(2));
 
   ensureAdmin();
   const userId = await resolveUserId(user, email);
+  if (clearExisting) {
+    await clearUsageHistoryForUser(userId);
+    console.log(`Cleared existing usage history for users/${userId} before seeding.`);
+  }
   const db = getFirestore();
   const userRef = db.collection('users').doc(userId);
   const snap = await userRef.get();
