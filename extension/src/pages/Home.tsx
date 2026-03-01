@@ -6,6 +6,7 @@ import Spinner from '../components/Spinner';
 
 interface HomeProps {
   user: User | null;
+  onOpenManageSubscription: () => void;
 }
 
 /**
@@ -13,9 +14,14 @@ interface HomeProps {
  * Child of Popup.tsx, renders inside the Account tab.
  * Also shows YouTube stop button when on YouTube.
  */
-const Home: React.FC<HomeProps> = () => {
+const Home: React.FC<HomeProps> = ({ onOpenManageSubscription }) => {
   const { user, loading: authLoading, handleSignIn, handleSignOut } = useAuth();
-  const { paymentStatus, isProcessing, handleUpgrade } = useStripe(user, authLoading);
+  const {
+    paymentStatus,
+    isProcessing,
+    subscription,
+    handleUpgrade,
+  } = useStripe(user, authLoading);
   const [isYouTube, setIsYouTube] = useState(false);
 
   // Detect if current tab is YouTube
@@ -69,7 +75,7 @@ const Home: React.FC<HomeProps> = () => {
     return (
       <div className="h-full w-full p-6 flex flex-col items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-4">Boilerplate Chrome Extension</h2>
+          <h2 className="text-xl font-bold mb-4">Intention Setter</h2>
           <button onClick={handleSignIn} className="purple-button">
             Sign In with Google
           </button>
@@ -96,8 +102,21 @@ const Home: React.FC<HomeProps> = () => {
           <div className="text-sm text-zinc-400 text-center">Checking payment status...</div>
         )}
         {paymentStatus === 'paid' && (
-          <div className="mx-auto inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
-            Premium Active
+          <div className="flex flex-col items-center gap-3">
+            <div className="mx-auto inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
+              Premium Active
+            </div>
+            {subscription?.cancelAtPeriodEnd && (
+              <p className="text-xs text-amber-300 text-center">
+                Subscription is set to cancel at period end.
+              </p>
+            )}
+            <button
+              onClick={onOpenManageSubscription}
+              className="w-full px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors"
+            >
+              Manage Subscription
+            </button>
           </div>
         )}
         {paymentStatus === 'unpaid' && (

@@ -5,6 +5,7 @@ import Rules from './Rules';
 import Groups from './Groups';
 import GroupEdit from './GroupEdit';
 import Settings from './Settings';
+import ManageSubscription from './ManageSubscription';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
@@ -28,6 +29,7 @@ const Popup: React.FC = () => {
   const [editingFromRules, setEditingFromRules] = useState(false);
   const [editingRuleIdBeforeGroupEdit, setEditingRuleIdBeforeGroupEdit] = useState<string | null>(null);
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(true);
+  const [isManageSubscriptionOpen, setIsManageSubscriptionOpen] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
 
   // Sync rules to chrome.storage on app initialization
@@ -50,6 +52,7 @@ const Popup: React.FC = () => {
       setEditingFromRules(false);
       setEditingRuleIdBeforeGroupEdit(null);
       setIsAIPanelCollapsed(true);
+      setIsManageSubscriptionOpen(false);
       aiPanelRef.current?.collapse();
     };
 
@@ -61,6 +64,17 @@ const Popup: React.FC = () => {
     return (
       <div className="h-screen w-full flex items-center justify-center">
         <Spinner />
+      </div>
+    );
+  }
+
+  if (isManageSubscriptionOpen) {
+    return (
+      <div className="h-screen w-full extension-gradient-bg">
+        <ManageSubscription
+          user={user}
+          onBack={() => setIsManageSubscriptionOpen(false)}
+        />
       </div>
     );
   }
@@ -124,7 +138,10 @@ const Popup: React.FC = () => {
             {/* Content */}
             <div className="extension-gradient-bg flex-1 overflow-y-auto">
               {currentTab === 'home' && (
-                <Home user={user} />
+                <Home
+                  user={user}
+                  onOpenManageSubscription={() => setIsManageSubscriptionOpen(true)}
+                />
               )}
               {currentTab === 'rules' && rulesView === 'rules' && (
                 <Rules

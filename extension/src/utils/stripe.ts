@@ -6,6 +6,8 @@ import {
   getDocs,
   addDoc,
   onSnapshot,
+  doc,
+  updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 // Firebase auth types imported on demand to avoid unused imports
@@ -24,6 +26,20 @@ const PREMIUM_PRICE_TYPE = import.meta.env.VITE_PREMIUM_PRICE_TYPE as string;
 const PREMIUM_ITEM_DESCRIPTION = import.meta.env.VITE_PREMIUM_ITEM_DESCRIPTION as string;
 const PREMIUM_SUCCESS_URL = `${FIREBASE_HOSTING_URL}/payment-success.html`;
 const PREMIUM_CANCEL_URL = `${FIREBASE_HOSTING_URL}/payment-cancel.html`;
+
+const CANCELLABLE_SUBSCRIPTION_STATUSES = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid'
+]);
+
+export interface StripeSubscription {
+  id: string;
+  status?: string;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd?: number;
+}
 
 /**
  * Ensures Firebase Auth context is properly set by using the stored access token
@@ -190,4 +206,62 @@ export async function createCheckoutSession(userId: string, userEmail: string): 
     console.error('Error creating checkout session:', error);
     throw error;
   }
+}
+
+/**
+ * Return the user's most relevant active subscription, if present.
+ */
+export async function getActiveSubscription(userId: string): Promise<StripeSubscription | null> {
+  await ensureFirebaseAuth(userId);
+
+  const subscriptionsRef = collection(db, 'customers', userId, 'subscriptions');
+  const snapshot = await getDocs(subscriptionsRef);
+
+  const subscriptions: StripeSubscription[] = snapshot.docs
+    .map((subscriptionDoc) => {
+      const data = subscriptionDoc.data();
+      return {
+        id: subscriptionDoc.id,
+        status: typeof data.status === 'string' ? data.status : undefined,
+        cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),
+        currentPeriodEnd:
+          typeof data.current_period_end === 'number' ? data.current_period_end : undefined
+      };
+    })
+    .filter((subscription) => {
+      if (!subscription.status) return false;
+      return CANCELLABLE_SUBSCRIPTION_STATUSES.has(subscription.status);
+    });
+
+  if (!subscriptions.length) {
+    return null;
+  }
+
+  subscriptions.sort((a, b) => (b.currentPeriodEnd ?? 0) - (a.currentPeriodEnd ?? 0));
+  return subscriptions[0];
+}
+
+/**
+ * Schedule subscription cancellation at period end for the active subscription.
+ */
+export async function cancelSubscriptionAtPeriodEnd(userId: string): Promise<StripeSubscription> {
+  const subscription = await getActiveSubscription(userId);
+
+  if (!subscription) {
+    throw new Error('No active subscription found');
+  }
+
+  if (subscription.cancelAtPeriodEnd) {
+    return subscription;
+  }
+
+  const subscriptionRef = doc(db, 'customers', userId, 'subscriptions', subscription.id);
+  await updateDoc(subscriptionRef, {
+    cancel_at_period_end: true
+  });
+
+  return {
+    ...subscription,
+    cancelAtPeriodEnd: true
+  };
 }
