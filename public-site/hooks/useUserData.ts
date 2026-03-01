@@ -6,7 +6,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   type DailyUsageHistory,
-  parseLegacyDailyUsageHistory
+  parseDailyUsageHistory
 } from '@/lib/dailyUsageHistory';
 
 export interface RuleTarget {
@@ -32,16 +32,9 @@ export interface Group {
   createdAt: string;
 }
 
-export interface SiteTimeData {
-  timeSpent: number; // in seconds
-  timeLimit: number; // in seconds
-  lastUpdated: number;
-}
-
 export interface UserData {
   rules: Rule[];
   groups: Group[];
-  timeTracking: Record<string, SiteTimeData>;
   dailyUsageHistory?: DailyUsageHistory;
   lastDailyResetTimestamp?: number;
 }
@@ -72,8 +65,7 @@ export function useUserData() {
           setUserData({
             rules: data.rules || [],
             groups: data.groups || [],
-            timeTracking: data.timeTracking || {},
-            dailyUsageHistory: parseLegacyDailyUsageHistory(data.dailyUsageHistory),
+            dailyUsageHistory: parseDailyUsageHistory(data.dailyUsageHistory),
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {
@@ -81,7 +73,6 @@ export function useUserData() {
           setUserData({
             rules: [],
             groups: [],
-            timeTracking: {},
           });
         }
         setLoading(false);

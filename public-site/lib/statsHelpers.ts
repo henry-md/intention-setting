@@ -2,10 +2,14 @@ import type {
   Group,
   Rule,
   RuleTarget,
-  SiteTimeData,
 } from '@/hooks/useUserData';
 import type { DailyUsageHistoryEntry } from '@/lib/dailyUsageHistory';
-import { DEFAULT_DAILY_RESET_TIME } from '@/lib/constants';
+
+interface SiteTimeData {
+  timeSpent: number;
+  timeLimit: number;
+  lastUpdated: number;
+}
 
 /**
  * Get the normalized hostname from a URL
@@ -246,20 +250,8 @@ export function buildRuleProgressStats(
  * Each point represents one day's total tracked seconds and optional per-site totals.
  */
 export function buildTotalTrackedUsageTimeline(
-  rules: Rule[],
-  groups: Group[],
-  timeTracking: Record<string, SiteTimeData>,
-  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {},
-  lastDailyResetTimestamp?: number
+  dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {}
 ): UsageTimelinePoint[] {
-  const getLocalDayKey = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const getDayBounds = (dayKey: string): { start: number; end: number } | null => {
     const parts = dayKey.split('-').map((part) => Number(part));
     if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
@@ -277,70 +269,12 @@ export function buildTotalTrackedUsageTimeline(
     return { start, end };
   };
 
-  const now = Date.now();
-  const parseResetTime = (resetTime: unknown): { resetHour: number; resetMinute: number } => {
-    const [fallbackHour, fallbackMinute] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
-    const fallback = { resetHour: fallbackHour, resetMinute: fallbackMinute };
-
-    if (typeof resetTime !== 'string') return fallback;
-
-    const [hourStr, minuteStr] = resetTime.split(':');
-    const resetHour = Number(hourStr);
-    const resetMinute = Number(minuteStr);
-
-    if (
-      Number.isNaN(resetHour) ||
-      Number.isNaN(resetMinute) ||
-      resetHour < 0 ||
-      resetHour > 23 ||
-      resetMinute < 0 ||
-      resetMinute > 59
-    ) {
-      return fallback;
-    }
-
-    return { resetHour, resetMinute };
-  };
-  const resetSchedule = parseResetTime(DEFAULT_DAILY_RESET_TIME);
-  const getUsageDayKeyForTimestamp = (timestamp: number): string => {
-    const usageDate = new Date(timestamp);
-    const resetBoundary = new Date(timestamp);
-    resetBoundary.setHours(resetSchedule.resetHour, resetSchedule.resetMinute, 0, 0);
-    if (usageDate < resetBoundary) {
-      usageDate.setDate(usageDate.getDate() - 1);
-    }
-    return getLocalDayKey(usageDate.getTime());
-  };
-
-  const boundaryDerivedTodayKey = getUsageDayKeyForTimestamp(now);
-  const resetDerivedDayKey =
-    Number.isFinite(Number(lastDailyResetTimestamp)) &&
-    Number(lastDailyResetTimestamp) > 0 &&
-    Number(lastDailyResetTimestamp) <= now
-      ? getLocalDayKey(Number(lastDailyResetTimestamp))
-      : null;
-  const todayKey =
-    resetDerivedDayKey && resetDerivedDayKey > boundaryDerivedTodayKey
-      ? resetDerivedDayKey
-      : boundaryDerivedTodayKey;
-
   const getChartTimestampForDay = (dayKey: string): number | null => {
     const bounds = getDayBounds(dayKey);
     if (!bounds) return null;
     // Timeline points are daily buckets (not time-of-day events), so anchor at local day start.
     return bounds.start;
   };
-
-  const trackedSiteKeys = new Set<string>();
-  for (const rule of rules) {
-    const urls = expandTargetsToUrls(rule.targets, groups);
-    for (const url of urls) {
-      trackedSiteKeys.add(getNormalizedHostname(url));
-    }
-  }
-  if (trackedSiteKeys.size === 0) {
-    Object.keys(timeTracking).forEach((siteKey) => trackedSiteKeys.add(siteKey));
-  }
 
   const sanitizeSiteTotals = (raw: unknown): Record<string, number> => {
     if (!raw || typeof raw !== 'object') return {};
@@ -354,9 +288,6 @@ export function buildTotalTrackedUsageTimeline(
 
   const historyPoints: UsageTimelinePoint[] = Object.entries(dailyUsageHistory)
     .map(([dayKey, entry]) => {
-      // Never render future calendar days, even if bad/old test data exists.
-      if (dayKey > todayKey) return null;
-
       const rawTotal = Number(entry?.totalTimeSpent ?? 0);
       const safeTimestamp = getChartTimestampForDay(dayKey);
       if (safeTimestamp == null || !Number.isFinite(rawTotal)) {
@@ -373,40 +304,7 @@ export function buildTotalTrackedUsageTimeline(
     .filter((point): point is UsageTimelinePoint => point !== null)
     .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 
-  const currentSiteTotals: Record<string, number> = {};
-  let currentTotal = 0;
-  trackedSiteKeys.forEach((siteKey) => {
-    const tracking = timeTracking[siteKey];
-    if (!tracking) return;
-    const currentSeconds = Math.max(0, Math.floor(Number(tracking.timeSpent) || 0));
-    if (currentSeconds > 0) {
-      currentSiteTotals[siteKey] = currentSeconds;
-      currentTotal += currentSeconds;
-    }
-  });
-
-  const todayTimestamp = getChartTimestampForDay(todayKey) ?? now;
-  const todayOnlyPoint: UsageTimelinePoint[] = [
-    {
-      dayKey: todayKey,
-      timestamp: todayTimestamp,
-      totalTimeSpent: Math.floor(currentTotal),
-      siteTotals: currentSiteTotals,
-    },
-  ];
-
-  const byDateKey = new Map<string, UsageTimelinePoint>();
-  historyPoints.forEach((point) => {
-    byDateKey.set(point.dayKey, point);
-  });
-
-  const existingTodayPoint = byDateKey.get(todayKey);
-  const shouldUseLiveTodayPoint = !existingTodayPoint || currentTotal > 0;
-  if (shouldUseLiveTodayPoint && todayOnlyPoint[0]) {
-    byDateKey.set(todayOnlyPoint[0].dayKey, todayOnlyPoint[0]);
-  }
-
-  return Array.from(byDateKey.values()).sort((a, b) => a.dayKey.localeCompare(b.dayKey));
+  return historyPoints;
 }
 
 /**

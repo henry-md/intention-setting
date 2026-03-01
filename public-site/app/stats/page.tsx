@@ -88,13 +88,7 @@ export default function StatsPage() {
   const isStatsLoading = !!user && loading;
   const shouldShowProfileImage = !!user?.photoURL && failedProfileImageUrl !== user.photoURL;
   const usageTimeline = userData
-    ? buildTotalTrackedUsageTimeline(
-        userData.rules,
-        userData.groups,
-        userData.timeTracking,
-        userData.dailyUsageHistory,
-        userData.lastDailyResetTimestamp
-      )
+    ? buildTotalTrackedUsageTimeline(userData.dailyUsageHistory)
     : [];
 
   return (

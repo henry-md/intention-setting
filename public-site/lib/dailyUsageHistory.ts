@@ -53,7 +53,7 @@ function normalizeHistoryEntry(raw: unknown): DailyUsageHistoryEntry | null {
   };
 }
 
-export function parseLegacyDailyUsageHistory(raw: unknown): DailyUsageHistory {
+export function parseDailyUsageHistory(raw: unknown): DailyUsageHistory {
   if (!raw || typeof raw !== 'object') {
     return {};
   }

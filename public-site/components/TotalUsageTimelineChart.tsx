@@ -596,8 +596,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                   className="text-zinc-300 dark:text-zinc-700"
                   strokeWidth="1"
                 />
-                {chart.yTicks.map((tick) => (
-                  <g key={`mobile-y-${tick.y}`}>
+                {chart.yTicks.map((tick, index) => (
+                  <g key={`mobile-y-${index}-${tick.value}`}>
                     <line
                       x1={padding.left}
                       x2={Math.max(padding.left, mobileViewportWidth - padding.right)}
@@ -681,8 +681,8 @@ export default function TotalUsageTimelineChart({ points }: TotalUsageTimelineCh
                 </>
               )}
 
-              {!isMobile && chart.yTicks.map((tick) => (
-                <g key={tick.y}>
+              {!isMobile && chart.yTicks.map((tick, index) => (
+                <g key={`desktop-y-${index}-${tick.value}`}>
                   <line
                     x1={padding.left}
                     x2={chartWidth - padding.right}

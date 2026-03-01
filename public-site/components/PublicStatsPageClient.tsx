@@ -7,7 +7,7 @@ import { usePublicUserData } from '@/hooks/useShareSettings';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
 import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
 import type { UserData } from '@/hooks/useUserData';
-import { parseLegacyDailyUsageHistory } from '@/lib/dailyUsageHistory';
+import { parseDailyUsageHistory } from '@/lib/dailyUsageHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { REQUIRE_SIGN_IN_TO_SPY } from '@/lib/constants';
 import Link from 'next/link';
@@ -57,8 +57,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
           setUserData({
             rules: data.rules || [],
             groups: data.groups || [],
-            timeTracking: data.timeTracking || {},
-            dailyUsageHistory: parseLegacyDailyUsageHistory(data.dailyUsageHistory),
+            dailyUsageHistory: parseDailyUsageHistory(data.dailyUsageHistory),
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {
@@ -192,13 +191,7 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
     );
   }
 
-  const usageTimeline = buildTotalTrackedUsageTimeline(
-    userData.rules,
-    userData.groups,
-    userData.timeTracking,
-    userData.dailyUsageHistory,
-    userData.lastDailyResetTimestamp
-  );
+  const usageTimeline = buildTotalTrackedUsageTimeline(userData.dailyUsageHistory);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-transparent">

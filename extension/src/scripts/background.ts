@@ -485,13 +485,7 @@ async function resetAllSiteTime(
       const storedUser = storageForProfile.user as { uid?: string; email?: string } | undefined;
       const safeEmail = storedUser?.uid === userId ? (storedUser.email || '') : '';
       const userDocRef = doc(db, 'users', userId);
-      const timeTrackingData: Record<string, SiteTimeData> = {};
-      for (const siteKey in resetSiteTimeData) {
-        timeTrackingData[siteKey] = resetSiteTimeData[siteKey];
-      }
-
       await setDoc(userDocRef, {
-        timeTracking: timeTrackingData,
         lastDailyResetTimestamp: now,
         email: safeEmail,
         dailyUsageHistory: {
@@ -552,13 +546,10 @@ async function syncToFirestore(): Promise<void> {
 
     // Write directly to Firestore
     const userDocRef = doc(db, 'users', user.uid);
-    console.log(`[Timer] Writing to Firestore: users/${user.uid}/timeTracking/${siteKey}`, siteTimeData[siteKey]);
+    console.log(`[Timer] Writing to Firestore dailyUsageHistory for users/${user.uid}: ${historyKey}`);
 
     await setDoc(userDocRef, {
       email: user.email || '',
-      timeTracking: {
-        [siteKey]: siteTimeData[siteKey]
-      },
       dailyUsageHistory: {
         [historyKey]: currentHistoryEntry
       }
