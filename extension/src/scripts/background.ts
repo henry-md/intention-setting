@@ -130,6 +130,7 @@ const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
 const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
 const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
+const CURRENT_USAGE_DAY_KEY_STORAGE_KEY = 'currentUsageDayKey';
 
 let lastUsageResetCheckAt = 0;
 
@@ -150,12 +151,21 @@ async function syncStoredUserEmailToFirestore(): Promise<void> {
 }
 
 async function clearAllUsageFromLocalStorage(appliedAt: number): Promise<void> {
+  const now = Date.now();
+  const resetSchedule = await getResetSchedule();
+  const currentUsageDayKey = getCurrentUsageDayKey(
+    now,
+    resetSchedule.resetHour,
+    resetSchedule.resetMinute
+  );
+
   await chrome.storage.local.set({
     siteTimeData: {},
     ruleUsageData: {},
     dailyUsageHistory: {},
-    lastResetTimestamp: Date.now(),
-    usageResetAppliedAt: appliedAt
+    lastResetTimestamp: now,
+    usageResetAppliedAt: appliedAt,
+    [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey
   });
 }
 
@@ -290,6 +300,85 @@ function collectTrackedSiteTotals(
   });
 
   return siteTotals;
+}
+
+function hasLocalUsageCounters(
+  siteTimeData: Record<string, SiteTimeData>,
+  ruleUsageData: RuleUsageData
+): boolean {
+  const hasSiteUsage = Object.values(siteTimeData).some((siteData) => {
+    const timeSpent = Math.max(0, Math.floor(Number(siteData?.timeSpent || 0)));
+    return timeSpent > 0;
+  });
+
+  if (hasSiteUsage) {
+    return true;
+  }
+
+  return Object.values(ruleUsageData).some((usageData) => {
+    const timeSpent = Math.max(0, Math.floor(Number(usageData?.timeSpent || 0)));
+    return timeSpent > 0;
+  });
+}
+
+function getPreviousBoundary(currentBoundary: number): number {
+  const previousBoundary = new Date(currentBoundary);
+  previousBoundary.setDate(previousBoundary.getDate() - 1);
+  return previousBoundary.getTime();
+}
+
+async function ensureCurrentUsageDayState(source: string, timestamp: number = Date.now()): Promise<void> {
+  const resetSchedule = await getResetSchedule();
+  const expectedUsageDayKey = getCurrentUsageDayKey(
+    timestamp,
+    resetSchedule.resetHour,
+    resetSchedule.resetMinute
+  );
+  const storage = await chrome.storage.local.get([
+    CURRENT_USAGE_DAY_KEY_STORAGE_KEY,
+    'user',
+    'siteTimeData',
+    'ruleUsageData'
+  ]);
+  const storedUsageDayKey = typeof storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] === 'string'
+    ? storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] as string
+    : '';
+
+  if (!storedUsageDayKey) {
+    await chrome.storage.local.set({
+      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: expectedUsageDayKey
+    });
+    return;
+  }
+
+  if (storedUsageDayKey === expectedUsageDayKey) {
+    return;
+  }
+
+  console.log(
+    `[DailyReset] Usage day guard triggered via ${source}: ${storedUsageDayKey} -> ${expectedUsageDayKey}`
+  );
+
+  const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+  const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
+  const hasUsage = hasLocalUsageCounters(siteTimeData, ruleUsageData);
+
+  if (hasUsage) {
+    const userId = storage.user?.uid || null;
+    const currentBoundary = getMostRecentResetBoundary(
+      timestamp,
+      resetSchedule.resetHour,
+      resetSchedule.resetMinute
+    );
+    await resetAllSiteTime(userId, currentBoundary, getPreviousBoundary(currentBoundary));
+    return;
+  }
+
+  await chrome.storage.local.set({
+    [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: expectedUsageDayKey,
+    lastResetTimestamp: timestamp
+  });
+  console.log(`[DailyReset] Advanced usage day key without reset via ${source}`);
 }
 
 async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
@@ -444,6 +533,12 @@ async function resetAllSiteTime(
     const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
     const compiledRules: CompiledRules = storage.compiledRules || {};
     const now = Date.now();
+    const resetSchedule = await getResetSchedule();
+    const currentUsageDayKey = getCurrentUsageDayKey(
+      now,
+      resetSchedule.resetHour,
+      resetSchedule.resetMinute
+    );
     const periodEnd = periodEndBoundary ?? now;
     const periodStart = periodStartBoundary ?? Math.max(periodEnd - (24 * 60 * 60 * 1000), 0);
     const historyKey = getHistoryDateKey(periodEnd);
@@ -473,8 +568,10 @@ async function resetAllSiteTime(
     await chrome.storage.local.set({
       siteTimeData: resetSiteTimeData,
       ruleUsageData: resetRuleUsageData,
-      lastResetTimestamp: now
+      lastResetTimestamp: now,
+      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey
     });
+    secondsCounter = 0;
 
     console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
     console.log(`[DailyReset] Stored snapshot ${historyKey}: ${historyEntry.totalTimeSpent}s across ${historyEntry.trackedSiteCount} sites`);
@@ -518,6 +615,12 @@ async function syncToFirestore(): Promise<void> {
   console.log(`[Timer] Syncing ${secondsCounter}s to Firestore for ${siteKey}`);
 
   try {
+    await ensureCurrentUsageDayState('sync-to-firestore');
+
+    if (!activeTimer || secondsCounter === 0) {
+      return;
+    }
+
     // Get user and time data
     const storage = await chrome.storage.local.get(['user', 'siteTimeData', 'compiledRules']);
     const user = storage.user;
@@ -841,6 +944,8 @@ async function startTimerForTab(
     console.log(`[Timer] Stopping existing timer - tabId: ${activeTimer.tabId}, site: ${activeTimer.siteKey}`);
     stopCurrentTimer();
   }
+
+  await ensureCurrentUsageDayState('start-timer');
 
   // Verify tab still exists and is active
   try {
