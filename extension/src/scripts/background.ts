@@ -69,8 +69,6 @@ interface DailyUsageHistoryEntry {
   capturedAt: number;
 }
 
-type DailyUsageHistory = Record<string, DailyUsageHistoryEntry>;
-
 function normalizeSiteTotals(siteTotals: Record<string, number>): Record<string, number> {
   const normalized: Record<string, number> = {};
 
@@ -130,7 +128,6 @@ let isDailyResetInProgress = false;
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
-const MAX_DAILY_HISTORY_ENTRIES = 730;
 const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
 const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
 
@@ -205,6 +202,22 @@ function getHistoryDateKey(periodEnd: number): string {
   return format(new Date(periodEnd - 1), 'yyyy-MM-dd');
 }
 
+function getCurrentUsageDayKey(
+  timestamp: number,
+  resetHour: number,
+  resetMinute: number
+): string {
+  const usageDate = new Date(timestamp);
+  const resetBoundary = new Date(timestamp);
+  resetBoundary.setHours(resetHour, resetMinute, 0, 0);
+
+  if (usageDate < resetBoundary) {
+    usageDate.setDate(usageDate.getDate() - 1);
+  }
+
+  return format(usageDate, 'yyyy-MM-dd');
+}
+
 function parseResetTime(resetTime: unknown): { resetHour: number; resetMinute: number } {
   const [fallbackHour, fallbackMinute] = DEFAULT_DAILY_RESET_TIME.split(':').map(Number);
   const fallback = { resetHour: fallbackHour, resetMinute: fallbackMinute };
@@ -261,30 +274,6 @@ function collectTrackedSiteTotals(
   });
 
   return siteTotals;
-}
-
-function appendHistoryEntry(
-  history: DailyUsageHistory,
-  historyKey: string,
-  entry: DailyUsageHistoryEntry
-): DailyUsageHistory {
-  const merged: DailyUsageHistory = {
-    ...history,
-    [historyKey]: entry
-  };
-
-  const sortedKeys = Object.keys(merged).sort();
-  if (sortedKeys.length <= MAX_DAILY_HISTORY_ENTRIES) {
-    return merged;
-  }
-
-  const keysToRemove = sortedKeys.slice(0, sortedKeys.length - MAX_DAILY_HISTORY_ENTRIES);
-  const trimmed: DailyUsageHistory = { ...merged };
-  keysToRemove.forEach((key) => {
-    delete trimmed[key];
-  });
-
-  return trimmed;
 }
 
 async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
@@ -434,18 +423,16 @@ async function resetAllSiteTime(
   console.log('[DailyReset] ✓✓✓ CROSSING RESET BOUNDARY - Resetting all site time to 0 ✓✓✓');
 
   try {
-    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData', 'compiledRules', 'dailyUsageHistory']);
+    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData', 'compiledRules']);
     const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
     const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
     const compiledRules: CompiledRules = storage.compiledRules || {};
-    const dailyUsageHistory: DailyUsageHistory = storage.dailyUsageHistory || {};
     const now = Date.now();
     const periodEnd = periodEndBoundary ?? now;
     const periodStart = periodStartBoundary ?? Math.max(periodEnd - (24 * 60 * 60 * 1000), 0);
     const historyKey = getHistoryDateKey(periodEnd);
     const rawSiteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
     const historyEntry = createDailyUsageHistoryEntry(rawSiteTotals, periodStart, periodEnd, now);
-    const nextDailyUsageHistory = appendHistoryEntry(dailyUsageHistory, historyKey, historyEntry);
 
     // Reset all time spent values to 0
     const resetSiteTimeData: Record<string, SiteTimeData> = {};
@@ -470,7 +457,6 @@ async function resetAllSiteTime(
     await chrome.storage.local.set({
       siteTimeData: resetSiteTimeData,
       ruleUsageData: resetRuleUsageData,
-      dailyUsageHistory: nextDailyUsageHistory,
       lastResetTimestamp: now
     });
 
@@ -485,15 +471,13 @@ async function resetAllSiteTime(
         timeTrackingData[siteKey] = resetSiteTimeData[siteKey];
       }
 
-      setDoc(userDocRef, {
+      await setDoc(userDocRef, {
         timeTracking: timeTrackingData,
         lastDailyResetTimestamp: now,
         dailyUsageHistory: {
           [historyKey]: historyEntry
         }
-      }, { merge: true }).catch((error) => {
-        console.error('[DailyReset] Error syncing reset to Firestore:', error);
-      });
+      }, { merge: true });
 
       console.log('[DailyReset] ✓ Reset synced to Firestore');
     }
@@ -521,14 +505,30 @@ async function syncToFirestore(): Promise<void> {
 
   try {
     // Get user and time data
-    const storage = await chrome.storage.local.get(['user', 'siteTimeData']);
+    const storage = await chrome.storage.local.get(['user', 'siteTimeData', 'compiledRules']);
     const user = storage.user;
     const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+    const compiledRules: CompiledRules = storage.compiledRules || {};
 
     if (!user?.uid || !siteTimeData[siteKey]) {
       console.log('[Timer] Cannot sync - no user or site data');
       return;
     }
+
+    const now = Date.now();
+    const resetSchedule = await getResetSchedule();
+    const currentBoundary = getMostRecentResetBoundary(
+      now,
+      resetSchedule.resetHour,
+      resetSchedule.resetMinute
+    );
+    const historyKey = getCurrentUsageDayKey(now, resetSchedule.resetHour, resetSchedule.resetMinute);
+    const currentHistoryEntry = createDailyUsageHistoryEntry(
+      collectTrackedSiteTotals(siteTimeData, compiledRules),
+      currentBoundary,
+      now,
+      now
+    );
 
     // Write directly to Firestore
     const userDocRef = doc(db, 'users', user.uid);
@@ -537,6 +537,9 @@ async function syncToFirestore(): Promise<void> {
     await setDoc(userDocRef, {
       timeTracking: {
         [siteKey]: siteTimeData[siteKey]
+      },
+      dailyUsageHistory: {
+        [historyKey]: currentHistoryEntry
       }
     }, { merge: true });
 

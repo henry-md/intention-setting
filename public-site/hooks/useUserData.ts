@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  type DailyUsageHistory,
+  parseLegacyDailyUsageHistory
+} from '@/lib/dailyUsageHistory';
 
 export interface RuleTarget {
   type: 'url' | 'group';
@@ -34,20 +38,11 @@ export interface SiteTimeData {
   lastUpdated: number;
 }
 
-export interface DailyUsageHistoryEntry {
-  totalTimeSpent: number;
-  trackedSiteCount?: number;
-  siteTotals?: Record<string, number>;
-  periodStart: number;
-  periodEnd: number;
-  capturedAt: number;
-}
-
 export interface UserData {
   rules: Rule[];
   groups: Group[];
   timeTracking: Record<string, SiteTimeData>;
-  dailyUsageHistory?: Record<string, DailyUsageHistoryEntry>;
+  dailyUsageHistory?: DailyUsageHistory;
   lastDailyResetTimestamp?: number;
 }
 
@@ -66,7 +61,6 @@ export function useUserData() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- start loading immediately for a new authenticated user
     setLoading(true);
 
-    // Set up real-time listener
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribe = onSnapshot(
       userDocRef,
@@ -74,11 +68,12 @@ export function useUserData() {
         if (docSnapshot.exists()) {
           setHasUserDocument(true);
           const data = docSnapshot.data();
+
           setUserData({
             rules: data.rules || [],
             groups: data.groups || [],
             timeTracking: data.timeTracking || {},
-            dailyUsageHistory: data.dailyUsageHistory || {},
+            dailyUsageHistory: parseLegacyDailyUsageHistory(data.dailyUsageHistory),
             lastDailyResetTimestamp: data.lastDailyResetTimestamp,
           });
         } else {

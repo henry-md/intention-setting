@@ -1,10 +1,10 @@
 import type {
-  DailyUsageHistoryEntry,
   Group,
   Rule,
   RuleTarget,
   SiteTimeData,
 } from '@/hooks/useUserData';
+import type { DailyUsageHistoryEntry } from '@/lib/dailyUsageHistory';
 import { DEFAULT_DAILY_RESET_TIME } from '@/lib/constants';
 
 /**
