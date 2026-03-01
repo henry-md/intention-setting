@@ -9,6 +9,41 @@ interface HomeProps {
   onOpenManageSubscription: () => void;
 }
 
+const isScriptableTabUrl = (url: string) => {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return false;
+  }
+
+  return !(
+    url.startsWith('https://chrome.google.com/webstore') ||
+    url.startsWith('https://chromewebstore.google.com')
+  );
+};
+
+const isYouTubeTabUrl = (url: string) => {
+  if (!isScriptableTabUrl(url)) {
+    return false;
+  }
+
+  return url.includes('youtube.com');
+};
+
+const formatUnknownError = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
 /**
  * Account tab - shows user authentication status, premium status, and account actions.
  * Child of Popup.tsx, renders inside the Account tab.
@@ -28,9 +63,7 @@ const Home: React.FC<HomeProps> = ({ onOpenManageSubscription }) => {
   useEffect(() => {
     const checkIfYouTube = async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.url) {
-        setIsYouTube(tab.url.includes('youtube.com'));
-      }
+      setIsYouTube(tab?.url ? isYouTubeTabUrl(tab.url) : false);
     };
     checkIfYouTube();
   }, []);
@@ -41,24 +74,35 @@ const Home: React.FC<HomeProps> = ({ onOpenManageSubscription }) => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       console.log('Current tab:', tab?.url, 'Tab ID:', tab?.id);
 
-      if (tab?.id) {
-        // Inject CSS from file
-        await chrome.scripting.insertCSS({
-          target: { tabId: tab.id },
-          files: ['/youtube/youtube.css']
-        });
-
-        // Inject JS from file
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['/youtube/youtube.js']
-        });
-      } else {
-        console.error('No tab ID found');
+      if (!tab?.id || !tab?.url) {
+        console.error('[YouTube] Could not find active tab ID and URL.');
+        return;
       }
+
+      if (!isScriptableTabUrl(tab.url)) {
+        console.warn('[YouTube] Active tab cannot be scripted by extensions.');
+        return;
+      }
+
+      if (!isYouTubeTabUrl(tab.url)) {
+        setIsYouTube(false);
+        console.warn('[YouTube] Stop-after-video is only available on YouTube tabs.');
+        return;
+      }
+
+      // Inject CSS from file
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ['/youtube/youtube.css']
+      });
+
+      // Inject JS from file
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['/youtube/youtube.js']
+      });
     } catch (error) {
-      console.error('Error injecting YouTube scripts:', error);
-      console.error('Error details:', error);
+      console.error('[YouTube] Failed to inject stop-after-video script:', formatUnknownError(error));
     }
   };
 
