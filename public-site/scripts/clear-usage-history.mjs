@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
 /*
-ex. usage:
+ex. usage from /public-site:
 GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run clear:usage-history -- --email hdeutsch13@gmail.com
 */
 

@@ -8,7 +8,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
 /*
-ex. usage:
+ex. usage from /public-site:
 GOOGLE_APPLICATION_CREDENTIALS="/Users/Henry/Developer/intention-setting/public-site/scripts/intention-setter-firebase-adminsdk-fbsvc-0449a100a5.json" npm run seed:usage-history -- --email hdeutsch13@gmail.com --days 120
 */
 
@@ -218,8 +218,16 @@ function getMostRecentResetBoundary(timestamp) {
   return todayReset.getTime();
 }
 
-function dayKeyForPeriodEnd(periodEndMs) {
-  return dayKey(new Date(periodEndMs - 1));
+function getUsageDayKeyForTimestamp(timestamp) {
+  const usageDate = new Date(timestamp);
+  const resetBoundary = new Date(timestamp);
+  resetBoundary.setHours(RESET_HOUR, RESET_MINUTE, 0, 0);
+
+  if (usageDate < resetBoundary) {
+    usageDate.setDate(usageDate.getDate() - 1);
+  }
+
+  return dayKey(usageDate);
 }
 
 function ensureAdmin() {
@@ -249,20 +257,22 @@ async function main() {
 
   const now = Date.now();
   const dailyUsageHistory = {};
-  const currentBoundary = getMostRecentResetBoundary(now);
   const oneDayMs = 24 * 60 * 60 * 1000;
 
   // Seed past days and include the current day.
   for (let offset = days; offset >= 0; offset -= 1) {
     const dayIndex = days - offset;
-    const periodStart = currentBoundary - (offset * oneDayMs);
-    const periodEnd = periodStart + oneDayMs;
+    const sampleTimestamp = now - (offset * oneDayMs);
+    const periodStart = getMostRecentResetBoundary(sampleTimestamp);
+    const nominalPeriodEnd = periodStart + oneDayMs;
+    const periodEnd = Math.min(nominalPeriodEnd, now);
+    const historyKey = getUsageDayKeyForTimestamp(sampleTimestamp);
 
     const minutes = generateDailyMinutes(dayIndex);
     const totalSeconds = Math.round(minutes * 60);
     const sites = pickRandomSites();
     const rawSiteTotals = buildSiteTotals(sites, totalSeconds);
-    dailyUsageHistory[dayKeyForPeriodEnd(periodEnd)] = createDailyUsageHistoryEntry(
+    dailyUsageHistory[historyKey] = createDailyUsageHistoryEntry(
       rawSiteTotals,
       periodStart,
       periodEnd,
