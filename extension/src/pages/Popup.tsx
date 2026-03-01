@@ -31,6 +31,15 @@ const Popup: React.FC = () => {
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(true);
   const [isManageSubscriptionOpen, setIsManageSubscriptionOpen] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
+  const hasInitializedDefaultTab = useRef(false);
+
+  // Choose default tab from auth state when popup loads/reloads.
+  useEffect(() => {
+    if (authLoading || hasInitializedDefaultTab.current) return;
+
+    setCurrentTab(user ? 'rules' : 'home');
+    hasInitializedDefaultTab.current = true;
+  }, [authLoading, user]);
 
   // Sync rules to chrome.storage on app initialization
   useEffect(() => {
