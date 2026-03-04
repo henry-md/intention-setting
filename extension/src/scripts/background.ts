@@ -383,25 +383,76 @@ async function ensureCurrentUsageDayState(source: string, timestamp: number = Da
 
 async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
   const redirectStorage = await chrome.storage.local.get(['redirectUrls']);
-  const redirectUrls: string[] = redirectStorage.redirectUrls || [];
+  const rawRedirectUrls = Array.isArray(redirectStorage.redirectUrls)
+    ? redirectStorage.redirectUrls
+    : [];
+  const normalizeRedirectUrl = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    try {
+      const parsed = new URL(trimmed);
+      if (
+        parsed.protocol === 'http:' ||
+        parsed.protocol === 'https:' ||
+        parsed.protocol === 'chrome-extension:'
+      ) {
+        return parsed.toString();
+      }
+      return null;
+    } catch {
+      try {
+        // Backward-compatible cleanup: tolerate values saved without a scheme.
+        return new URL(`https://${trimmed}`).toString();
+      } catch {
+        return null;
+      }
+    }
+  };
+  const redirectUrls = Array.from(
+    new Set(
+      rawRedirectUrls
+        .map((url) => normalizeRedirectUrl(url))
+        .filter((url): url is string => !!url)
+    )
+  );
+
+  if (redirectUrls.length !== rawRedirectUrls.length) {
+    await chrome.storage.local.set({ redirectUrls });
+  }
+
+  const fallbackRedirectUrl = 'https://cat-bounce.com/';
+  const fallbackMessage = '[Timer] No valid redirect URLs configured - using cat-bounce fallback';
 
   if (redirectUrls.length === 0) {
-    console.log('[Timer] No redirect URLs configured - limit exceeded but not redirecting');
-    return false;
+    console.log(fallbackMessage);
   }
 
-  const randomIndex = Math.floor(Math.random() * redirectUrls.length);
-  const redirectUrl = redirectUrls[randomIndex];
-  console.log(`[Timer] Redirecting to: ${redirectUrl}`);
+  const randomStartIndex = redirectUrls.length > 1
+    ? Math.floor(Math.random() * redirectUrls.length)
+    : 0;
+  const rotatedRedirectUrls = redirectUrls.length > 0
+    ? [
+        ...redirectUrls.slice(randomStartIndex),
+        ...redirectUrls.slice(0, randomStartIndex)
+      ]
+    : [];
+  const redirectCandidates = Array.from(new Set([...rotatedRedirectUrls, fallbackRedirectUrl]));
 
-  try {
-    await chrome.tabs.update(tabId, { url: redirectUrl });
-    console.log(`[Timer] ✓ Redirected tab ${tabId} to ${redirectUrl}`);
-    return true;
-  } catch (error) {
-    console.error('[Timer] Failed to redirect tab:', error);
-    return false;
+  for (const redirectUrl of redirectCandidates) {
+    console.log(`[Timer] Redirecting to: ${redirectUrl}`);
+    try {
+      await chrome.tabs.update(tabId, { url: redirectUrl });
+      console.log(`[Timer] ✓ Redirected tab ${tabId} to ${redirectUrl}`);
+      return true;
+    } catch (error) {
+      console.error(`[Timer] Failed to redirect tab to ${redirectUrl}:`, error);
+    }
   }
+
+  console.error('[Timer] Redirect attempts failed for all candidates');
+  return false;
 }
 
 async function showSoftLimitPopup(tabId: number, siteKey: string, exceededRule: ExceededRuleInfo): Promise<boolean> {
@@ -544,6 +595,7 @@ async function resetAllSiteTime(
     const historyKey = getHistoryDateKey(periodEnd);
     const rawSiteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
     const historyEntry = createDailyUsageHistoryEntry(rawSiteTotals, periodStart, periodEnd, now);
+    const currentDayZeroEntry = createDailyUsageHistoryEntry({}, periodEnd, periodEnd, now);
 
     // Reset all time spent values to 0
     const resetSiteTimeData: Record<string, SiteTimeData> = {};
@@ -586,7 +638,8 @@ async function resetAllSiteTime(
         lastDailyResetTimestamp: now,
         email: safeEmail,
         dailyUsageHistory: {
-          [historyKey]: historyEntry
+          [historyKey]: historyEntry,
+          [currentUsageDayKey]: currentDayZeroEntry
         }
       }, { merge: true });
 

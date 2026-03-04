@@ -373,6 +373,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
           <h4 className="text-sm font-medium text-zinc-200 mb-2">Redirect URLs</h4>
           <p className="text-xs text-zinc-400 mb-4">
             When you exceed your time limit, you'll be redirected to a random URL from this list.
+            If this list is empty, you'll be redirected to https://cat-bounce.com/.
             This applies to hard limits, soft limits (after all plus ones used), and session limits.
           </p>
         </div>
@@ -429,7 +430,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
 
         {redirectUrls.length === 0 && (
           <div className="text-xs text-zinc-500 italic">
-            No redirect URLs configured. Add at least one URL to enable redirects when time limits are exceeded.
+            No custom redirect URLs configured. Limits will still redirect to https://cat-bounce.com/.
           </div>
         )}
       </div>
