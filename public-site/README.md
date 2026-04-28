@@ -16,6 +16,18 @@ bun dev
 
 Open [http://localhost:4232](http://localhost:4232) with your browser to see the result.
 
+## Testing Onboarding States
+
+To preview the signed-in state for an account that has not synced extension data yet, run the
+site with:
+
+```bash
+NEXT_PUBLIC_FORCE_NO_SYNCED_DATA=true npm run dev
+```
+
+Then sign in and visit `/stats`. This only changes the web UI branch; it does not create,
+delete, or modify Firebase data. Remove the flag after testing.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

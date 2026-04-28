@@ -3,29 +3,24 @@
 import { useEffect, useState } from 'react';
 import SharingToggle from '@/components/SharingToggle';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserData } from '@/hooks/useUserData';
-import { buildTotalTrackedUsageTimeline } from '@/lib/statsHelpers';
+import {
+  buildTotalTrackedUsageTimeline,
+  hasSyncedExtensionData,
+} from '@/lib/statsHelpers';
 import Link from 'next/link';
 
 type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'intention-site-theme';
+const FORCE_NO_SYNCED_DATA =
+  process.env.NEXT_PUBLIC_FORCE_NO_SYNCED_DATA === 'true';
+const CHROME_EXTENSION_URL =
+  'https://chromewebstore.google.com/detail/intention-setting/fnemliooiheogciefhmbiknheoeflaal';
 
 export default function StatsPage() {
   const { user, loading: authLoading, signOut, signInWithGoogle } = useAuth();
   const { userData, hasUserDocument, loading, error } = useUserData();
-  const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
   const [isGodTabHidden, setIsGodTabHidden] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [failedProfileImageUrl, setFailedProfileImageUrl] = useState<string | null>(null);
@@ -87,6 +82,16 @@ export default function StatsPage() {
 
   const isStatsLoading = !!user && loading;
   const shouldShowProfileImage = !!user?.photoURL && failedProfileImageUrl !== user.photoURL;
+  const shouldShowNoSyncedData =
+    !!user &&
+    !authLoading &&
+    !isStatsLoading &&
+    !error &&
+    (
+      FORCE_NO_SYNCED_DATA ||
+      hasUserDocument === false ||
+      (hasUserDocument === true && userData !== null && !hasSyncedExtensionData(userData))
+    );
   const usageTimeline = userData
     ? buildTotalTrackedUsageTimeline(userData.dailyUsageHistory)
     : [];
@@ -362,41 +367,23 @@ export default function StatsPage() {
                 Error loading statistics: {error.message}
               </div>
             </div>
-          ) : hasUserDocument === false ? (
+          ) : shouldShowNoSyncedData ? (
             <div className="flex min-h-[55vh] items-center justify-center">
               <div className="w-full max-w-2xl rounded-xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <h2 className="mb-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   No Synced Data Yet
                 </h2>
                 <p className="mb-6 text-zinc-600 dark:text-zinc-400">
-                  Download the Chrome extension that sets limits and syncs data to this page{' '}
-                  <AlertDialog open={showPendingReviewModal} onOpenChange={setShowPendingReviewModal}>
-                    <AlertDialogTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-blue-600 underline transition-colors hover:text-blue-500 dark:text-blue-400"
-                      >
-                        here
-                      </button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Hod up..
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          The Chrome extension is currently pending review.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction>
-                          OK
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>.
+                  Install the Chrome extension to set limits and sync usage data to this page.
                 </p>
+                <a
+                  href={CHROME_EXTENSION_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  Install Chrome Extension
+                </a>
               </div>
             </div>
           ) : !userData ? (

@@ -2,6 +2,7 @@ import type {
   Group,
   Rule,
   RuleTarget,
+  UserData,
 } from '@/hooks/useUserData';
 import type { DailyUsageHistoryEntry } from '@/lib/dailyUsageHistory';
 
@@ -152,6 +153,24 @@ export interface UsageTimelinePoint {
   timestamp: number;
   totalTimeSpent: number;
   siteTotals: Record<string, number>;
+}
+
+export function hasSyncedExtensionData(userData: UserData | null): boolean {
+  if (!userData) return false;
+
+  if (userData.rules.length > 0 || userData.groups.length > 0) {
+    return true;
+  }
+
+  if (typeof userData.lastDailyResetTimestamp === 'number') {
+    return true;
+  }
+
+  return Object.values(userData.dailyUsageHistory || {}).some((entry) => (
+    entry.totalTimeSpent > 0 ||
+    (entry.trackedSiteCount || 0) > 0 ||
+    Object.keys(entry.siteTotals || {}).length > 0
+  ));
 }
 
 function getMostRecentHistoryEntry(
