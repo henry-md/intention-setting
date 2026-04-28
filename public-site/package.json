@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:usage-history": "node ./scripts/seed-usage-history.mjs",
-    "clear:usage-history": "node ./scripts/clear-usage-history.mjs"
+    "clear:usage-history": "node ./scripts/clear-usage-history.mjs",
+    "truncate:usage-site-totals": "node ./scripts/truncate-usage-history-site-totals.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
