@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDocFromServer } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePublicUserData } from '@/hooks/useShareSettings';
 import TotalUsageTimelineChart from '@/components/TotalUsageTimelineChart';
@@ -16,15 +16,25 @@ interface PublicStatsPageClientProps {
   shareId: string;
 }
 
+interface PublicUserDataState {
+  userId: string;
+  userData: UserData | null;
+  error: Error | null;
+}
+
 export default function PublicStatsPageClient({ shareId }: PublicStatsPageClientProps) {
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
   const { userId, loading: userIdLoading, error: userIdError } = usePublicUserData(shareId);
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [publicUserDataState, setPublicUserDataState] =
+    useState<PublicUserDataState | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
 
   const shouldRequireSignInToView = REQUIRE_SIGN_IN_TO_SPY;
+  const currentPublicUserDataState =
+    publicUserDataState?.userId === userId ? publicUserDataState : null;
+  const userData = currentPublicUserDataState?.userData ?? null;
+  const error = currentPublicUserDataState?.error ?? null;
+  const loading = !!userId && !currentPublicUserDataState;
 
   const handleSignIn = async () => {
     try {
@@ -42,42 +52,51 @@ export default function PublicStatsPageClient({ shareId }: PublicStatsPageClient
     }
 
     if (!userId) {
-      setUserData(null);
-      setError(null);
-      setLoading(userIdLoading);
       return;
     }
 
-    const fetchUserData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        setUserData(null);
-        const userDocRef = doc(db, 'users', userId);
-        const userDoc = await getDocFromServer(userDocRef);
+    const userDocRef = doc(db, 'users', userId);
+    const unsubscribe = onSnapshot(
+      userDocRef,
+      { includeMetadataChanges: true },
+      (userDoc) => {
+        if (userDoc.metadata.fromCache) {
+          return;
+        }
 
         if (userDoc.exists()) {
           const data = userDoc.data();
 
-          setUserData({
-            rules: data.rules || [],
-            groups: data.groups || [],
-            dailyUsageHistory: parseDailyUsageHistory(data.dailyUsageHistory),
-            lastDailyResetTimestamp: data.lastDailyResetTimestamp,
+          setPublicUserDataState({
+            userId,
+            userData: {
+              rules: data.rules || [],
+              groups: data.groups || [],
+              dailyUsageHistory: parseDailyUsageHistory(data.dailyUsageHistory),
+              lastDailyResetTimestamp: data.lastDailyResetTimestamp,
+            },
+            error: null,
           });
         } else {
-          setError(new Error('User data not found'));
+          setPublicUserDataState({
+            userId,
+            userData: null,
+            error: new Error('User data not found'),
+          });
         }
-      } catch (err) {
+      },
+      (err) => {
         console.error('Error fetching user data:', err);
-        setError(err as Error);
-      } finally {
-        setLoading(false);
+        setPublicUserDataState({
+          userId,
+          userData: null,
+          error: err as Error,
+        });
       }
-    };
+    );
 
-    fetchUserData();
-  }, [authLoading, shouldRequireSignInToView, user, userId, userIdLoading]);
+    return () => unsubscribe();
+  }, [authLoading, shouldRequireSignInToView, user, userId]);
 
   if (shouldRequireSignInToView && authLoading) {
     return (
