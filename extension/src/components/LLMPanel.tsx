@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, Loader2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import OpenAI from 'openai';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import type { Rule, RuleTarget } from '../types/Rule';
+import type {
+  AssistantChatCompletionMessage,
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionToolMessageParam,
+} from '../types/openaiChat';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatUrlForDisplay } from '../utils/urlDisplay';
@@ -14,9 +20,23 @@ interface Message {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   toolName?: string;
-  toolArgs?: any;
+  toolArgs?: unknown;
   // Store the actual OpenAI message format for proper conversation history
-  openAiMessage?: OpenAI.Chat.Completions.ChatCompletionMessageParam;
+  openAiMessage?: ChatCompletionMessageParam;
+}
+
+interface PersistedMessage {
+  role?: Message['role'];
+  content?: string;
+  toolName?: string;
+  toolArgs?: unknown;
+  openAiMessage?: ChatCompletionMessageParam;
+}
+
+interface ToolCallDisplay {
+  name: string;
+  args: unknown;
+  result: string;
 }
 
 interface LLMPanelProps {
@@ -25,7 +45,7 @@ interface LLMPanelProps {
 }
 
 // Define OpenAI function tools
-const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+const tools: ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
@@ -238,8 +258,6 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
   // Load conversation history on mount
   useEffect(() => {
     const loadConversationHistory = async () => {
@@ -254,13 +272,19 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
           const savedMessages = data.conversationHistory || [];
 
           // Parse the saved messages (they're stored as plain objects)
-          const parsedMessages: Message[] = savedMessages.map((msg: any) => ({
-            role: msg.role,
-            content: msg.content,
-            toolName: msg.toolName,
-            toolArgs: msg.toolArgs,
-            openAiMessage: msg.openAiMessage
-          }));
+          const parsedMessages: Message[] = (savedMessages as PersistedMessage[]).flatMap(msg => {
+            if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'tool') {
+              return [];
+            }
+
+            return [{
+              role: msg.role,
+              content: typeof msg.content === 'string' ? msg.content : '',
+              toolName: typeof msg.toolName === 'string' ? msg.toolName : undefined,
+              toolArgs: msg.toolArgs,
+              openAiMessage: msg.openAiMessage,
+            }];
+          });
 
           setMessages(parsedMessages);
         }
@@ -280,7 +304,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       try {
         // Clean messages: remove undefined fields before saving to Firestore
         const cleanedMessages = messages.map(msg => {
-          const cleaned: any = {
+          const cleaned: Pick<Message, 'role' | 'content'> & Partial<Message> = {
             role: msg.role,
             content: msg.content || ''
           };
@@ -313,10 +337,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     const result: Array<{
       role: 'user' | 'assistant';
       content: string;
-      toolCalls?: Array<{ name: string; args: any; result: string }>;
+      toolCalls?: ToolCallDisplay[];
     }> = [];
 
-    let pendingToolCalls: Array<{ name: string; args: any; result: string }> = [];
+    let pendingToolCalls: ToolCallDisplay[] = [];
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
@@ -912,8 +936,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    if (!apiKey || apiKey === 'sk-your-api-key') {
-      setError('OpenAI API key not configured. Please set VITE_OPENAI_API_KEY in your .env file.');
+    if (!user?.uid) {
+      setError('Please sign in to use the AI assistant.');
       return;
     }
 
@@ -930,14 +954,9 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     setError(null);
 
     // Declare conversationMessages outside try block so it's accessible for error debugging
-    let conversationMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    let conversationMessages: ChatCompletionMessageParam[] = [];
 
     try {
-      const openai = new OpenAI({
-        apiKey: apiKey,
-        dangerouslyAllowBrowser: true // Note: In production, API calls should go through a backend
-      });
-
       conversationMessages = [
         {
           role: 'system',
@@ -977,14 +996,19 @@ IMPORTANT GUIDELINES:
         { role: 'user', content: userMessageContent }
       ];
 
-      // First API call - may return tool calls
-      const initialResponse = await openai.chat.completions.create({
+      const requestCompletion = async (
+        requestMessages: ChatCompletionMessageParam[],
+        includeTools: boolean
+      ) => createOpenAIChatCompletion(user.uid, {
         model: 'gpt-4',
-        messages: conversationMessages,
-        tools: tools,
-        tool_choice: 'auto',
+        messages: requestMessages,
+        tools: includeTools ? tools : undefined,
+        tool_choice: includeTools ? 'auto' : undefined,
         temperature: 0.7,
       });
+
+      // First API call - may return tool calls
+      const initialResponse = await requestCompletion(conversationMessages, true);
 
       const responseMessage = initialResponse.choices[0]?.message;
 
@@ -993,7 +1017,7 @@ IMPORTANT GUIDELINES:
       }
 
       // Loop to handle multiple rounds of tool calls (for chain-of-thought)
-      let currentResponse = responseMessage;
+      let currentResponse: AssistantChatCompletionMessage = responseMessage;
       const maxRounds = 10; // Prevent infinite loops
       let round = 0;
 
@@ -1099,7 +1123,7 @@ IMPORTANT GUIDELINES:
           }
 
           // Add tool result to conversation (for OpenAI API)
-          const toolResultMessage: OpenAI.Chat.Completions.ChatCompletionToolMessageParam = {
+          const toolResultMessage: ChatCompletionToolMessageParam = {
             role: 'tool',
             tool_call_id: toolCall.id,
             content: toolResult
@@ -1116,13 +1140,7 @@ IMPORTANT GUIDELINES:
         }
 
         // Make another API call to check if more tools are needed
-        const nextResponse = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: conversationMessages,
-          tools: tools,
-          tool_choice: 'auto',
-          temperature: 0.7,
-        });
+        const nextResponse = await requestCompletion(conversationMessages, true);
 
         currentResponse = nextResponse.choices[0]?.message;
 
@@ -1149,61 +1167,21 @@ IMPORTANT GUIDELINES:
         };
         setMessages(prev => [...prev, assistantMessage]);
       } else {
-        // Need to stream from the last conversation state
         conversationMessages.push(currentResponse);
-
-        const stream = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: conversationMessages,
-          temperature: 0.7,
-          stream: true
-        });
-
-        let fullContent = '';
-
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          fullContent += content;
-          setStreamingContent(fullContent);
-        }
-
+        const finalResponse = await requestCompletion(conversationMessages, false);
+        const finalResponseMessage = finalResponse.choices[0]?.message;
+        const finalContent = finalResponseMessage?.content || 'Done.';
         const assistantMessage: Message = {
           role: 'assistant',
-          content: fullContent || 'Done.',
-          openAiMessage: { role: 'assistant', content: fullContent || 'Done.' }
-        };
-
-        setMessages(prev => [...prev, assistantMessage]);
-        setStreamingContent('');
-      }
-
-      if (false) {
-        // No tool calls, stream the response directly
-        const stream = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: conversationMessages,
-          temperature: 0.7,
-          stream: true
-        });
-
-        let fullContent = '';
-
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          fullContent += content;
-          setStreamingContent(fullContent);
-        }
-
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: fullContent || 'No response received.'
+          content: finalContent,
+          openAiMessage: finalResponseMessage || { role: 'assistant', content: finalContent }
         };
 
         setMessages(prev => [...prev, assistantMessage]);
         setStreamingContent('');
       }
     } catch (err) {
-      console.error('OpenAI API error:', err);
+      console.error('OpenAI proxy error:', err);
 
       let userFriendlyMessage = 'An unexpected error occurred. Please try again.';
 
@@ -1219,8 +1197,10 @@ IMPORTANT GUIDELINES:
           console.error('Messages with openAiMessage field:', messages.filter(m => m.openAiMessage).map(m => m.openAiMessage));
           console.error('conversationMessages sent to API:', conversationMessages);
           console.error('=== END DEBUG ===');
-        } else if (errorMsg.includes('api key') || errorMsg.includes('unauthorized') || errorMsg.includes('401')) {
-          userFriendlyMessage = 'API key is invalid or missing. Please check your .env configuration.';
+        } else if (errorMsg.includes('authentication expired') || errorMsg.includes('unauthorized') || errorMsg.includes('401')) {
+          userFriendlyMessage = 'Your session expired. Please sign out and sign back in.';
+        } else if (errorMsg.includes('proxy is not configured')) {
+          userFriendlyMessage = 'The AI backend is not configured yet. Add the OPENAI_API_KEY Firebase secret and redeploy the web project.';
         } else if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
           userFriendlyMessage = 'API rate limit exceeded. Please wait a moment and try again.';
         } else if (errorMsg.includes('quota') || errorMsg.includes('billing')) {
@@ -1268,7 +1248,7 @@ IMPORTANT GUIDELINES:
 
   // Collapsible tool call component
   const ToolCallsDisplay: React.FC<{
-    toolCalls: Array<{ name: string; args: any; result: string }>;
+    toolCalls: ToolCallDisplay[];
   }> = ({ toolCalls }) => {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -1299,7 +1279,7 @@ IMPORTANT GUIDELINES:
                   <span className="text-purple-400 text-xs font-semibold">🔧</span>
                   <span className="text-purple-300 text-xs font-medium">{tool.name}</span>
                 </div>
-                {tool.args && (
+                {tool.args !== undefined && (
                   <div className="text-xs text-zinc-400 mb-1.5 font-mono bg-zinc-900 rounded px-1.5 py-1 overflow-x-auto">
                     {JSON.stringify(tool.args, null, 2)}
                   </div>

@@ -30,7 +30,8 @@
     "https://*.googleapis.com/*",
     "https://*.gstatic.com/*",
     "https://*.youtube.com/*",
-    "https://*.openai.com/*"
+    "https://*.cloudfunctions.net/*",
+    "https://*.run.app/*"
   ],
   "background": {
     "service_worker": "src/scripts/background.ts",
@@ -57,7 +58,7 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:24678 http://localhost:* https://*.firebaseapp.com https://*.googleapis.com https://*.gstatic.com https://*.openai.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:24678 http://localhost:* https://*.firebaseapp.com https://*.googleapis.com https://*.gstatic.com https://*.cloudfunctions.net https://*.run.app;"
   },
   "key": "-----BEGIN PUBLIC KEY-----\nfnemliooiheogciefhmbiknheoeflaal\n-----END PUBLIC KEY-----"
 }
