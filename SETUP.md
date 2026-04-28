@@ -43,6 +43,19 @@ https://henry-md.github.io/hosting/sites/tutorial-firebase-chrome-extension-oaut
 
 https://www.youtube.com/watch?v=n09p8Y7XfNI
 
+### Secure the AI key
+
+- Do not add the OpenAI key to `extension/.env` or any `VITE_` variable. Vite will expose those to the built client bundle.
+- Set the key as a Firebase Functions secret instead:
+
+```
+cd web
+firebase functions:secrets:set OPENAI_API_KEY
+firebase deploy
+```
+
+- The extension now calls `openaiChatCompletion` in Firebase Functions, so the OpenAI key stays server-side.
+
 ### Other
 
 - Added .gitignore files in /extension/, and root of project (.gitignore is configured by default with firebase in /web)
