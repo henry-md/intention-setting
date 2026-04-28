@@ -7,98 +7,89 @@ export default function PrivacyPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Privacy Policy</h1>
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Last updated: February 23, 2026
+            Last updated: April 28, 2026
           </p>
         </div>
 
         <div className="space-y-6 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+          <p>
+            {
+              "This page needs a privacy policy to be uploaded to the chrome web store. We're not doing anything crazy tho so here's a privacy policy:"
+            }
+          </p>
+
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Overview
+              What We Collect
             </h2>
             <p>
-              Intention Setter helps you track time usage and manage limits. This policy describes
-              what information we may collect, how we may use it, and the choices you have.
+              Intention Setting collects only what it needs to run the extension and related web
+              app: your Google sign-in profile, authentication data, settings, rules, groups,
+              intentions, AI chat history, payment/subscription status, public sharing settings, and
+              time totals for sites you choose to track. The extension reads the active site URL to
+              match your rules, but it does not store a complete browsing history.
             </p>
           </section>
 
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Information We May Collect
+              How We Use It
             </h2>
             <p>
-              Depending on features you use, we may collect account details (such as your email and
-              profile image), app settings, usage metrics, rule configurations, group/site
-              mappings, and public sharing preferences. We may also collect basic technical
-              information needed to run and protect the service.
+              We use this data to provide time limits, usage stats, account sync, public sharing,
+              payments, support, security, and the AI assistant. We do not sell your data or use it
+              for advertising.
             </p>
           </section>
 
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              How We May Use Information
+              Who We Share It With
             </h2>
             <p>
-              We may use information to operate and improve the product, personalize your
-              experience, provide support, monitor reliability, prevent abuse, develop new
-              features, and communicate updates. We may also use data for internal analysis and
-              legal compliance.
+              We share data only with service providers needed to run the product: Google/Firebase
+              for sign-in, hosting, database, and cloud functions; OpenAI when you use the AI
+              assistant; and Stripe when you use paid features. If you enable public sharing, your
+              shared stats, rules, groups, and tracked-site totals may be visible to anyone with the
+              link. We may also disclose data if required by law or needed for security.
             </p>
           </section>
 
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Sharing and Disclosure
+              Storage and Choices
             </h2>
             <p>
-              We will not sell your data ever. Your site usage data will remain private to you, other 
-              than the bits you choose to share publicly. We may share information with trusted service
-              providers that help us operate the service (such as hosting, analytics, and payment
-              providers). We may also disclose information when required by law, to enforce our
-              terms, to protect safety, or as part of a business transfer. If you enable public
-              sharing features, information you choose to share may be visible to anyone with the
-              link.
+              Data is stored in Chrome local storage and Firebase/Firestore and is transmitted over
+              HTTPS. You can sign out, change rules and settings, disable public sharing, clear/reset
+              usage data where available, or contact us to request deletion. We keep data while it is
+              needed to provide the product or meet legal/security requirements.
             </p>
           </section>
 
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Data Retention
+              Chrome Web Store Limited Use
             </h2>
             <p>
-              We keep information for as long as reasonably needed to provide the service and meet
-              legal obligations. Retention periods can vary based on the type of data.
+              The use of information received from Google APIs will adhere to the Chrome Web Store
+              User Data Policy, including the Limited Use requirements.
             </p>
           </section>
 
           <section>
             <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Your Choices
+              Contact
             </h2>
             <p>
-              You can sign out, change settings, and disable public sharing. If you want account or
-              data-related help, contact us and we will review requests case-by-case, subject to
-              technical, legal, and operational constraints.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Security
-            </h2>
-            <p>
-              We use reasonable safeguards designed to protect information, but no system is
-              perfectly secure and we cannot guarantee absolute security.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Policy Changes
-            </h2>
-            <p>
-              We may update this policy from time to time. Continued use of the service after an
-              update means you accept the revised policy.
+              Questions or deletion requests can be sent to{' '}
+              <a
+                href="mailto:henrymdeutsch@gmail.com"
+                className="text-blue-600 hover:text-blue-500 dark:text-blue-400"
+              >
+                henrymdeutsch@gmail.com
+              </a>
+              .
             </p>
           </section>
         </div>
