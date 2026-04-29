@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
 import { COMPANION_WEB_APP_URL, TUTORIAL_EXACT_PROMPT } from '../constants';
 
@@ -74,6 +74,20 @@ const measureTarget = (selector: string | null): SpotlightRect => {
   const top = clamp(targetRect.top - padding, 8, Math.max(8, window.innerHeight - 24));
   const right = clamp(targetRect.right + padding, left + 24, window.innerWidth - 8);
   const bottom = clamp(targetRect.bottom + padding, top + 24, window.innerHeight - 8);
+
+  return {
+    top,
+    left,
+    width: right - left,
+    height: bottom - top,
+  };
+};
+
+const expandRect = (rect: SpotlightRect, padding: number): SpotlightRect => {
+  const left = Math.max(8, rect.left - padding);
+  const top = Math.max(8, rect.top - padding);
+  const right = Math.min(window.innerWidth - 8, rect.left + rect.width + padding);
+  const bottom = Math.min(window.innerHeight - 8, rect.top + rect.height + padding);
 
   return {
     top,
@@ -184,10 +198,14 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   onFinish,
 }) => {
   const selector = TARGET_SELECTORS[step];
+  const hasTargetSpotlight = selector !== null;
+  const cardRef = useRef<HTMLElement>(null);
   const [rect, setRect] = useState<SpotlightRect>(() => measureTarget(selector));
+  const [cardRect, setCardRect] = useState<SpotlightRect | null>(null);
   const copy = stepCopy(step, promptMismatch);
   const cardPosition = useMemo(() => getCardPosition(rect, step), [rect, step]);
   const stepIndex = STEP_INDEX[step];
+  const cardBacklightRect = cardRect ? expandRect(cardRect, 16) : null;
 
   useLayoutEffect(() => {
     const updateRect = () => setRect(measureTarget(selector));
@@ -204,35 +222,76 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
     };
   }, [selector, step]);
 
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const updateCardRect = () => {
+      const nextRect = card.getBoundingClientRect();
+      setCardRect({
+        top: nextRect.top,
+        left: nextRect.left,
+        width: nextRect.width,
+        height: nextRect.height,
+      });
+    };
+
+    updateCardRect();
+    const animationFrame = window.requestAnimationFrame(updateCardRect);
+    const resizeObserver = new ResizeObserver(updateCardRect);
+    resizeObserver.observe(card);
+    window.addEventListener('resize', updateCardRect);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateCardRect);
+    };
+  }, [cardPosition, step]);
+
   return (
     <div aria-live="polite" className="pointer-events-none fixed inset-0 z-[80]">
-      <div
-        className="fixed left-0 right-0 top-0 bg-black/35"
-        style={{ height: rect.top }}
-      />
-      <div
-        className="fixed left-0 right-0 bg-black/35"
-        style={{ top: rect.top + rect.height, bottom: 0 }}
-      />
-      <div
-        className="fixed left-0 bg-black/35"
-        style={{ top: rect.top, width: rect.left, height: rect.height }}
-      />
-      <div
-        className="fixed right-0 bg-black/35"
-        style={{
-          top: rect.top,
-          left: rect.left + rect.width,
-          height: rect.height,
-        }}
-      />
+      {hasTargetSpotlight ? (
+        <>
+          <div
+            className="fixed left-0 right-0 top-0 bg-black/35"
+            style={{ height: rect.top }}
+          />
+          <div
+            className="fixed left-0 right-0 bg-black/35"
+            style={{ top: rect.top + rect.height, bottom: 0 }}
+          />
+          <div
+            className="fixed left-0 bg-black/35"
+            style={{ top: rect.top, width: rect.left, height: rect.height }}
+          />
+          <div
+            className="fixed right-0 bg-black/35"
+            style={{
+              top: rect.top,
+              left: rect.left + rect.width,
+              height: rect.height,
+            }}
+          />
 
-      <div
-        className="fixed z-[81] rounded-[10px] border border-emerald-300/70 shadow-[0_0_0_1px_rgba(16,185,129,0.22),0_0_34px_rgba(16,185,129,0.24)]"
-        style={rect}
-      />
+          <div
+            className="fixed z-[81] rounded-[10px] border border-emerald-300/70 shadow-[0_0_0_1px_rgba(16,185,129,0.22),0_0_34px_rgba(16,185,129,0.24)]"
+            style={rect}
+          />
+        </>
+      ) : (
+        <div className="fixed inset-0 bg-black/35" />
+      )}
+
+      {!hasTargetSpotlight && cardBacklightRect && (
+        <div
+          className="fixed z-[81] rounded-[24px] border border-emerald-300/55 bg-emerald-300/[0.03] shadow-[0_0_0_1px_rgba(16,185,129,0.18),0_0_44px_rgba(16,185,129,0.26),0_0_96px_rgba(16,185,129,0.12)]"
+          style={cardBacklightRect}
+        />
+      )}
 
       <section
+        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label={copy.title}
