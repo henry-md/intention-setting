@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "zip": "cd build && zip -r ../extension.zip . -x '*.map'"
+    "zip": "pnpm build && rm -f extension.zip && cd build && zip -r ../extension.zip . -x '*.map' '*.DS_Store' '__MACOSX/*' '.vite/*' '.vite/'"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -22,7 +22,10 @@
     "openai": "^6.15.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^2.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
