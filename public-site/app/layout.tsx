@@ -16,6 +16,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Intention Setter",
   description: "Set your intentions and stay focused",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "256x256" },
+    ],
+    apple: [{ url: "/icon.png", type: "image/png", sizes: "256x256" }],
+  },
 };
 
 export default function RootLayout({
