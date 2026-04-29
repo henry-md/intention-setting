@@ -29,7 +29,9 @@ interface RuleFormProps {
   ) => Promise<void>;
   onCancel: () => void;
   onEditGroup?: (groupId: string) => void;
-  onTutorialHardSelected?: () => void;
+  onTutorialSoftSelected?: () => void;
+  onTutorialPlusOneCountConfigured?: () => void;
+  onTutorialPlusOneDurationConfigured?: () => void;
   onTutorialRuleSaved?: () => void;
 }
 
@@ -50,7 +52,9 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   onSave,
   onCancel,
   onEditGroup,
-  onTutorialHardSelected,
+  onTutorialSoftSelected,
+  onTutorialPlusOneCountConfigured,
+  onTutorialPlusOneDurationConfigured,
   onTutorialRuleSaved,
 }) => {
   const [ruleName, setRuleName] = useState(initialName);
@@ -73,6 +77,18 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   const ruleNameInputRef = useRef<HTMLInputElement>(null);
 
   const isEditMode = !!ruleId;
+
+  const maybeNotifyTutorialPlusOneCount = (value: string) => {
+    if (Number(value) === 5) {
+      onTutorialPlusOneCountConfigured?.();
+    }
+  };
+
+  const maybeNotifyTutorialPlusOneDuration = (minutesValue: string, secondsValue: string) => {
+    if (Number(minutesValue) === 1 && Number(secondsValue) === 0) {
+      onTutorialPlusOneDurationConfigured?.();
+    }
+  };
 
   // Update state when ruleId changes (switching to a different rule in edit mode)
   useEffect(() => {
@@ -250,11 +266,15 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       }
 
       plusOnesNum = parseInt(plusOnes);
+      if (isNaN(plusOnesNum) || plusOnesNum < 0) {
+        setFormError('Please enter a valid number of extensions');
+        return;
+      }
     }
 
     await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
 
-    if (isEditMode && ruleType === 'hard') {
+    if (isEditMode && ruleType === 'soft') {
       onTutorialRuleSaved?.();
     }
   };
@@ -480,7 +500,6 @@ export const RuleForm: React.FC<RuleFormProps> = ({
           <button
             onClick={() => {
               setRuleType('hard');
-              onTutorialHardSelected?.();
             }}
             data-tutorial-target="hard-rule-button"
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
@@ -492,7 +511,11 @@ export const RuleForm: React.FC<RuleFormProps> = ({
             Hard
           </button>
           <button
-            onClick={() => setRuleType('soft')}
+            onClick={() => {
+              setRuleType('soft');
+              onTutorialSoftSelected?.();
+            }}
+            data-tutorial-target="soft-rule-button"
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
               ruleType === 'soft'
                 ? 'border border-amber-500/50 bg-amber-500/12 text-amber-200'
@@ -566,9 +589,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({
               <input
                 type="number"
                 value={plusOnes}
-                onChange={(e) => setPlusOnes(e.target.value)}
+                onChange={(e) => {
+                  setPlusOnes(e.target.value);
+                  maybeNotifyTutorialPlusOneCount(e.target.value);
+                }}
                 min="0"
                 placeholder="3"
+                data-tutorial-target="plus-one-count-input"
                 className="no-spinner w-12 px-2 py-1 bg-zinc-700 border border-zinc-600 rounded text-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-zinc-500"
                 onWheel={(e) => e.currentTarget.blur()}
               />
@@ -583,9 +610,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                 <input
                   type="number"
                   value={plusOneMinutes}
-                  onChange={(e) => setPlusOneMinutes(e.target.value)}
+                  onChange={(e) => {
+                    setPlusOneMinutes(e.target.value);
+                    maybeNotifyTutorialPlusOneDuration(e.target.value, plusOneSeconds);
+                  }}
                   min="0"
                   placeholder="5"
+                  data-tutorial-target="plus-one-duration-minutes-input"
                   className="time-input no-spinner bg-transparent text-white text-sm text-center focus:outline-none w-7"
                   onWheel={(e) => e.currentTarget.blur()}
                 />
@@ -593,7 +624,11 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                 <input
                   type="text"
                   value={formatSecondsDisplay(plusOneSeconds)}
-                  onChange={(e) => setPlusOneSeconds(handleSecondsInput(e.target.value))}
+                  onChange={(e) => {
+                    const nextSeconds = handleSecondsInput(e.target.value);
+                    setPlusOneSeconds(nextSeconds);
+                    maybeNotifyTutorialPlusOneDuration(plusOneMinutes, nextSeconds);
+                  }}
                   onBlur={(e) => {
                     // Ensure it's always 2 digits on blur
                     if (e.target.value && e.target.value.length === 1) {

@@ -466,16 +466,26 @@ const Popup: React.FC = () => {
                   tutorialStep={tutorialStep}
                   onTutorialRuleOpened={() => {
                     if (tutorialStep === 'openRule') {
-                      setTutorialStep('makeHard');
+                      setTutorialStep('makeSoft');
                     }
                   }}
-                  onTutorialHardSelected={() => {
-                    if (tutorialStep === 'makeHard') {
-                      setTutorialStep('saveHard');
+                  onTutorialSoftSelected={() => {
+                    if (tutorialStep === 'makeSoft') {
+                      setTutorialStep('setPlusOneCount');
+                    }
+                  }}
+                  onTutorialPlusOneCountConfigured={() => {
+                    if (tutorialStep === 'setPlusOneCount') {
+                      setTutorialStep('setPlusOneDuration');
+                    }
+                  }}
+                  onTutorialPlusOneDurationConfigured={() => {
+                    if (tutorialStep === 'setPlusOneDuration') {
+                      setTutorialStep('saveSoft');
                     }
                   }}
                   onTutorialRuleSaved={() => {
-                    if (tutorialStep === 'saveHard') {
+                    if (tutorialStep === 'saveSoft') {
                       showReplayTutorialStep();
                     }
                   }}

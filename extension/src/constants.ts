@@ -14,9 +14,9 @@ export const MIN_TIMER_BADGE_TEXT_SCALE = 0.7;
 export const MAX_TIMER_BADGE_TEXT_SCALE = 1.8;
 
 export const TUTORIAL_STORAGE_KEY = 'ruleTutorialV1Status';
-export const TUTORIAL_EXACT_PROMPT = 'Make a 20 minute soft limit with 5 1-minute extensions for all social media';
+export const TUTORIAL_EXACT_PROMPT = 'Make a 20 minute daily hard limit on social media';
 export const TUTORIAL_GROUP_NAME = 'Social Media';
-export const TUTORIAL_RULE_NAME = 'Social Media Soft Limit';
+export const TUTORIAL_RULE_NAME = 'Social Media Daily Limit';
 export const TUTORIAL_SOCIAL_URLS = [
   'instagram.com',
   'facebook.com',

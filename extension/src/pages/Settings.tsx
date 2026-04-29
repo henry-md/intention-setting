@@ -174,7 +174,7 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
         <div>
           <h4 className="mb-2 text-sm font-medium text-zinc-200">Tutorial</h4>
           <p className="text-xs text-zinc-400">
-            Walk through creating an AI rule and turning it into a hard limit.
+            Walk through creating an AI hard rule and softening it with extensions.
           </p>
         </div>
 

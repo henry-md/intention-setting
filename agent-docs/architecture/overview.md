@@ -4,7 +4,7 @@ The extension popup owns the discoverability tutorial in `extension/src/pages/Po
 
 Tutorial UI lives in `extension/src/components/TutorialOverlay.tsx`. It renders four dimmed/blurred overlay panels around a transparent spotlight rectangle, plus a modal card with an exit button. Step targets are ordinary DOM nodes marked with `data-tutorial-target` attributes.
 
-The tutorial prompt is intentionally deterministic: while the tutorial is on the AI step, `LLMPanel` requires the exact `TUTORIAL_EXACT_PROMPT` and creates/updates the Social Media soft limit directly before guiding the user to convert it to Hard.
+The tutorial prompt is intentionally deterministic: while the tutorial is on the AI step, `LLMPanel` requires the exact `TUTORIAL_EXACT_PROMPT`, creates/updates the Social Media hard limit directly, then guides the user through turning it into a soft limit with five one-minute extensions.
 
 The public-site client messages endpoint also returns `TUTORIAL_DISABLED_MSG` as `tutorialDisabledMessage`. When it is non-empty, `Popup.tsx` does not auto-launch the tutorial and the Settings replay button shows that message without changing tutorial completion storage.
 

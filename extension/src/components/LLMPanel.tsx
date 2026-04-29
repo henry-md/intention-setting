@@ -1083,17 +1083,14 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
       return rule.targets?.some(target => target.type === 'group' && target.id === socialGroup?.id) ?? false;
     });
 
+    const existingTutorialRule = tutorialRuleIndex >= 0 ? existingRules[tutorialRuleIndex] : null;
     const tutorialRule: Rule = {
-      ...(tutorialRuleIndex >= 0 ? existingRules[tutorialRuleIndex] : {
-        id: `rule:${Date.now() + 1}`,
-        createdAt: new Date().toISOString(),
-      }),
+      id: existingTutorialRule?.id || `rule:${Date.now() + 1}`,
+      createdAt: existingTutorialRule?.createdAt || new Date().toISOString(),
       name: TUTORIAL_RULE_NAME,
-      type: 'soft',
+      type: 'hard',
       targets: [{ type: 'group', id: socialGroup.id }],
       timeLimit: 20,
-      plusOnes: 5,
-      plusOneDuration: 60,
     };
 
     const rules = tutorialRuleIndex >= 0
@@ -1104,7 +1101,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
     await syncRulesToStorage(user.uid);
     window.dispatchEvent(new CustomEvent('groupsOrRulesUpdated'));
 
-    return `Created ${TUTORIAL_RULE_NAME}: 20 minutes with 5 one-minute extensions for ${TUTORIAL_GROUP_NAME}.`;
+    return `Created ${TUTORIAL_RULE_NAME}: 20-minute daily hard limit for ${TUTORIAL_GROUP_NAME}.`;
   };
 
   const sendMessage = async () => {
@@ -1141,10 +1138,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         const result = await ensureTutorialSocialRule();
         const assistantMessage: Message = {
           role: 'assistant',
-          content: `${result} Open it from the Rules list and switch it to Hard.`,
+          content: `${result} Open it from the Rules list and make it Soft with five one-minute extensions.`,
           openAiMessage: {
             role: 'assistant',
-            content: `${result} Open it from the Rules list and switch it to Hard.`
+            content: `${result} Open it from the Rules list and make it Soft with five one-minute extensions.`
           }
         };
 

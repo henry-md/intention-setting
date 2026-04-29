@@ -2,7 +2,17 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
 import { COMPANION_WEB_APP_URL, TUTORIAL_EXACT_PROMPT } from '../constants';
 
-export type TutorialStep = 'invite' | 'prompt' | 'openRule' | 'makeHard' | 'saveHard' | 'replayTutorial' | 'companionWebApp' | 'complete';
+export type TutorialStep =
+  | 'invite'
+  | 'prompt'
+  | 'openRule'
+  | 'makeSoft'
+  | 'setPlusOneCount'
+  | 'setPlusOneDuration'
+  | 'saveSoft'
+  | 'replayTutorial'
+  | 'companionWebApp'
+  | 'complete';
 
 interface SpotlightRect {
   top: number;
@@ -25,23 +35,27 @@ const TARGET_SELECTORS: Record<TutorialStep, string | null> = {
   invite: '[data-tutorial-target="ai-open-button"]',
   prompt: '[data-tutorial-target="ai-input"]',
   openRule: '[data-tutorial-target="social-media-rule-card"]',
-  makeHard: '[data-tutorial-target="hard-rule-button"]',
-  saveHard: '[data-tutorial-target="save-rule-button"]',
+  makeSoft: '[data-tutorial-target="soft-rule-button"]',
+  setPlusOneCount: '[data-tutorial-target="plus-one-count-input"]',
+  setPlusOneDuration: '[data-tutorial-target="plus-one-duration-minutes-input"]',
+  saveSoft: '[data-tutorial-target="save-rule-button"]',
   replayTutorial: '[data-tutorial-target="replay-tutorial-button"]',
   companionWebApp: '[data-tutorial-target="companion-web-app-link"]',
   complete: null,
 };
 
-const TUTORIAL_STEP_COUNT = 6;
+const TUTORIAL_STEP_COUNT = 8;
 
 const STEP_INDEX: Record<TutorialStep, number | null> = {
   invite: null,
   prompt: 1,
   openRule: 2,
-  makeHard: 3,
-  saveHard: 4,
-  replayTutorial: 5,
-  companionWebApp: 6,
+  makeSoft: 3,
+  setPlusOneCount: 4,
+  setPlusOneDuration: 5,
+  saveSoft: 6,
+  replayTutorial: 7,
+  companionWebApp: 8,
   complete: null,
 };
 
@@ -102,14 +116,14 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
     return {
       eyebrow: 'New in Intention Setting',
       title: 'Want a 60 second tour?',
-      body: 'Create an AI rule, open it, and turn it into a hard limit. Quick, guided, and hands-on.',
+      body: 'Create an AI hard limit, open it, and make it flexible with a few tiny extensions.',
     };
   }
 
   if (step === 'prompt') {
     return {
       eyebrow: `Step 1 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'Ask AI to build the soft rule',
+      title: 'Ask AI to build the hard rule',
       body: promptMismatch
         ? 'Type the prompt exactly as shown, then press Enter.'
         : 'Type this exact prompt in the AI chat, then press Enter.',
@@ -120,29 +134,45 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
     return {
       eyebrow: `Step 2 of ${TUTORIAL_STEP_COUNT}`,
       title: 'Open the new rule',
-      body: 'The soft social media limit is ready. Click the rule to edit it.',
+      body: 'The 20-minute daily hard social media limit is ready. Click the rule to edit it.',
     };
   }
 
-  if (step === 'makeHard') {
+  if (step === 'makeSoft') {
     return {
       eyebrow: `Step 3 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'Make it a hard rule',
-      body: 'Select Hard so the limit becomes strict when time runs out.',
+      title: 'Make it a soft rule',
+      body: 'Select Soft so you can add short extensions after the 20-minute limit runs out.',
     };
   }
 
-  if (step === 'saveHard') {
+  if (step === 'setPlusOneCount') {
     return {
       eyebrow: `Step 4 of ${TUTORIAL_STEP_COUNT}`,
+      title: 'Add five extensions',
+      body: 'Extensions are extra chances after the limit. Set Number to 5 so you can ask for five more little chunks of time.',
+    };
+  }
+
+  if (step === 'setPlusOneDuration') {
+    return {
+      eyebrow: `Step 5 of ${TUTORIAL_STEP_COUNT}`,
+      title: 'Make each extension one minute',
+      body: 'Set Duration to 1:00. Each extension will add one minute before the rule blocks again.',
+    };
+  }
+
+  if (step === 'saveSoft') {
+    return {
+      eyebrow: `Step 6 of ${TUTORIAL_STEP_COUNT}`,
       title: 'Save the change',
-      body: 'Save the rule and the extension will sync the hard limit.',
+      body: 'Save the rule and the extension will sync the soft limit with five one-minute extensions.',
     };
   }
 
   if (step === 'replayTutorial') {
     return {
-      eyebrow: `Step 5 of ${TUTORIAL_STEP_COUNT}`,
+      eyebrow: `Step 7 of ${TUTORIAL_STEP_COUNT}`,
       title: 'Replay this anytime',
       body: 'If you ever want to go through the tutorial again, it lives here in Settings.',
     };
@@ -150,7 +180,7 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
 
   if (step === 'companionWebApp') {
     return {
-      eyebrow: `Step 6 of ${TUTORIAL_STEP_COUNT}`,
+      eyebrow: `Step 8 of ${TUTORIAL_STEP_COUNT}`,
       title: 'There is a web app too',
       body: 'The companion web app lives here if you want to open Intention Setting in a regular browser tab.',
     };

@@ -28,7 +28,9 @@ interface RulesProps {
   initialEditingRuleId?: string | null;
   tutorialStep?: TutorialStep | null;
   onTutorialRuleOpened?: () => void;
-  onTutorialHardSelected?: () => void;
+  onTutorialSoftSelected?: () => void;
+  onTutorialPlusOneCountConfigured?: () => void;
+  onTutorialPlusOneDurationConfigured?: () => void;
   onTutorialRuleSaved?: () => void;
 }
 
@@ -44,7 +46,9 @@ const Rules: React.FC<RulesProps> = ({
   initialEditingRuleId,
   tutorialStep,
   onTutorialRuleOpened,
-  onTutorialHardSelected,
+  onTutorialSoftSelected,
+  onTutorialPlusOneCountConfigured,
+  onTutorialPlusOneDurationConfigured,
   onTutorialRuleSaved,
 }) => {
   const [rules, setRules] = useState<Rule[]>([]);
@@ -348,8 +352,10 @@ const Rules: React.FC<RulesProps> = ({
             setEditingRuleId(null);
           }}
           onEditGroup={(groupId) => onEditGroup(groupId, editingRuleId)}
-          onTutorialHardSelected={tutorialStep === 'makeHard' ? onTutorialHardSelected : undefined}
-          onTutorialRuleSaved={tutorialStep === 'saveHard' ? onTutorialRuleSaved : undefined}
+          onTutorialSoftSelected={tutorialStep === 'makeSoft' ? onTutorialSoftSelected : undefined}
+          onTutorialPlusOneCountConfigured={tutorialStep === 'setPlusOneCount' ? onTutorialPlusOneCountConfigured : undefined}
+          onTutorialPlusOneDurationConfigured={tutorialStep === 'setPlusOneDuration' ? onTutorialPlusOneDurationConfigured : undefined}
+          onTutorialRuleSaved={tutorialStep === 'saveSoft' ? onTutorialRuleSaved : undefined}
         />
       )}
 
