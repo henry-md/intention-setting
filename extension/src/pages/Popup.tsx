@@ -15,7 +15,12 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../compone
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { Bot } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { TUTORIAL_EXACT_PROMPT, TUTORIAL_STORAGE_KEY } from '../constants';
+import {
+  TUTORIAL_EXACT_PROMPT,
+  TUTORIAL_INSTAGRAM_BADGE_STEP_KEY,
+  TUTORIAL_INSTAGRAM_URL,
+  TUTORIAL_STORAGE_KEY,
+} from '../constants';
 import {
   getExtensionClientModalState,
   markClientMessagePromptSeen,
@@ -26,6 +31,13 @@ type TabType = 'home' | 'rules' | 'settings';
 type RulesView = 'rules' | 'groups' | 'groupEdit';
 type ClientModalKind = 'upgrade' | 'message' | 'aiChatFocusMessage' | 'tutorialDisabledMessage';
 const HARD_REQUIREMENT_GOOGLE_SIGN_IN = import.meta.env.HARD_REQUIREMENT_GOOGLE_SIGN_IN === 'true';
+
+const getTutorialInstagramTabId = (value: unknown): number | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const tabId = (value as { tabId?: unknown }).tabId;
+  return typeof tabId === 'number' ? tabId : null;
+};
 
 function buildClientModalQueue(modalState: ExtensionClientModalState): ClientModalKind[] {
   const hasUpgradePrompt = Boolean(modalState.updatePrompt);
@@ -131,6 +143,10 @@ const Popup: React.FC = () => {
         updatedAt: new Date().toISOString(),
       },
     });
+  };
+
+  const clearTutorialInstagramBadgeStep = () => {
+    chrome.storage.local.remove(TUTORIAL_INSTAGRAM_BADGE_STEP_KEY);
   };
 
   // Reset to the primary app surface when a user signs in or switches accounts.
@@ -248,36 +264,39 @@ const Popup: React.FC = () => {
     }
 
     saveTutorialStatus('started');
+    clearTutorialInstagramBadgeStep();
     setTutorialPromptMismatch(false);
     setCurrentTab('rules');
     setRulesView('rules');
     setEditingGroupId(null);
     setEditingFromRules(false);
     setEditingRuleIdBeforeGroupEdit(null);
-    setIsAIPanelCollapsed(false);
+    setIsAIPanelCollapsed(true);
+    aiPanelRef.current?.collapse();
     setTutorialStep(null);
 
     window.setTimeout(() => {
-      aiPanelRef.current?.resize(46);
-      setTutorialStep('prompt');
-      document.querySelector<HTMLTextAreaElement>('[data-tutorial-target="ai-input"]')?.focus();
+      setTutorialStep('aiChatIntro');
     }, 120);
   };
 
   const declineTutorial = () => {
     saveTutorialStatus('declined');
+    clearTutorialInstagramBadgeStep();
     setTutorialStep(null);
     setTutorialPromptMismatch(false);
   };
 
   const exitTutorial = () => {
     saveTutorialStatus(tutorialStep === 'complete' ? 'completed' : 'dismissed');
+    clearTutorialInstagramBadgeStep();
     setTutorialStep(null);
     setTutorialPromptMismatch(false);
   };
 
   const finishTutorial = () => {
     saveTutorialStatus('completed');
+    clearTutorialInstagramBadgeStep();
     setTutorialStep(null);
     setTutorialPromptMismatch(false);
   };
@@ -294,6 +313,17 @@ const Popup: React.FC = () => {
   };
 
   const continueTutorial = () => {
+    if (tutorialStep === 'aiChatIntro') {
+      setTutorialStep(null);
+      setIsAIPanelCollapsed(false);
+      aiPanelRef.current?.resize(46);
+      window.setTimeout(() => {
+        setTutorialStep('prompt');
+        document.querySelector<HTMLTextAreaElement>('[data-tutorial-target="ai-input"]')?.focus();
+      }, 160);
+      return;
+    }
+
     if (tutorialStep === 'replayTutorial') {
       showCompanionWebAppStep();
       return;
@@ -304,14 +334,88 @@ const Popup: React.FC = () => {
     }
   };
 
+  const collapseAssistantPanel = useCallback(() => {
+    setIsAIPanelCollapsed(true);
+    aiPanelRef.current?.collapse();
+    aiPanelRef.current?.resize(0);
+  }, []);
+
+  const showOpenRuleTutorialStep = useCallback(() => {
+    setCurrentTab('rules');
+    setRulesView('rules');
+    setTutorialStep(null);
+    collapseAssistantPanel();
+    window.setTimeout(collapseAssistantPanel, 80);
+    window.setTimeout(() => {
+      collapseAssistantPanel();
+      document
+        .querySelector<HTMLElement>('[data-tutorial-target="social-media-rule-card"]')
+        ?.scrollIntoView({ block: 'center' });
+      setTutorialStep('openRule');
+    }, 220);
+  }, [collapseAssistantPanel]);
+
   const handleTutorialPromptAccepted = () => {
     setTutorialPromptMismatch(false);
     setIsAiChatInputFocused(false);
     setCurrentTab('rules');
     setRulesView('rules');
-    setIsAIPanelCollapsed(true);
-    aiPanelRef.current?.collapse();
-    setTutorialStep('openRule');
+    setTutorialStep(null);
+    collapseAssistantPanel();
+    window.setTimeout(collapseAssistantPanel, 80);
+    window.setTimeout(() => {
+      collapseAssistantPanel();
+      setTutorialStep('openInstagram');
+    }, 220);
+  };
+
+  const handleTutorialPromptReadyChange = useCallback((isReady: boolean) => {
+    setTutorialStep(prevStep => {
+      if (isReady && prevStep === 'prompt') {
+        return 'sendPrompt';
+      }
+
+      if (!isReady && prevStep === 'sendPrompt') {
+        return 'prompt';
+      }
+
+      return prevStep;
+    });
+
+    if (isReady) {
+      setTutorialPromptMismatch(false);
+    }
+  }, []);
+
+  const openTutorialInstagram = () => {
+    chrome.tabs.create({ url: TUTORIAL_INSTAGRAM_URL }, (tab) => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to open tutorial Instagram tab:', chrome.runtime.lastError.message);
+        return;
+      }
+
+      const nextStepState: {
+        status: 'armed';
+        updatedAt: string;
+        tabId?: number;
+        windowId?: number;
+      } = {
+        status: 'armed',
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (typeof tab.id === 'number') {
+        nextStepState.tabId = tab.id;
+      }
+
+      if (typeof tab.windowId === 'number') {
+        nextStepState.windowId = tab.windowId;
+      }
+
+      chrome.storage.local.set({
+        [TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]: nextStepState,
+      });
+    });
   };
 
   const showReplayTutorialStep = () => {
@@ -361,6 +465,28 @@ const Popup: React.FC = () => {
       queueAiChatFocusModal(clientModalState);
     }
   }, [clientModalState, isAiChatInputFocused, queueAiChatFocusModal]);
+
+  useEffect(() => {
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      const nextValue = changes[TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]?.newValue;
+      const nextStatus = nextValue?.status;
+      if (tutorialStep === 'openInstagram' && nextStatus === 'completed') {
+        const tabId = getTutorialInstagramTabId(nextValue);
+        if (tabId !== null) {
+          chrome.tabs.remove(tabId, () => {
+            if (chrome.runtime.lastError) {
+              console.debug('Tutorial Instagram tab was already closed:', chrome.runtime.lastError.message);
+            }
+          });
+        }
+
+        showOpenRuleTutorialStep();
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+  }, [showOpenRuleTutorialStep, tutorialStep]);
 
   const handleAiChatFocus = () => {
     setIsAiChatInputFocused(true);
@@ -476,11 +602,6 @@ const Popup: React.FC = () => {
                   }}
                   onTutorialPlusOneCountConfigured={() => {
                     if (tutorialStep === 'setPlusOneCount') {
-                      setTutorialStep('setPlusOneDuration');
-                    }
-                  }}
-                  onTutorialPlusOneDurationConfigured={() => {
-                    if (tutorialStep === 'setPlusOneDuration') {
                       setTutorialStep('saveSoft');
                     }
                   }}
@@ -568,9 +689,10 @@ const Popup: React.FC = () => {
             >
               <LLMPanel
                 user={user}
-                tutorialExpectedPrompt={tutorialStep === 'prompt' ? TUTORIAL_EXACT_PROMPT : undefined}
+                tutorialExpectedPrompt={tutorialStep === 'prompt' || tutorialStep === 'sendPrompt' ? TUTORIAL_EXACT_PROMPT : undefined}
                 onTutorialPromptAccepted={handleTutorialPromptAccepted}
                 onTutorialPromptMismatch={(isMismatch) => setTutorialPromptMismatch(isMismatch)}
+                onTutorialPromptReadyChange={handleTutorialPromptReadyChange}
                 onAiChatFocus={handleAiChatFocus}
                 onAiChatBlur={handleAiChatBlur}
                 onCollapse={() => {
@@ -606,6 +728,7 @@ const Popup: React.FC = () => {
           onExit={exitTutorial}
           onContinue={continueTutorial}
           onFinish={finishTutorial}
+          onOpenInstagram={openTutorialInstagram}
         />
       )}
 

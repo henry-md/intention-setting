@@ -1,14 +1,16 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { Check, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Check, Copy as CopyIcon, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
 import { COMPANION_WEB_APP_URL, TUTORIAL_EXACT_PROMPT } from '../constants';
 
 export type TutorialStep =
   | 'invite'
+  | 'aiChatIntro'
   | 'prompt'
+  | 'sendPrompt'
+  | 'openInstagram'
   | 'openRule'
   | 'makeSoft'
   | 'setPlusOneCount'
-  | 'setPlusOneDuration'
   | 'saveSoft'
   | 'replayTutorial'
   | 'companionWebApp'
@@ -29,15 +31,18 @@ interface TutorialOverlayProps {
   onExit: () => void;
   onContinue: () => void;
   onFinish: () => void;
+  onOpenInstagram: () => void;
 }
 
 const TARGET_SELECTORS: Record<TutorialStep, string | null> = {
   invite: '[data-tutorial-target="ai-open-button"]',
+  aiChatIntro: '[data-tutorial-target="ai-open-button"]',
   prompt: '[data-tutorial-target="ai-input"]',
+  sendPrompt: '[data-tutorial-target="ai-send-button"]',
+  openInstagram: null,
   openRule: '[data-tutorial-target="social-media-rule-card"]',
   makeSoft: '[data-tutorial-target="soft-rule-button"]',
   setPlusOneCount: '[data-tutorial-target="plus-one-count-input"]',
-  setPlusOneDuration: '[data-tutorial-target="plus-one-duration-minutes-input"]',
   saveSoft: '[data-tutorial-target="save-rule-button"]',
   replayTutorial: '[data-tutorial-target="replay-tutorial-button"]',
   companionWebApp: '[data-tutorial-target="companion-web-app-link"]',
@@ -48,11 +53,13 @@ const TUTORIAL_STEP_COUNT = 8;
 
 const STEP_INDEX: Record<TutorialStep, number | null> = {
   invite: null,
+  aiChatIntro: null,
   prompt: 1,
-  openRule: 2,
-  makeSoft: 3,
-  setPlusOneCount: 4,
-  setPlusOneDuration: 5,
+  sendPrompt: null,
+  openInstagram: 2,
+  openRule: 3,
+  makeSoft: 4,
+  setPlusOneCount: 5,
   saveSoft: 6,
   replayTutorial: 7,
   companionWebApp: 8,
@@ -75,6 +82,37 @@ const getFallbackRect = (): SpotlightRect => {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Some extension contexts expose clipboard APIs but still reject writes.
+    }
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '0';
+
+  document.body.appendChild(textArea);
+  textArea.select();
+  textArea.setSelectionRange(0, textArea.value.length);
+
+  try {
+    const didCopy = document.execCommand('copy');
+    if (!didCopy) {
+      throw new Error('Unable to copy tutorial prompt');
+    }
+  } finally {
+    document.body.removeChild(textArea);
+  }
+};
 
 const measureTarget = (selector: string | null): SpotlightRect => {
   if (!selector) return getFallbackRect();
@@ -109,24 +147,40 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
   if (step === 'prompt') {
     return {
       eyebrow: `Step 1 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'Ask AI to build the hard rule',
+      title: 'Ask AI to create a rule',
       body: promptMismatch
-        ? 'Type the prompt exactly as shown, then press Enter.'
-        : 'Type this exact prompt in the AI chat, then press Enter.',
+        ? 'Type the prompt exactly as shown.'
+        : 'Type this exact prompt in the chat.',
+    };
+  }
+
+  if (step === 'aiChatIntro') {
+    return {
+      eyebrow: 'AI Assistant',
+      title: 'Chat with AI here',
+      body: 'This opens the AI chat whenever you want help creating or changing rules.',
     };
   }
 
   if (step === 'openRule') {
     return {
-      eyebrow: `Step 2 of ${TUTORIAL_STEP_COUNT}`,
+      eyebrow: `Step 3 of ${TUTORIAL_STEP_COUNT}`,
       title: 'Open the new rule',
       body: 'The 20-minute daily hard social media limit is ready. Click the rule to edit it.',
     };
   }
 
+  if (step === 'openInstagram') {
+    return {
+      eyebrow: `Step 2 of ${TUTORIAL_STEP_COUNT}`,
+      title: 'See the badge in the wild',
+      body: 'Open Instagram and look for the timer badge. It tracks the whole social media limit across all the sites in this rule.',
+    };
+  }
+
   if (step === 'makeSoft') {
     return {
-      eyebrow: `Step 3 of ${TUTORIAL_STEP_COUNT}`,
+      eyebrow: `Step 4 of ${TUTORIAL_STEP_COUNT}`,
       title: 'Make it a soft rule',
       body: 'Select Soft so you can add short extensions after the 20-minute limit runs out.',
     };
@@ -134,17 +188,9 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
 
   if (step === 'setPlusOneCount') {
     return {
-      eyebrow: `Step 4 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'Add five extensions',
-      body: 'Extensions are extra chances after the limit. Set Number to 5 so you can ask for five more little chunks of time.',
-    };
-  }
-
-  if (step === 'setPlusOneDuration') {
-    return {
       eyebrow: `Step 5 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'Make each extension one minute',
-      body: 'Set Duration to 1:00. Each extension will add one minute before the rule blocks again.',
+      title: 'Add five extensions',
+      body: 'Extensions are extra chances after the limit. Set Number to 5 so you can ask for five more one-minute chunks of time.',
     };
   }
 
@@ -219,13 +265,17 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   onExit,
   onContinue,
   onFinish,
+  onOpenInstagram,
 }) => {
   const selector = TARGET_SELECTORS[step];
   const hasTargetSpotlight = selector !== null;
+  const spotlightOnly = step === 'sendPrompt';
   const [rect, setRect] = useState<SpotlightRect>(() => measureTarget(selector));
   const copy = stepCopy(step, promptMismatch);
   const cardPosition = useMemo(() => getCardPosition(rect, step), [rect, step]);
   const stepIndex = STEP_INDEX[step];
+  const [hasCopiedPrompt, setHasCopiedPrompt] = useState(false);
+  const [isConfirmingExit, setIsConfirmingExit] = useState(false);
 
   useLayoutEffect(() => {
     const updateRect = () => setRect(measureTarget(selector));
@@ -241,6 +291,36 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
       window.removeEventListener('scroll', updateRect, true);
     };
   }, [selector, step]);
+
+  useEffect(() => {
+    setHasCopiedPrompt(false);
+    setIsConfirmingExit(false);
+  }, [step]);
+
+  useEffect(() => {
+    if (!hasCopiedPrompt) return undefined;
+
+    const timeoutId = window.setTimeout(() => setHasCopiedPrompt(false), 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [hasCopiedPrompt]);
+
+  const handleCopyPrompt = async () => {
+    try {
+      await copyTextToClipboard(TUTORIAL_EXACT_PROMPT);
+      setHasCopiedPrompt(true);
+    } catch (error) {
+      console.error('Failed to copy tutorial prompt:', error);
+    }
+  };
+
+  const handleExitClick = () => {
+    if (step === 'complete') {
+      onExit();
+      return;
+    }
+
+    setIsConfirmingExit(true);
+  };
 
   return (
     <div aria-live="polite" className="pointer-events-none fixed inset-0 z-[80]">
@@ -276,20 +356,21 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
         <div className="fixed inset-0 bg-black/35" />
       )}
 
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={copy.title}
-        className={`pointer-events-auto fixed z-[82] max-h-[calc(100vh-32px)] overflow-y-auto rounded-xl border bg-zinc-950/96 p-4 text-white ${
-          hasTargetSpotlight
-            ? 'border-white/12 shadow-2xl shadow-black/50 ring-1 ring-white/10'
-            : 'border-emerald-300/55 shadow-[0_0_0_1px_rgba(16,185,129,0.20),0_0_42px_rgba(16,185,129,0.24),0_20px_64px_rgba(0,0,0,0.56)] ring-1 ring-emerald-300/20'
-        }`}
-        style={cardPosition}
-      >
+      {!spotlightOnly && (
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-label={copy.title}
+          className={`pointer-events-auto fixed z-[82] max-h-[calc(100vh-32px)] overflow-y-auto rounded-xl border bg-zinc-950/96 p-4 text-white ${
+            hasTargetSpotlight
+              ? 'border-white/12 shadow-2xl shadow-black/50 ring-1 ring-white/10'
+              : 'border-emerald-300/55 shadow-[0_0_0_1px_rgba(16,185,129,0.20),0_0_42px_rgba(16,185,129,0.24),0_20px_64px_rgba(0,0,0,0.56)] ring-1 ring-emerald-300/20'
+          }`}
+          style={cardPosition}
+        >
         <button
           type="button"
-          onClick={onExit}
+          onClick={handleExitClick}
           className="absolute right-3 top-3 rounded-md p-1 text-zinc-400 transition-colors hover:bg-white/8 hover:text-white"
           aria-label="Exit tutorial"
           title="Exit tutorial"
@@ -321,13 +402,26 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
 
         {step === 'prompt' && (
           <div
-            className={`mt-3 rounded-lg border p-3 text-[13px] leading-5 text-zinc-100 ${
+            className={`mt-3 flex items-start gap-3 rounded-lg border p-3 text-[13px] leading-5 text-zinc-100 ${
               promptMismatch
                 ? 'border-red-400/60 bg-red-500/10'
                 : 'border-zinc-700 bg-zinc-900'
             }`}
           >
-            {TUTORIAL_EXACT_PROMPT}
+            <span className="min-w-0 flex-1 pr-1">{TUTORIAL_EXACT_PROMPT}</span>
+            <button
+              type="button"
+              onClick={handleCopyPrompt}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                hasCopiedPrompt
+                  ? 'border-emerald-400/45 bg-emerald-400/12 text-emerald-200'
+                  : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-white'
+              }`}
+              aria-label={hasCopiedPrompt ? 'Copied tutorial prompt' : 'Copy tutorial prompt'}
+              title={hasCopiedPrompt ? 'Copied' : 'Copy prompt'}
+            >
+              {hasCopiedPrompt ? <Check className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+            </button>
           </div>
         )}
 
@@ -373,6 +467,27 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
           </button>
         )}
 
+        {step === 'aiChatIntro' && (
+          <button
+            type="button"
+            onClick={onContinue}
+            className="mt-4 w-full rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200"
+          >
+            Open chat
+          </button>
+        )}
+
+        {step === 'openInstagram' && (
+          <button
+            type="button"
+            onClick={onOpenInstagram}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open Instagram
+          </button>
+        )}
+
         {step === 'companionWebApp' && (
           <div className="mt-4 flex flex-col gap-2">
             <a
@@ -389,7 +504,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               onClick={onContinue}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
             >
-              Continue
+              Cool
             </button>
           </div>
         )}
@@ -410,11 +525,44 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               onClick={onFinish}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
             >
-              Done
+              Woah
             </button>
           </div>
         )}
-      </section>
+        </section>
+      )}
+
+      {isConfirmingExit && (
+        <div className="pointer-events-auto fixed inset-0 z-[90] flex items-center justify-center bg-black/55 px-4">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Quit tutorial confirmation"
+            className="w-full max-w-[320px] rounded-xl border border-white/12 bg-zinc-950 p-4 text-white shadow-2xl shadow-black/60 ring-1 ring-white/10"
+          >
+            <h2 className="text-base font-semibold leading-tight">Quit tutorial?</h2>
+            <p className="mt-2 text-sm leading-5 text-zinc-300">
+              Are you sure you want to quit the tutorial?
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmingExit(false)}
+                className="flex-1 rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200"
+              >
+                Keep going
+              </button>
+              <button
+                type="button"
+                onClick={onExit}
+                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
+              >
+                Quit
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

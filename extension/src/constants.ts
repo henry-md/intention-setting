@@ -5,6 +5,9 @@ export const DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS = 10;
 export const MIN_UPCOMING_LIMIT_REMINDER_SECONDS = 3;
 export const MAX_UPCOMING_LIMIT_REMINDER_SECONDS = 60;
 
+export const DEFAULT_SOFT_RULE_PLUS_ONES = 3;
+export const DEFAULT_PLUS_ONE_DURATION_SECONDS = 60;
+
 export const DEFAULT_TIMER_BADGE_WIDTH_SCALE = 0.65;
 export const MIN_TIMER_BADGE_WIDTH_SCALE = 0.35;
 export const MAX_TIMER_BADGE_WIDTH_SCALE = 1.2;
@@ -14,7 +17,9 @@ export const MIN_TIMER_BADGE_TEXT_SCALE = 0.7;
 export const MAX_TIMER_BADGE_TEXT_SCALE = 1.8;
 
 export const TUTORIAL_STORAGE_KEY = 'ruleTutorialV1Status';
-export const TUTORIAL_EXACT_PROMPT = 'Make a 20 minute daily hard limit on social media';
+export const TUTORIAL_EXACT_PROMPT = 'Create a 20 minute daily limit across all social media collectively';
+export const TUTORIAL_INSTAGRAM_URL = 'https://www.instagram.com/';
+export const TUTORIAL_INSTAGRAM_BADGE_STEP_KEY = 'ruleTutorialInstagramBadgeStepV1';
 export const TUTORIAL_GROUP_NAME = 'Social Media';
 export const TUTORIAL_RULE_NAME = 'Social Media Daily Limit';
 export const TUTORIAL_SOCIAL_URLS = [

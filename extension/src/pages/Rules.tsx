@@ -10,7 +10,7 @@ import { RuleForm } from '../components/RuleForm';
 import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
-import { TUTORIAL_RULE_NAME } from '../constants';
+import { DEFAULT_PLUS_ONE_DURATION_SECONDS, DEFAULT_SOFT_RULE_PLUS_ONES, TUTORIAL_RULE_NAME } from '../constants';
 import type { TutorialStep } from '../components/TutorialOverlay';
 import {
   Dialog,
@@ -30,7 +30,6 @@ interface RulesProps {
   onTutorialRuleOpened?: () => void;
   onTutorialSoftSelected?: () => void;
   onTutorialPlusOneCountConfigured?: () => void;
-  onTutorialPlusOneDurationConfigured?: () => void;
   onTutorialRuleSaved?: () => void;
 }
 
@@ -48,7 +47,6 @@ const Rules: React.FC<RulesProps> = ({
   onTutorialRuleOpened,
   onTutorialSoftSelected,
   onTutorialPlusOneCountConfigured,
-  onTutorialPlusOneDurationConfigured,
   onTutorialRuleSaved,
 }) => {
   const [rules, setRules] = useState<Rule[]>([]);
@@ -343,8 +341,8 @@ const Rules: React.FC<RulesProps> = ({
           initialTargetItems={editingRule?.targets || []}
           initialRuleType={editingRule?.type || 'hard'}
           initialTimeLimit={editingRule?.timeLimit || 60}
-          initialPlusOnes={editingRule?.plusOnes || 3}
-          initialPlusOneDuration={editingRule?.plusOneDuration || 300}
+          initialPlusOnes={editingRule?.plusOnes || DEFAULT_SOFT_RULE_PLUS_ONES}
+          initialPlusOneDuration={editingRule?.plusOneDuration || DEFAULT_PLUS_ONE_DURATION_SECONDS}
           groups={groups}
           onSave={handleSaveRule}
           onCancel={() => {
@@ -354,7 +352,6 @@ const Rules: React.FC<RulesProps> = ({
           onEditGroup={(groupId) => onEditGroup(groupId, editingRuleId)}
           onTutorialSoftSelected={tutorialStep === 'makeSoft' ? onTutorialSoftSelected : undefined}
           onTutorialPlusOneCountConfigured={tutorialStep === 'setPlusOneCount' ? onTutorialPlusOneCountConfigured : undefined}
-          onTutorialPlusOneDurationConfigured={tutorialStep === 'setPlusOneDuration' ? onTutorialPlusOneDurationConfigured : undefined}
           onTutorialRuleSaved={tutorialStep === 'saveSoft' ? onTutorialRuleSaved : undefined}
         />
       )}

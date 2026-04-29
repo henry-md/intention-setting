@@ -11,6 +11,7 @@ import {
   DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS,
   MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
   MIN_UPCOMING_LIMIT_REMINDER_SECONDS,
+  TUTORIAL_INSTAGRAM_BADGE_STEP_KEY,
 } from '../constants';
 import { getMostRestrictiveRuleIdForSite, getTotalAllowedSeconds } from '../utils/ruleSelection';
 import { normalizeHostname } from '../utils/urlNormalization';
@@ -22,6 +23,14 @@ interface StoredSiteRule {
   ruleId?: string;
   plusOnes?: number;
   plusOneDuration?: number;
+}
+
+interface TutorialInstagramBadgeStepState {
+  status?: string;
+  tabId?: number;
+  windowId?: number;
+  updatedAt?: string;
+  url?: string;
 }
 
 // ============================================================================
@@ -156,6 +165,9 @@ let softLimitRoot: Root | null = null;
 let softLimitContainer: HTMLElement | null = null;
 let nearLimitOverlay: HTMLElement | null = null;
 let nearLimitOverlayStyle: HTMLStyleElement | null = null;
+let timerBadgeWrapper: HTMLElement | null = null;
+let tutorialBadgeSpotlightContainer: HTMLElement | null = null;
+let isTutorialBadgeSpotlightOpening = false;
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
 const clampReminderSeconds = (value: unknown): number => {
   const parsed = Number(value);
@@ -445,6 +457,283 @@ const setNearLimitOverlayVisible = (isVisible: boolean) => {
   }
 };
 
+const getTutorialSpotlightRect = (): { top: number; left: number; width: number; height: number } | null => {
+  if (!timerBadgeWrapper) return null;
+
+  const rect = timerBadgeWrapper.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const padding = 8;
+  const left = Math.max(8, rect.left + 20 - padding);
+  const top = Math.max(8, rect.top + 20 - padding);
+  const right = Math.min(window.innerWidth - 8, rect.right - 20 + padding);
+  const bottom = Math.min(window.innerHeight - 8, rect.bottom - 20 + padding);
+
+  return {
+    top,
+    left,
+    width: Math.max(24, right - left),
+    height: Math.max(24, bottom - top),
+  };
+};
+
+const closeTutorialBadgeSpotlight = () => {
+  isTutorialBadgeSpotlightOpening = false;
+  if (tutorialBadgeSpotlightContainer) {
+    tutorialBadgeSpotlightContainer.remove();
+    tutorialBadgeSpotlightContainer = null;
+  }
+};
+
+const getTutorialBadgeStepState = async (): Promise<TutorialInstagramBadgeStepState> => {
+  const storage = await safeStorageGet([TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]);
+  const state = storage?.[TUTORIAL_INSTAGRAM_BADGE_STEP_KEY];
+  return state && typeof state === 'object' ? state as TutorialInstagramBadgeStepState : {};
+};
+
+const isCurrentTutorialInstagramTab = async (stepState: TutorialInstagramBadgeStepState): Promise<boolean> => {
+  if (typeof stepState.tabId !== 'number') return true;
+
+  const response = await safeSendMessage({ action: 'get-current-tab-id' });
+  return response?.tabId === stepState.tabId;
+};
+
+const showTutorialBadgeSpotlight = async () => {
+  if (tutorialBadgeSpotlightContainer || isTutorialBadgeSpotlightOpening || getCurrentSiteKey() !== 'instagram.com') return;
+
+  const rect = getTutorialSpotlightRect();
+  if (!rect) return;
+  isTutorialBadgeSpotlightOpening = true;
+
+  const stepState = await getTutorialBadgeStepState();
+  if (!(await isCurrentTutorialInstagramTab(stepState))) {
+    isTutorialBadgeSpotlightOpening = false;
+    return;
+  }
+
+  const success = await safeStorageSet({
+    [TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]: {
+      ...stepState,
+      status: 'showing',
+      updatedAt: new Date().toISOString(),
+      url: window.location.href,
+    },
+  });
+  if (!success) {
+    isTutorialBadgeSpotlightOpening = false;
+    return;
+  }
+
+  tutorialBadgeSpotlightContainer = document.createElement('div');
+  tutorialBadgeSpotlightContainer.id = 'intention-tutorial-badge-spotlight';
+  const shadowRoot = tutorialBadgeSpotlightContainer.attachShadow({ mode: 'open' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    :host {
+      all: initial;
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .layer {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      pointer-events: none;
+    }
+    .dim {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.38);
+      backdrop-filter: blur(1.5px);
+    }
+    .spotlight {
+      position: fixed;
+      border: 1px solid rgba(110, 231, 183, 0.92);
+      border-radius: 12px;
+      box-shadow:
+        0 0 0 1px rgba(16, 185, 129, 0.28),
+        0 0 34px rgba(16, 185, 129, 0.28);
+      animation: badge-spotlight-pulse 1100ms ease-in-out infinite alternate;
+    }
+    .card {
+      position: fixed;
+      width: min(328px, calc(100vw - 32px));
+      box-sizing: border-box;
+      border: 1px solid rgba(110, 231, 183, 0.55);
+      border-radius: 14px;
+      background: rgba(9, 9, 11, 0.96);
+      color: white;
+      padding: 16px;
+      box-shadow:
+        0 0 0 1px rgba(16, 185, 129, 0.18),
+        0 22px 68px rgba(0, 0, 0, 0.54);
+      pointer-events: auto;
+    }
+    .header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .icon {
+      display: flex;
+      width: 34px;
+      height: 34px;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      border: 1px solid rgba(52, 211, 153, 0.38);
+      border-radius: 10px;
+      background: rgba(52, 211, 153, 0.12);
+      color: #a7f3d0;
+    }
+    .eyebrow {
+      margin: 0;
+      color: rgba(167, 243, 208, 0.88);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+    .title {
+      margin: 3px 0 0;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 750;
+      line-height: 1.16;
+    }
+    .body {
+      margin: 0;
+      color: #d4d4d8;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .button {
+      display: flex;
+      width: 100%;
+      height: 40px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 14px;
+      border: 1px solid rgba(52, 211, 153, 0.8);
+      border-radius: 10px;
+      background: #5eead4;
+      color: #09090b;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 750;
+      transition: background 150ms ease;
+    }
+    .button:hover {
+      background: #99f6e4;
+    }
+    @keyframes badge-spotlight-pulse {
+      from { opacity: 0.72; transform: scale(0.992); }
+      to { opacity: 1; transform: scale(1.012); }
+    }
+  `;
+
+  const layer = document.createElement('div');
+  layer.className = 'layer';
+  const topDim = document.createElement('div');
+  const bottomDim = document.createElement('div');
+  const leftDim = document.createElement('div');
+  const rightDim = document.createElement('div');
+  const spotlight = document.createElement('div');
+  const card = document.createElement('section');
+
+  topDim.className = 'dim';
+  bottomDim.className = 'dim';
+  leftDim.className = 'dim';
+  rightDim.className = 'dim';
+  spotlight.className = 'spotlight';
+  card.className = 'card';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', 'Timer badge tutorial');
+  card.innerHTML = `
+    <div class="header">
+      <div class="icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.2"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Step 2 of 8</p>
+        <h2 class="title">That is your timer badge</h2>
+      </div>
+    </div>
+    <p class="body">It follows the whole Social Media Daily Limit. Time spent here rolls up with the other social sites in the rule.</p>
+    <button class="button" type="button">Got it</button>
+  `;
+
+  const updateLayout = () => {
+    const nextRect = getTutorialSpotlightRect();
+    if (!nextRect) return;
+
+    topDim.style.cssText = `left:0;right:0;top:0;height:${nextRect.top}px;`;
+    bottomDim.style.cssText = `left:0;right:0;top:${nextRect.top + nextRect.height}px;bottom:0;`;
+    leftDim.style.cssText = `left:0;top:${nextRect.top}px;width:${nextRect.left}px;height:${nextRect.height}px;`;
+    rightDim.style.cssText = `left:${nextRect.left + nextRect.width}px;right:0;top:${nextRect.top}px;height:${nextRect.height}px;`;
+    spotlight.style.cssText = `left:${nextRect.left}px;top:${nextRect.top}px;width:${nextRect.width}px;height:${nextRect.height}px;`;
+
+    const cardWidth = Math.min(328, window.innerWidth - 32);
+    const cardLeft = Math.max(16, Math.min(window.innerWidth - cardWidth - 16, nextRect.left - cardWidth - 14));
+    const placeBelow = nextRect.top + nextRect.height + 166 < window.innerHeight;
+    const cardTop = placeBelow
+      ? nextRect.top + nextRect.height + 14
+      : Math.max(16, nextRect.top - 166);
+    card.style.left = `${cardLeft}px`;
+    card.style.top = `${cardTop}px`;
+  };
+
+  const finishStep = async () => {
+    closeTutorialBadgeSpotlight();
+    const stepState = await getTutorialBadgeStepState();
+    const didStoreCompletion = await safeStorageSet({
+      [TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]: {
+        ...stepState,
+        status: 'completed',
+        updatedAt: new Date().toISOString(),
+        url: window.location.href,
+      },
+    });
+
+    if (didStoreCompletion) {
+      await safeSendMessage({ action: 'close-tutorial-instagram-tab' });
+    }
+  };
+
+  card.querySelector<HTMLButtonElement>('.button')?.addEventListener('click', () => {
+    void finishStep().catch((error) => reportAsyncError('tutorial badge spotlight completion', error));
+  });
+
+  layer.append(topDim, bottomDim, leftDim, rightDim, spotlight, card);
+  shadowRoot.append(style, layer);
+  document.body.appendChild(tutorialBadgeSpotlightContainer);
+  isTutorialBadgeSpotlightOpening = false;
+  updateLayout();
+
+  const intervalId = window.setInterval(updateLayout, 180);
+  const cleanupObserver = new MutationObserver(() => {
+    if (!tutorialBadgeSpotlightContainer) {
+      window.clearInterval(intervalId);
+      cleanupObserver.disconnect();
+    }
+  });
+  cleanupObserver.observe(document.body, { childList: true });
+};
+
+const showTutorialBadgeSpotlightIfNeeded = async () => {
+  const stepState = await getTutorialBadgeStepState();
+  const status = stepState.status;
+  if (status !== 'armed' && status !== 'showing') return;
+  if (!(await isCurrentTutorialInstagramTab(stepState))) return;
+  await showTutorialBadgeSpotlight();
+};
+
 // Render the container with both timer badge and debug panel
 const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
   // Check if container already exists
@@ -504,6 +793,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
       padding: 20px;
     `;
     wrapper.title = 'Drag to reposition';
+    timerBadgeWrapper = wrapper;
 
     // Create content container for React components
     const shadowContainer = document.createElement('div');
@@ -677,6 +967,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
   // Render the components
   if (containerRoot && components.length > 0) {
     containerRoot.render(React.createElement(React.Fragment, null, ...components));
+    await showTutorialBadgeSpotlightIfNeeded();
   }
 };
 
@@ -853,6 +1144,15 @@ chrome.storage.onChanged.addListener((changes) => {
   void (async () => {
     if (changes.siteRules) {
       // Site rules updated, could trigger re-check if needed
+    }
+
+    if (changes[TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]) {
+      const status = changes[TUTORIAL_INSTAGRAM_BADGE_STEP_KEY].newValue?.status;
+      if (status === 'armed' || status === 'showing') {
+        await showTutorialBadgeSpotlightIfNeeded();
+      } else {
+        closeTutorialBadgeSpotlight();
+      }
     }
 
     const shouldRefreshForDebug = !!(

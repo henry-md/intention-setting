@@ -18,7 +18,13 @@ import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatUrlForDisplay } from '../utils/urlDisplay';
-import { TUTORIAL_GROUP_NAME, TUTORIAL_RULE_NAME, TUTORIAL_SOCIAL_URLS } from '../constants';
+import {
+  DEFAULT_PLUS_ONE_DURATION_SECONDS,
+  DEFAULT_SOFT_RULE_PLUS_ONES,
+  TUTORIAL_GROUP_NAME,
+  TUTORIAL_RULE_NAME,
+  TUTORIAL_SOCIAL_URLS,
+} from '../constants';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -49,6 +55,7 @@ interface LLMPanelProps {
   tutorialExpectedPrompt?: string;
   onTutorialPromptAccepted?: () => void;
   onTutorialPromptMismatch?: (isMismatch: boolean) => void;
+  onTutorialPromptReadyChange?: (isReady: boolean) => void;
   onAiChatFocus?: () => void;
   onAiChatBlur?: () => void;
 }
@@ -131,8 +138,8 @@ Decision rules:
 6. If the user wants a rule but the rule type is missing, ask exactly one clarification question and do not call tools: "Should this be hard, soft, or session? Hard blocks access after time runs out, soft allows extensions, and session asks each visit."
 7. Defaults only after rule type is known:
    - Hard rule with no time: timeLimit 60.
-   - Soft rule with no time: timeLimit 60, plusOnes 3, plusOneDuration 300.
-   - Soft rule with plus-one count but no plus-one duration: plusOneDuration 300.
+   - Soft rule with no time: timeLimit 60, plusOnes ${DEFAULT_SOFT_RULE_PLUS_ONES}, plusOneDuration ${DEFAULT_PLUS_ONE_DURATION_SECONDS}.
+   - Soft rule with plus-one count but no plus-one duration: plusOneDuration ${DEFAULT_PLUS_ONE_DURATION_SECONDS}.
    - Session rule: omit timeLimit, plusOnes, and plusOneDuration.
 8. URL rules: use lowercase bare domains only, without https:// or www. Use youtube.com, not https://www.youtube.com.
 9. Common category defaults:
@@ -224,7 +231,7 @@ const tools: ChatCompletionTool[] = [
           },
           plusOneDuration: {
             type: 'number',
-            description: 'Duration of each soft-rule extension in seconds. Five minutes is 300 seconds. Omit for hard and session rules.'
+            description: 'Duration of each soft-rule extension in seconds. One minute is 60 seconds. Omit for hard and session rules.'
           }
         },
         required: ['targets', 'ruleType']
@@ -353,6 +360,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
   tutorialExpectedPrompt,
   onTutorialPromptAccepted,
   onTutorialPromptMismatch,
+  onTutorialPromptReadyChange,
   onAiChatFocus,
   onAiChatBlur,
 }) => {
@@ -757,8 +765,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
         // If changing to soft, ensure we have plusOnes and plusOneDuration
         if (ruleType === 'soft') {
-          updatedRule.plusOnes = plusOnes !== undefined ? plusOnes : (updatedRule.plusOnes || 3);
-          updatedRule.plusOneDuration = plusOneDuration !== undefined ? plusOneDuration : (updatedRule.plusOneDuration || 300);
+          updatedRule.plusOnes = plusOnes !== undefined ? plusOnes : (updatedRule.plusOnes || DEFAULT_SOFT_RULE_PLUS_ONES);
+          updatedRule.plusOneDuration = plusOneDuration !== undefined ? plusOneDuration : (updatedRule.plusOneDuration || DEFAULT_PLUS_ONE_DURATION_SECONDS);
         } else {
           // If not soft, remove plusOnes and plusOneDuration
           delete updatedRule.plusOnes;
@@ -999,12 +1007,16 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         return 'Error: No valid targets specified';
       }
 
+      const resolvedTimeLimit = ruleType === 'session' ? 0 : (timeLimit ?? 60);
+      const resolvedPlusOnes = plusOnes ?? DEFAULT_SOFT_RULE_PLUS_ONES;
+      const resolvedPlusOneDuration = plusOneDuration ?? DEFAULT_PLUS_ONE_DURATION_SECONDS;
+
       // Create new rule
       const newRule: Rule = {
         id: `rule:${Date.now()}`,
         type: ruleType,
         targets: ruleTargets,
-        timeLimit: timeLimit || 0,
+        timeLimit: resolvedTimeLimit,
         createdAt: new Date().toISOString(),
       };
 
@@ -1012,9 +1024,9 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         newRule.name = name;
       }
 
-      if (ruleType === 'soft' && plusOnes !== undefined && plusOneDuration !== undefined) {
-        newRule.plusOnes = plusOnes;
-        newRule.plusOneDuration = plusOneDuration;
+      if (ruleType === 'soft') {
+        newRule.plusOnes = resolvedPlusOnes;
+        newRule.plusOneDuration = resolvedPlusOneDuration;
       }
 
       console.log('Creating rule:', newRule);
@@ -1029,8 +1041,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
       const ruleDetails = ruleType === 'session'
         ? 'session-based (prompts on visit)'
         : ruleType === 'soft'
-        ? `${timeLimit} minutes with ${plusOnes} extensions of ${plusOneDuration}s each`
-        : `${timeLimit} minutes (hard block)`;
+        ? `${resolvedTimeLimit} minutes with ${resolvedPlusOnes} extensions of ${resolvedPlusOneDuration}s each`
+        : `${resolvedTimeLimit} minutes (hard block)`;
 
       return `Successfully created ${ruleType} rule${name ? ` "${name}"` : ''} on: ${targetNames}. Rule: ${ruleDetails}`;
     } catch (error) {
@@ -1138,10 +1150,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         const result = await ensureTutorialSocialRule();
         const assistantMessage: Message = {
           role: 'assistant',
-          content: `${result} Open it from the Rules list and make it Soft with five one-minute extensions.`,
+          content: `${result} Next, open Instagram to see the timer badge for this limit.`,
           openAiMessage: {
             role: 'assistant',
-            content: `${result} Open it from the Rules list and make it Soft with five one-minute extensions.`
+            content: `${result} Next, open Instagram to see the timer badge for this limit.`
           }
         };
 
@@ -1489,7 +1501,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-zinc-900 border-t border-zinc-700">
+    <div
+      className="flex flex-col h-full bg-zinc-900 border-t border-zinc-700"
+      data-tutorial-target="ai-panel"
+    >
       {/* Header */}
       <div className="px-4 py-2 border-b border-zinc-700 bg-zinc-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">AI Assistant</h3>
@@ -1574,8 +1589,13 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
             ref={inputRef}
             value={input}
             onChange={(e) => {
-              setInput(e.target.value);
-              if (tutorialExpectedPrompt && e.target.value.trim() === tutorialExpectedPrompt) {
+              const nextInput = e.target.value;
+              const isTutorialPromptReady = Boolean(tutorialExpectedPrompt && nextInput.trim() === tutorialExpectedPrompt);
+
+              setInput(nextInput);
+              onTutorialPromptReadyChange?.(isTutorialPromptReady);
+
+              if (isTutorialPromptReady) {
                 onTutorialPromptMismatch?.(false);
                 setError(null);
               }
@@ -1592,6 +1612,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
+            data-tutorial-target="ai-send-button"
             className="px-4 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed transition-colors self-end"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}

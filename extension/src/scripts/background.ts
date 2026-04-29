@@ -1,7 +1,7 @@
 import "./firebase-config";
 import { format } from 'date-fns';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME } from '../constants';
+import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME, TUTORIAL_INSTAGRAM_BADGE_STEP_KEY } from '../constants';
 import { db } from '../utils/firebase';
 import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
@@ -58,6 +58,11 @@ interface RuleUsageData {
     timeSpent: number;
     lastUpdated: number;
   };
+}
+
+interface TutorialInstagramBadgeStepState {
+  status?: string;
+  tabId?: number;
 }
 
 interface DailyUsageHistoryEntry {
@@ -1250,6 +1255,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.tab?.id) {
       chrome.tabs.remove(sender.tab.id);
     }
+  }
+
+  if (message.action === 'get-current-tab-id') {
+    sendResponse({ success: true, tabId: sender.tab?.id ?? null });
+    return false;
+  }
+
+  if (message.action === 'close-tutorial-instagram-tab') {
+    (async () => {
+      try {
+        const senderTabId = sender.tab?.id;
+        if (!senderTabId) {
+          sendResponse({ success: false, error: 'Missing sender tabId' });
+          return;
+        }
+
+        const storage = await chrome.storage.local.get([TUTORIAL_INSTAGRAM_BADGE_STEP_KEY]);
+        const stepState = storage[TUTORIAL_INSTAGRAM_BADGE_STEP_KEY] as TutorialInstagramBadgeStepState | undefined;
+
+        if (stepState?.status !== 'completed' || stepState.tabId !== senderTabId) {
+          sendResponse({ success: false, error: 'Sender tab is not the completed tutorial Instagram tab' });
+          return;
+        }
+
+        if (activeTimer?.tabId === senderTabId) {
+          stopCurrentTimer();
+        }
+
+        sendResponse({ success: true });
+        try {
+          await chrome.tabs.remove(senderTabId);
+        } catch (removeError) {
+          console.error('[Tutorial] Failed to remove tutorial Instagram tab after completion:', removeError);
+        }
+      } catch (error) {
+        console.error('[Tutorial] Failed to close tutorial Instagram tab:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
   }
 
   // ============================================================================

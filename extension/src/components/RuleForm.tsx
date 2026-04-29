@@ -9,6 +9,7 @@ import { expandTargetsToUrls, isUrlInTargets } from '../utils/ruleHelpers';
 import { ItemListInput } from './ItemListInput';
 import { GroupIcons } from './GroupIcons';
 import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
+import { DEFAULT_PLUS_ONE_DURATION_SECONDS, DEFAULT_SOFT_RULE_PLUS_ONES } from '../constants';
 
 interface RuleFormProps {
   ruleId?: string; // If provided, we're editing; if not, we're creating
@@ -31,7 +32,6 @@ interface RuleFormProps {
   onEditGroup?: (groupId: string) => void;
   onTutorialSoftSelected?: () => void;
   onTutorialPlusOneCountConfigured?: () => void;
-  onTutorialPlusOneDurationConfigured?: () => void;
   onTutorialRuleSaved?: () => void;
 }
 
@@ -46,15 +46,14 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   initialTargetItems = [],
   initialRuleType = 'hard',
   initialTimeLimit = 60,
-  initialPlusOnes = 3,
-  initialPlusOneDuration = 300,
+  initialPlusOnes = DEFAULT_SOFT_RULE_PLUS_ONES,
+  initialPlusOneDuration = DEFAULT_PLUS_ONE_DURATION_SECONDS,
   groups,
   onSave,
   onCancel,
   onEditGroup,
   onTutorialSoftSelected,
   onTutorialPlusOneCountConfigured,
-  onTutorialPlusOneDurationConfigured,
   onTutorialRuleSaved,
 }) => {
   const [ruleName, setRuleName] = useState(initialName);
@@ -81,12 +80,6 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   const maybeNotifyTutorialPlusOneCount = (value: string) => {
     if (Number(value) === 5) {
       onTutorialPlusOneCountConfigured?.();
-    }
-  };
-
-  const maybeNotifyTutorialPlusOneDuration = (minutesValue: string, secondsValue: string) => {
-    if (Number(minutesValue) === 1 && Number(secondsValue) === 0) {
-      onTutorialPlusOneDurationConfigured?.();
     }
   };
 
@@ -617,11 +610,9 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   value={plusOneMinutes}
                   onChange={(e) => {
                     setPlusOneMinutes(e.target.value);
-                    maybeNotifyTutorialPlusOneDuration(e.target.value, plusOneSeconds);
                   }}
                   min="0"
-                  placeholder="5"
-                  data-tutorial-target="plus-one-duration-minutes-input"
+                  placeholder="1"
                   className="time-input no-spinner bg-transparent text-white text-sm text-center focus:outline-none w-7"
                   onWheel={(e) => e.currentTarget.blur()}
                 />
@@ -632,7 +623,6 @@ export const RuleForm: React.FC<RuleFormProps> = ({
                   onChange={(e) => {
                     const nextSeconds = handleSecondsInput(e.target.value);
                     setPlusOneSeconds(nextSeconds);
-                    maybeNotifyTutorialPlusOneDuration(plusOneMinutes, nextSeconds);
                   }}
                   onBlur={(e) => {
                     // Ensure it's always 2 digits on blur
