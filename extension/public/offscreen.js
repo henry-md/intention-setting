@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const parsedData = JSON.parse(data);
         window.removeEventListener("message", handleIframeMessage);
-        sendResponse(parsedData.user);
+        sendResponse(parsedData);
       } catch (e) {
         console.error("Error parsing iframe message:", e);
       }

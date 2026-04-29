@@ -21,14 +21,32 @@ const PARENT_FRAME = document.location.ancestorOrigins[0];
 
 const PROVIDER = new GoogleAuthProvider();
 
+function serializeUser(user) {
+  if (!user) return null;
+  return typeof user.toJSON === 'function' ? user.toJSON() : user;
+}
+
 function sendResponse(result) {
-  window.parent.postMessage(JSON.stringify(result), PARENT_FRAME);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  window.parent.postMessage(JSON.stringify({
+    user: serializeUser(result.user),
+    googleOAuthAccessToken: credential?.accessToken || result?._tokenResponse?.oauthAccessToken || null,
+  }), PARENT_FRAME);
+}
+
+function sendError(error) {
+  window.parent.postMessage(JSON.stringify({
+    error: {
+      code: error?.code || 'auth/unknown',
+      message: error?.message || 'Google sign-in failed.',
+    },
+  }), PARENT_FRAME);
 }
 
 window.addEventListener('message', function({data}) {
   if (data.initAuth) {
     signInWithPopup(auth, PROVIDER)
       .then(sendResponse)
-      .catch(sendResponse);
+      .catch(sendError);
   }
 });

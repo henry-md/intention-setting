@@ -1,3 +1,6 @@
+import { GoogleAuthProvider, signInWithCredential, signOut as firebaseSignOut } from "firebase/auth/web-extension";
+import { auth } from "../utils/firebase";
+
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 // TODO: Replace with your Firebase hosting URL
 const FIREBASE_HOSTING_URL =
@@ -44,6 +47,34 @@ async function getAuthFromOffscreen() {
   });
 }
 
+function serializeFirebaseUser(user) {
+  if (!user) return null;
+  return typeof user.toJSON === "function" ? user.toJSON() : user;
+}
+
+function getGoogleOAuthAccessToken(authPayload) {
+  return authPayload?.googleOAuthAccessToken ||
+    authPayload?.oauthAccessToken ||
+    authPayload?.credential?.accessToken ||
+    authPayload?._tokenResponse?.oauthAccessToken ||
+    null;
+}
+
+async function signInExtensionFirebaseAuth(authPayload) {
+  if (authPayload?.error || (authPayload?.code && authPayload?.message && !authPayload?.user)) {
+    throw new Error(authPayload.error?.message || authPayload.message || "Google sign-in failed.");
+  }
+
+  const googleOAuthAccessToken = getGoogleOAuthAccessToken(authPayload);
+  if (!googleOAuthAccessToken) {
+    throw new Error("Google sign-in did not return an OAuth access token. Please try signing in again.");
+  }
+
+  const credential = GoogleAuthProvider.credential(null, googleOAuthAccessToken);
+  const result = await signInWithCredential(auth, credential);
+  return serializeFirebaseUser(result.user);
+}
+
 // Sufficient for bringing OAuth to front: monitor tabs for authentication windows and bring them to front
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (
@@ -66,7 +97,14 @@ chrome.windows.onCreated.addListener((window) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "signIn") {
     getAuthFromOffscreen()
-      .then((user) => {
+      .then(async (authPayload) => {
+        const signedInUser = await signInExtensionFirebaseAuth(authPayload);
+        const user = signedInUser || authPayload?.user;
+
+        if (!user?.uid) {
+          throw new Error("Google sign-in completed without a Firebase user.");
+        }
+
         chrome.storage.local.set({ user: user }, () => {
           chrome.runtime.sendMessage({
             action: "sync-user-profile",
@@ -86,9 +124,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     return true; // Indicates we will send a response asynchronously
   } else if (message.action === "signOut") {
-    chrome.storage.local.remove("user", () => {
-      sendResponse();
-    });
+    firebaseSignOut(auth)
+      .catch((error) => {
+        console.warn("Firebase sign-out failed:", error);
+      })
+      .finally(() => {
+        chrome.storage.local.remove("user", () => {
+          sendResponse();
+        });
+      });
     return true;
   }
 });
