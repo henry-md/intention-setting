@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { ExternalLink, RefreshCcw } from 'lucide-react';
 import type { User } from '../types/User';
 import Spinner from '../components/Spinner';
 import { getTimezoneInfo } from '../utils/timezone';
 import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 import {
   ALLOW_CUSTOM_RESET_TIME,
+  COMPANION_WEB_APP_URL,
   DEFAULT_DAILY_RESET_TIME,
   DEFAULT_TIMER_BADGE_TEXT_SCALE,
   DEFAULT_TIMER_BADGE_WIDTH_SCALE,
@@ -19,13 +21,15 @@ import {
 
 interface SettingsProps {
   user: User | null;
+  isTutorialReplayDisabled?: boolean;
+  onReplayTutorial: () => void;
 }
 
 /**
  * Settings tab - manages extension configuration like daily reset time.
  * Child of Popup.tsx, renders inside the Settings tab.
  */
-const Settings: React.FC<SettingsProps> = ({ user }) => {
+const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = false, onReplayTutorial }) => {
   const [resetTime, setResetTime] = useState<string>(DEFAULT_DAILY_RESET_TIME);
   const [timezone, setTimezone] = useState<string>('');
   const [timezoneAbbr, setTimezoneAbbr] = useState<string>('');
@@ -37,6 +41,7 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const canReplayTutorial = Boolean(user) && !isTutorialReplayDisabled;
 
   // Detect user's timezone
   useEffect(() => {
@@ -163,6 +168,51 @@ const Settings: React.FC<SettingsProps> = ({ user }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Settings</h3>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-600 bg-zinc-800 p-4">
+        <div>
+          <h4 className="mb-2 text-sm font-medium text-zinc-200">Tutorial</h4>
+          <p className="text-xs text-zinc-400">
+            Walk through creating an AI rule and turning it into a hard limit.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (canReplayTutorial) {
+              onReplayTutorial();
+            }
+          }}
+          disabled={!user || isTutorialReplayDisabled}
+          aria-disabled={!canReplayTutorial}
+          data-tutorial-target="replay-tutorial-button"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-600 bg-zinc-700 px-3 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <RefreshCcw className="h-4 w-4" />
+          {user ? 'Replay tutorial' : 'Sign in to replay tutorial'}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-600 bg-zinc-800 p-4">
+        <div>
+          <h4 className="mb-2 text-sm font-medium text-zinc-200">Companion Web App</h4>
+          <p className="text-xs text-zinc-400">
+            Open the full web app in a browser tab when you want more room.
+          </p>
+        </div>
+
+        <a
+          href={COMPANION_WEB_APP_URL}
+          target="_blank"
+          rel="noreferrer"
+          data-tutorial-target="companion-web-app-link"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-600 bg-zinc-700 px-3 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-600"
+        >
+          <ExternalLink className="h-4 w-4" />
+          Open companion web app
+        </a>
       </div>
 
       {ALLOW_CUSTOM_RESET_TIME && (

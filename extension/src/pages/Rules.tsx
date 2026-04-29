@@ -10,6 +10,8 @@ import { RuleForm } from '../components/RuleForm';
 import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
+import { TUTORIAL_RULE_NAME } from '../constants';
+import type { TutorialStep } from '../components/TutorialOverlay';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +26,10 @@ interface RulesProps {
   onNavigateToGroups: () => void;
   onEditGroup: (groupId: string, currentlyEditingRuleId?: string | null) => void;
   initialEditingRuleId?: string | null;
+  tutorialStep?: TutorialStep | null;
+  onTutorialRuleOpened?: () => void;
+  onTutorialHardSelected?: () => void;
+  onTutorialRuleSaved?: () => void;
 }
 
 /**
@@ -31,7 +37,16 @@ interface RulesProps {
  * Manages hard, soft, and session time limits on URLs and groups.
  * Includes Groups modal for managing URL groups.
  */
-const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, initialEditingRuleId }) => {
+const Rules: React.FC<RulesProps> = ({
+  user,
+  onNavigateToGroups,
+  onEditGroup,
+  initialEditingRuleId,
+  tutorialStep,
+  onTutorialRuleOpened,
+  onTutorialHardSelected,
+  onTutorialRuleSaved,
+}) => {
   const [rules, setRules] = useState<Rule[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +77,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
         setGroups(data.groups || []);
 
         // Auto-open create form if no rules exist (only on initial load)
-        if (fetchedRules.length === 0 && isInitialLoad.current) {
+        if (fetchedRules.length === 0 && isInitialLoad.current && !tutorialStep) {
           setShowCreateForm(true);
         }
       }
@@ -72,7 +87,7 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
       setLoading(false);
       isInitialLoad.current = false;
     }
-  }, [user?.uid]);
+  }, [user?.uid, tutorialStep]);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -155,6 +170,13 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
   useEffect(() => {
     refreshRuleProgress();
   }, [refreshRuleProgress]);
+
+  useEffect(() => {
+    if (tutorialStep === 'openRule') {
+      setShowCreateForm(false);
+      setEditingRuleId(null);
+    }
+  }, [tutorialStep]);
 
   useEffect(() => {
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
@@ -326,6 +348,8 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
             setEditingRuleId(null);
           }}
           onEditGroup={(groupId) => onEditGroup(groupId, editingRuleId)}
+          onTutorialHardSelected={tutorialStep === 'makeHard' ? onTutorialHardSelected : undefined}
+          onTutorialRuleSaved={tutorialStep === 'saveHard' ? onTutorialRuleSaved : undefined}
         />
       )}
 
@@ -352,7 +376,11 @@ const Rules: React.FC<RulesProps> = ({ user, onNavigateToGroups, onEditGroup, in
                 onClick={() => {
                   setEditingRuleId(rule.id);
                   setShowCreateForm(true);
+                  if (tutorialStep === 'openRule' && rule.name === TUTORIAL_RULE_NAME) {
+                    onTutorialRuleOpened?.();
+                  }
                 }}
+                data-tutorial-target={rule.name === TUTORIAL_RULE_NAME ? 'social-media-rule-card' : undefined}
                 className="rounded-lg bg-zinc-800 p-3 flex items-center gap-3 cursor-pointer transition-colors hover:bg-zinc-700"
               >
                 {/* Icon */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useAuth from '../hooks/useAuth';
 import Home from './Home';
 import Rules from './Rules';
@@ -8,14 +8,49 @@ import Settings from './Settings';
 import ManageSubscription from './ManageSubscription';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
+import TutorialOverlay, { type TutorialStep } from '../components/TutorialOverlay';
+import ExtensionUpdateModal from '../components/ExtensionUpdateModal';
+import ClientMessageModal from '../components/ClientMessageModal';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { Bot } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
+import { TUTORIAL_EXACT_PROMPT, TUTORIAL_STORAGE_KEY } from '../constants';
+import {
+  getExtensionClientModalState,
+  markClientMessagePromptSeen,
+  type ExtensionClientModalState,
+} from '../utils/extensionUpdate';
 
 type TabType = 'home' | 'rules' | 'settings';
 type RulesView = 'rules' | 'groups' | 'groupEdit';
+type ClientModalKind = 'upgrade' | 'message' | 'aiChatFocusMessage' | 'tutorialDisabledMessage';
 const HARD_REQUIREMENT_GOOGLE_SIGN_IN = import.meta.env.HARD_REQUIREMENT_GOOGLE_SIGN_IN === 'true';
+
+function buildClientModalQueue(modalState: ExtensionClientModalState): ClientModalKind[] {
+  const hasUpgradePrompt = Boolean(modalState.updatePrompt);
+  const hasMessagePrompt = Boolean(modalState.messagePrompt);
+
+  if (hasUpgradePrompt && hasMessagePrompt) {
+    if (!modalState.showMessageModalIfUpgradeModalIsActive) {
+      return ['upgrade'];
+    }
+
+    return modalState.showUpgradeModalBeforeMessageModal
+      ? ['upgrade', 'message']
+      : ['message', 'upgrade'];
+  }
+
+  if (hasUpgradePrompt) {
+    return ['upgrade'];
+  }
+
+  if (hasMessagePrompt) {
+    return ['message'];
+  }
+
+  return [];
+}
 
 const GoogleIcon: React.FC = () => (
   <svg
@@ -80,8 +115,23 @@ const Popup: React.FC = () => {
   const [editingRuleIdBeforeGroupEdit, setEditingRuleIdBeforeGroupEdit] = useState<string | null>(null);
   const [isAIPanelCollapsed, setIsAIPanelCollapsed] = useState(true);
   const [isManageSubscriptionOpen, setIsManageSubscriptionOpen] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep | null>(null);
+  const [tutorialPromptMismatch, setTutorialPromptMismatch] = useState(false);
+  const [clientModalState, setClientModalState] = useState<ExtensionClientModalState | null>(null);
+  const [clientModalQueue, setClientModalQueue] = useState<ClientModalKind[]>([]);
+  const [hasLoadedClientModalState, setHasLoadedClientModalState] = useState(false);
+  const [isAiChatInputFocused, setIsAiChatInputFocused] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
   const lastUserIdRef = useRef<string | null>(null);
+
+  const saveTutorialStatus = (status: 'declined' | 'dismissed' | 'started' | 'completed') => {
+    chrome.storage.local.set({
+      [TUTORIAL_STORAGE_KEY]: {
+        status,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  };
 
   // Reset to the primary app surface when a user signs in or switches accounts.
   useEffect(() => {
@@ -99,12 +149,65 @@ const Popup: React.FC = () => {
       aiPanelRef.current?.collapse();
     }
 
-    if (!nextUserId && !HARD_REQUIREMENT_GOOGLE_SIGN_IN) {
-      setCurrentTab('home');
-    }
-
     lastUserIdRef.current = nextUserId;
   }, [authLoading, user?.uid]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getExtensionClientModalState()
+      .then(modalState => {
+        if (cancelled) {
+          return;
+        }
+
+        setClientModalState(modalState);
+        if (modalState) {
+          setClientModalQueue(buildClientModalQueue(modalState));
+        }
+      })
+      .catch(error => {
+        console.error('Error checking extension client messages:', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHasLoadedClientModalState(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || !user?.uid) {
+      setTutorialStep(null);
+      return;
+    }
+
+    if (!hasLoadedClientModalState || clientModalState?.tutorialDisabledMessagePrompt) {
+      return;
+    }
+
+    let cancelled = false;
+    chrome.storage.local.get([TUTORIAL_STORAGE_KEY], (result) => {
+      if (cancelled) return;
+
+      const status = result[TUTORIAL_STORAGE_KEY]?.status;
+      if (status === 'completed' || status === 'declined' || status === 'dismissed') {
+        return;
+      }
+
+      setCurrentTab('rules');
+      setRulesView('rules');
+      setTutorialStep('invite');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.uid, hasLoadedClientModalState, clientModalState?.tutorialDisabledMessagePrompt]);
 
   // Sync rules to chrome.storage on app initialization
   useEffect(() => {
@@ -133,6 +236,142 @@ const Popup: React.FC = () => {
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
+
+  const startTutorial = () => {
+    if (clientModalState?.tutorialDisabledMessagePrompt) {
+      setClientModalQueue(prev => (
+        prev.includes('tutorialDisabledMessage')
+          ? prev
+          : [...prev, 'tutorialDisabledMessage']
+      ));
+      return;
+    }
+
+    saveTutorialStatus('started');
+    setTutorialPromptMismatch(false);
+    setCurrentTab('rules');
+    setRulesView('rules');
+    setEditingGroupId(null);
+    setEditingFromRules(false);
+    setEditingRuleIdBeforeGroupEdit(null);
+    setIsAIPanelCollapsed(false);
+    setTutorialStep(null);
+
+    window.setTimeout(() => {
+      aiPanelRef.current?.resize(46);
+      setTutorialStep('prompt');
+      document.querySelector<HTMLTextAreaElement>('[data-tutorial-target="ai-input"]')?.focus();
+    }, 120);
+  };
+
+  const declineTutorial = () => {
+    saveTutorialStatus('declined');
+    setTutorialStep(null);
+    setTutorialPromptMismatch(false);
+  };
+
+  const exitTutorial = () => {
+    saveTutorialStatus(tutorialStep === 'complete' ? 'completed' : 'dismissed');
+    setTutorialStep(null);
+    setTutorialPromptMismatch(false);
+  };
+
+  const finishTutorial = () => {
+    saveTutorialStatus('completed');
+    setTutorialStep(null);
+    setTutorialPromptMismatch(false);
+  };
+
+  const showCompanionWebAppStep = () => {
+    setTutorialStep(null);
+
+    window.setTimeout(() => {
+      document
+        .querySelector<HTMLElement>('[data-tutorial-target="companion-web-app-link"]')
+        ?.scrollIntoView({ block: 'center' });
+      setTutorialStep('companionWebApp');
+    }, 120);
+  };
+
+  const continueTutorial = () => {
+    if (tutorialStep === 'replayTutorial') {
+      showCompanionWebAppStep();
+      return;
+    }
+
+    if (tutorialStep === 'companionWebApp') {
+      setTutorialStep('complete');
+    }
+  };
+
+  const handleTutorialPromptAccepted = () => {
+    setTutorialPromptMismatch(false);
+    setIsAiChatInputFocused(false);
+    setCurrentTab('rules');
+    setRulesView('rules');
+    setIsAIPanelCollapsed(true);
+    aiPanelRef.current?.collapse();
+    setTutorialStep('openRule');
+  };
+
+  const showReplayTutorialStep = () => {
+    saveTutorialStatus('started');
+    setTutorialPromptMismatch(false);
+    setCurrentTab('settings');
+    setRulesView('rules');
+    setEditingGroupId(null);
+    setEditingFromRules(false);
+    setEditingRuleIdBeforeGroupEdit(null);
+    setIsAIPanelCollapsed(true);
+    aiPanelRef.current?.collapse();
+    setTutorialStep(null);
+
+    window.setTimeout(() => {
+      document
+        .querySelector<HTMLElement>('[data-tutorial-target="replay-tutorial-button"]')
+        ?.scrollIntoView({ block: 'center' });
+      setTutorialStep('replayTutorial');
+    }, 120);
+  };
+
+  const closeClientModal = async () => {
+    const activeModal = clientModalQueue[0];
+
+    if (activeModal === 'message' && clientModalState?.messagePrompt) {
+      await markClientMessagePromptSeen(clientModalState.messagePrompt.message);
+    }
+
+    setClientModalQueue(prev => prev.slice(1));
+  };
+
+  const queueAiChatFocusModal = useCallback((modalState: ExtensionClientModalState | null) => {
+    if (tutorialStep || !modalState?.aiChatFocusMessagePrompt) {
+      return;
+    }
+
+    setClientModalQueue(prev => (
+      prev.includes('aiChatFocusMessage')
+        ? prev
+        : [...prev, 'aiChatFocusMessage']
+    ));
+  }, [tutorialStep]);
+
+  useEffect(() => {
+    if (isAiChatInputFocused) {
+      queueAiChatFocusModal(clientModalState);
+    }
+  }, [clientModalState, isAiChatInputFocused, queueAiChatFocusModal]);
+
+  const handleAiChatFocus = () => {
+    setIsAiChatInputFocused(true);
+    queueAiChatFocusModal(clientModalState);
+  };
+
+  const handleAiChatBlur = () => {
+    setIsAiChatInputFocused(false);
+  };
+
+  const activeClientModal = clientModalQueue[0] || null;
 
   if (authLoading) {
     return (
@@ -224,6 +463,22 @@ const Popup: React.FC = () => {
               {currentTab === 'rules' && rulesView === 'rules' && (
                 <Rules
                   user={user}
+                  tutorialStep={tutorialStep}
+                  onTutorialRuleOpened={() => {
+                    if (tutorialStep === 'openRule') {
+                      setTutorialStep('makeHard');
+                    }
+                  }}
+                  onTutorialHardSelected={() => {
+                    if (tutorialStep === 'makeHard') {
+                      setTutorialStep('saveHard');
+                    }
+                  }}
+                  onTutorialRuleSaved={() => {
+                    if (tutorialStep === 'saveHard') {
+                      showReplayTutorialStep();
+                    }
+                  }}
                   onNavigateToGroups={() => {
                     setEditingFromRules(false);
                     setEditingRuleIdBeforeGroupEdit(null);
@@ -271,7 +526,11 @@ const Popup: React.FC = () => {
                 />
               )}
               {currentTab === 'settings' && (
-                <Settings user={user} />
+                <Settings
+                  user={user}
+                  isTutorialReplayDisabled={Boolean(tutorialStep) || !hasLoadedClientModalState}
+                  onReplayTutorial={startTutorial}
+                />
               )}
             </div>
           </div>
@@ -299,6 +558,11 @@ const Popup: React.FC = () => {
             >
               <LLMPanel
                 user={user}
+                tutorialExpectedPrompt={tutorialStep === 'prompt' ? TUTORIAL_EXACT_PROMPT : undefined}
+                onTutorialPromptAccepted={handleTutorialPromptAccepted}
+                onTutorialPromptMismatch={(isMismatch) => setTutorialPromptMismatch(isMismatch)}
+                onAiChatFocus={handleAiChatFocus}
+                onAiChatBlur={handleAiChatBlur}
                 onCollapse={() => {
                   aiPanelRef.current?.collapse();
                 }}
@@ -315,11 +579,60 @@ const Popup: React.FC = () => {
             aiPanelRef.current?.resize(40);
             setIsAIPanelCollapsed(false);
           }}
+          data-tutorial-target="ai-open-button"
           className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-white shadow-lg transition-all hover:scale-110 hover:bg-zinc-700"
           title="Open AI Assistant"
         >
           <Bot className="w-6 h-6" />
         </button>
+      )}
+
+      {tutorialStep && (
+        <TutorialOverlay
+          step={tutorialStep}
+          promptMismatch={tutorialPromptMismatch}
+          onStart={startTutorial}
+          onDecline={declineTutorial}
+          onExit={exitTutorial}
+          onContinue={continueTutorial}
+          onFinish={finishTutorial}
+        />
+      )}
+
+      {activeClientModal === 'upgrade' && clientModalState?.updatePrompt && (
+        <ExtensionUpdateModal
+          prompt={clientModalState.updatePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'message' && clientModalState?.messagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.messagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'aiChatFocusMessage' && clientModalState?.aiChatFocusMessagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.aiChatFocusMessagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'tutorialDisabledMessage' && clientModalState?.tutorialDisabledMessagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.tutorialDisabledMessagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
       )}
     </div>
   );

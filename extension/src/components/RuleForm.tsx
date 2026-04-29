@@ -29,6 +29,8 @@ interface RuleFormProps {
   ) => Promise<void>;
   onCancel: () => void;
   onEditGroup?: (groupId: string) => void;
+  onTutorialHardSelected?: () => void;
+  onTutorialRuleSaved?: () => void;
 }
 
 /**
@@ -48,6 +50,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   onSave,
   onCancel,
   onEditGroup,
+  onTutorialHardSelected,
+  onTutorialRuleSaved,
 }) => {
   const [ruleName, setRuleName] = useState(initialName);
   const [targetInput, setTargetInput] = useState('');
@@ -249,6 +253,10 @@ export const RuleForm: React.FC<RuleFormProps> = ({
     }
 
     await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
+
+    if (isEditMode && ruleType === 'hard') {
+      onTutorialRuleSaved?.();
+    }
   };
 
   const groupSuggestions = getGroupSuggestions();
@@ -470,7 +478,11 @@ export const RuleForm: React.FC<RuleFormProps> = ({
         <label className="block text-zinc-400 text-xs mb-1">Rule Type</label>
         <div className="flex gap-2">
           <button
-            onClick={() => setRuleType('hard')}
+            onClick={() => {
+              setRuleType('hard');
+              onTutorialHardSelected?.();
+            }}
+            data-tutorial-target="hard-rule-button"
             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
               ruleType === 'hard'
                 ? 'border border-red-500/50 bg-red-500/10 text-red-200'
@@ -611,6 +623,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
         </button>
         <button
           onClick={handleSubmit}
+          data-tutorial-target="save-rule-button"
           className="flex-1 rounded-lg border border-emerald-500/60 bg-emerald-500/12 px-4 py-2 text-sm text-emerald-200 hover:bg-emerald-500/18"
         >
           {isEditMode ? 'Save Changes' : 'Create Rule'}
