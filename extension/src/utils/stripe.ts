@@ -6,13 +6,12 @@ import {
   getDocs,
   addDoc,
   onSnapshot,
-  doc,
-  updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, firebaseConfig } from './firebase';
 // Firebase auth types imported on demand to avoid unused imports
 import { FirebaseError } from 'firebase/app';
+import { getFirebaseIdToken } from './firebaseIdToken';
 
 // Test flags
 const TEST_FLAG = import.meta.env.VITE_TEST_FLAG as string === 'true';
@@ -27,19 +26,60 @@ const PREMIUM_PRICE_TYPE = import.meta.env.VITE_PREMIUM_PRICE_TYPE as string;
 const PREMIUM_ITEM_DESCRIPTION = import.meta.env.VITE_PREMIUM_ITEM_DESCRIPTION as string;
 const PREMIUM_SUCCESS_URL = `${FIREBASE_HOSTING_URL}/payment-success.html`;
 const PREMIUM_CANCEL_URL = `${FIREBASE_HOSTING_URL}/payment-cancel.html`;
-
-const CANCELLABLE_SUBSCRIPTION_STATUSES = new Set([
-  'active',
-  'trialing',
-  'past_due',
-  'unpaid'
-]);
+const STRIPE_FUNCTIONS_REGION = 'us-central1';
 
 export interface StripeSubscription {
   id: string;
   status?: string;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd?: number;
+}
+
+interface UpdateSubscriptionResponse {
+  subscription?: ServerSubscription | null;
+  error?: {
+    message?: string;
+  };
+}
+
+interface ServerSubscription {
+  id?: string;
+  status?: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: number | null;
+}
+
+interface GetSubscriptionResponse {
+  subscription?: ServerSubscription | null;
+  error?: {
+    message?: string;
+  };
+}
+
+function getCancelSubscriptionUrl(): string {
+  return `https://${STRIPE_FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/cancelStripeSubscription`;
+}
+
+function getResumeSubscriptionUrl(): string {
+  return `https://${STRIPE_FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/resumeStripeSubscription`;
+}
+
+function getSubscriptionStatusUrl(): string {
+  return `https://${STRIPE_FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/getStripeSubscription`;
+}
+
+function normalizeSubscriptionResponse(subscription: ServerSubscription): StripeSubscription {
+  if (!subscription.id) {
+    throw new Error('Subscription response was missing a subscription ID');
+  }
+
+  return {
+    id: subscription.id,
+    status: subscription.status,
+    cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd),
+    currentPeriodEnd:
+      typeof subscription.currentPeriodEnd === 'number' ? subscription.currentPeriodEnd : undefined
+  };
 }
 
 /**
@@ -57,25 +97,15 @@ async function ensureFirebaseAuth(expectedUserId: string): Promise<void> {
     throw new Error('User not authenticated or UID mismatch');
   }
 
+  await auth.authStateReady();
+
   // Check if Firebase Auth is already set up correctly
   const currentUser = auth.currentUser;
   if (currentUser && currentUser.uid === expectedUserId) {
     return; // Already authenticated with the correct user
   }
 
-  // Try to restore the Firebase Auth context using the stored access token
-  if (storedUser.accessToken) {
-    try {
-      // Create a credential from the stored access token
-      const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth/web-extension');
-      const credential = GoogleAuthProvider.credential(null, storedUser.accessToken);
-      await signInWithCredential(auth, credential);
-    } catch (authError) {
-      console.warn('Could not restore Firebase Auth context:', authError);
-      // If we can't restore auth context, we'll proceed anyway as Firestore might still work
-      // This can happen if the access token has expired
-    }
-  }
+  throw new Error('Firebase authentication needs to be refreshed. Please sign out and sign back in.');
 }
 
 /**
@@ -213,33 +243,28 @@ export async function createCheckoutSession(userId: string, userEmail: string): 
  * Return the user's most relevant active subscription, if present.
  */
 export async function getActiveSubscription(userId: string): Promise<StripeSubscription | null> {
-  await ensureFirebaseAuth(userId);
+  const idToken = await getFirebaseIdToken(userId);
+  const response = await fetch(getSubscriptionStatusUrl(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+  const data = await response.json().catch(() => null) as GetSubscriptionResponse | null;
 
-  const subscriptionsRef = collection(db, 'customers', userId, 'subscriptions');
-  const snapshot = await getDocs(subscriptionsRef);
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Authentication expired. Please sign out and sign back in.');
+    }
 
-  const subscriptions: StripeSubscription[] = snapshot.docs
-    .map((subscriptionDoc) => {
-      const data = subscriptionDoc.data();
-      return {
-        id: subscriptionDoc.id,
-        status: typeof data.status === 'string' ? data.status : undefined,
-        cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),
-        currentPeriodEnd:
-          typeof data.current_period_end === 'number' ? data.current_period_end : undefined
-      };
-    })
-    .filter((subscription) => {
-      if (!subscription.status) return false;
-      return CANCELLABLE_SUBSCRIPTION_STATUSES.has(subscription.status);
-    });
+    throw new Error(data?.error?.message || `Could not load subscription (${response.status})`);
+  }
 
-  if (!subscriptions.length) {
+  if (!data?.subscription) {
     return null;
   }
 
-  subscriptions.sort((a, b) => (b.currentPeriodEnd ?? 0) - (a.currentPeriodEnd ?? 0));
-  return subscriptions[0];
+  return normalizeSubscriptionResponse(data.subscription);
 }
 
 /**
@@ -256,15 +281,82 @@ export async function cancelSubscriptionAtPeriodEnd(userId: string): Promise<Str
     return subscription;
   }
 
-  const subscriptionRef = doc(db, 'customers', userId, 'subscriptions', subscription.id);
-  await updateDoc(subscriptionRef, {
-    cancel_at_period_end: true
+  const idToken = await getFirebaseIdToken(userId);
+  const response = await fetch(getCancelSubscriptionUrl(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      subscriptionId: subscription.id,
+    }),
   });
+  const data = await response.json().catch(() => null) as UpdateSubscriptionResponse | null;
 
-  return {
-    ...subscription,
-    cancelAtPeriodEnd: true
-  };
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Authentication expired. Please sign out and sign back in.');
+    }
+
+    if (response.status === 503) {
+      throw new Error('Stripe cancellation is not configured yet. Check the Firebase Stripe secret and redeploy.');
+    }
+
+    throw new Error(data?.error?.message || `Could not cancel subscription (${response.status})`);
+  }
+
+  if (!data?.subscription) {
+    throw new Error('Cancel subscription returned an unexpected response.');
+  }
+
+  return normalizeSubscriptionResponse(data.subscription);
+}
+
+/**
+ * Resume a subscription that was scheduled to cancel at period end.
+ */
+export async function resumeSubscription(userId: string): Promise<StripeSubscription> {
+  const subscription = await getActiveSubscription(userId);
+
+  if (!subscription) {
+    throw new Error('No active subscription found');
+  }
+
+  if (!subscription.cancelAtPeriodEnd) {
+    return subscription;
+  }
+
+  const idToken = await getFirebaseIdToken(userId);
+  const response = await fetch(getResumeSubscriptionUrl(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      subscriptionId: subscription.id,
+    }),
+  });
+  const data = await response.json().catch(() => null) as UpdateSubscriptionResponse | null;
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Authentication expired. Please sign out and sign back in.');
+    }
+
+    if (response.status === 503) {
+      throw new Error('Stripe resume is not configured yet. Check the Firebase Stripe secret and redeploy.');
+    }
+
+    throw new Error(data?.error?.message || `Could not resume subscription (${response.status})`);
+  }
+
+  if (!data?.subscription) {
+    throw new Error('Resume subscription returned an unexpected response.');
+  }
+
+  return normalizeSubscriptionResponse(data.subscription);
 }
 
 /**

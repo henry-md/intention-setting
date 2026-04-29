@@ -1,12 +1,14 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
+const Stripe = require('stripe');
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+const STRIPE_API_KEY = defineSecret('firestore-stripe-payments-STRIPE_API_KEY-3ltd');
 
 function getBearerToken(req) {
   const authHeader = req.get('authorization') || '';
@@ -68,6 +70,184 @@ function sanitizePayload(body) {
     tool_choice,
     temperature,
   };
+}
+
+const CANCELLABLE_SUBSCRIPTION_STATUSES = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+]);
+
+function normalizeStripeTimestamp(value) {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getSubscriptionCurrentPeriodEnd(subscription) {
+  return (
+    normalizeStripeTimestamp(subscription.current_period_end) ||
+    normalizeStripeTimestamp(subscription.items?.data?.[0]?.current_period_end)
+  );
+}
+
+function normalizeFirestoreTimestamp(value) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value?.seconds === 'number') {
+    return value.seconds;
+  }
+
+  if (typeof value?._seconds === 'number') {
+    return value._seconds;
+  }
+
+  return undefined;
+}
+
+function normalizeSubscription(subscription) {
+  return {
+    id: subscription.id,
+    status: subscription.status,
+    cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+    currentPeriodEnd: getSubscriptionCurrentPeriodEnd(subscription),
+  };
+}
+
+function normalizeSubscriptionDoc(subscriptionDoc) {
+  const data = subscriptionDoc.data() || {};
+  return {
+    id: subscriptionDoc.id,
+    status: typeof data.status === 'string' ? data.status : undefined,
+    cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),
+    currentPeriodEnd: normalizeFirestoreTimestamp(data.current_period_end),
+  };
+}
+
+function formatHttpError(error, fallbackMessage) {
+  return {
+    message: error instanceof Error ? error.message : fallbackMessage,
+  };
+}
+
+async function verifyFirebaseRequest(req, logPrefix) {
+  const token = getBearerToken(req);
+
+  if (!token) {
+    return {
+      error: { status: 401, message: 'Missing Firebase auth token.' },
+    };
+  }
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    if (!decodedToken?.uid) {
+      return {
+        error: { status: 401, message: 'Authenticated user uid is missing.' },
+      };
+    }
+
+    return { uid: decodedToken.uid };
+  } catch (error) {
+    console.error(`${logPrefix} Invalid Firebase auth token:`, error);
+    return {
+      error: { status: 401, message: 'Invalid Firebase auth token.' },
+    };
+  }
+}
+
+async function findUserSubscriptionDoc(uid, subscriptionId) {
+  const subscriptionsRef = admin
+    .firestore()
+    .collection('customers')
+    .doc(uid)
+    .collection('subscriptions');
+
+  if (subscriptionId) {
+    const requestedDoc = await subscriptionsRef.doc(subscriptionId).get();
+    return requestedDoc.exists ? requestedDoc : null;
+  }
+
+  const snapshot = await subscriptionsRef.get();
+  return snapshot.docs
+    .filter((docSnapshot) => {
+      const status = docSnapshot.get('status');
+      return typeof status === 'string' && CANCELLABLE_SUBSCRIPTION_STATUSES.has(status);
+    })
+    .sort((a, b) => {
+      const aPeriodEnd = normalizeFirestoreTimestamp(a.get('current_period_end')) || 0;
+      const bPeriodEnd = normalizeFirestoreTimestamp(b.get('current_period_end')) || 0;
+      return bPeriodEnd - aPeriodEnd;
+    })[0] || null;
+}
+
+function createHttpError(statusCode, message) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+async function setSubscriptionCancelAtPeriodEnd({
+  uid,
+  subscriptionId,
+  cancelAtPeriodEnd,
+  stripeSecretKey,
+  logPrefix,
+}) {
+  const subscriptionDoc = await findUserSubscriptionDoc(uid, subscriptionId);
+
+  if (!subscriptionDoc) {
+    throw createHttpError(404, 'No active subscription found.');
+  }
+
+  const subscriptionData = subscriptionDoc.data() || {};
+  const storedStatus = subscriptionData.status;
+  if (
+    typeof storedStatus === 'string' &&
+    !CANCELLABLE_SUBSCRIPTION_STATUSES.has(storedStatus)
+  ) {
+    throw createHttpError(409, 'This subscription is not currently active.');
+  }
+
+  const stripe = new Stripe(stripeSecretKey);
+  const existingSubscription = await stripe.subscriptions.retrieve(subscriptionDoc.id);
+
+  if (
+    typeof subscriptionData.customer === 'string' &&
+    typeof existingSubscription.customer === 'string' &&
+    subscriptionData.customer !== existingSubscription.customer
+  ) {
+    console.error(`${logPrefix} Subscription customer mismatch:`, {
+      uid,
+      subscriptionId: subscriptionDoc.id,
+    });
+    throw createHttpError(403, 'Subscription does not belong to this user.');
+  }
+
+  if (!CANCELLABLE_SUBSCRIPTION_STATUSES.has(existingSubscription.status)) {
+    throw createHttpError(409, 'This subscription is not currently active.');
+  }
+
+  const updatedSubscription =
+    existingSubscription.cancel_at_period_end === cancelAtPeriodEnd
+      ? existingSubscription
+      : await stripe.subscriptions.update(subscriptionDoc.id, {
+          cancel_at_period_end: cancelAtPeriodEnd,
+        });
+
+  const subscriptionUpdate = {
+    status: updatedSubscription.status,
+    cancel_at_period_end: Boolean(updatedSubscription.cancel_at_period_end),
+    cancel_at: normalizeStripeTimestamp(updatedSubscription.cancel_at) || null,
+    canceled_at: normalizeStripeTimestamp(updatedSubscription.canceled_at) || null,
+  };
+  const currentPeriodEnd = getSubscriptionCurrentPeriodEnd(updatedSubscription);
+  if (currentPeriodEnd) {
+    subscriptionUpdate.current_period_end = currentPeriodEnd;
+  }
+
+  await subscriptionDoc.ref.set(subscriptionUpdate, { merge: true });
+
+  return normalizeSubscription(updatedSubscription);
 }
 
 exports.openaiChatCompletion = onRequest(
@@ -163,6 +343,191 @@ exports.openaiChatCompletion = onRequest(
         error: {
           message: error instanceof Error ? error.message : 'Unexpected proxy error.',
         },
+      });
+    }
+  }
+);
+
+exports.getStripeSubscription = onRequest(
+  {
+    cors: true,
+    region: 'us-central1',
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      res.status(405).json({ error: { message: 'Method not allowed.' } });
+      return;
+    }
+
+    const authResult = await verifyFirebaseRequest(req, '[getStripeSubscription]');
+    if (authResult.error) {
+      res.status(authResult.error.status).json({
+        error: { message: authResult.error.message },
+      });
+      return;
+    }
+
+    try {
+      const subscriptionDoc = await findUserSubscriptionDoc(authResult.uid, '');
+
+      res.status(200).json({
+        subscription: subscriptionDoc ? normalizeSubscriptionDoc(subscriptionDoc) : null,
+      });
+    } catch (error) {
+      console.error('[getStripeSubscription] Unexpected error:', {
+        uid: authResult.uid,
+        error,
+      });
+      res.status(500).json({
+        error: formatHttpError(error, 'Could not load subscription.'),
+      });
+    }
+  }
+);
+
+exports.cancelStripeSubscription = onRequest(
+  {
+    cors: true,
+    region: 'us-central1',
+    timeoutSeconds: 30,
+    secrets: [STRIPE_API_KEY],
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: { message: 'Method not allowed.' } });
+      return;
+    }
+
+    const authResult = await verifyFirebaseRequest(req, '[cancelStripeSubscription]');
+    if (authResult.error) {
+      res.status(authResult.error.status).json({
+        error: { message: authResult.error.message },
+      });
+      return;
+    }
+
+    const uid = authResult.uid;
+    const subscriptionId =
+      req.body && typeof req.body.subscriptionId === 'string'
+        ? req.body.subscriptionId.trim()
+        : '';
+
+    const stripeSecretKey = STRIPE_API_KEY.value();
+    if (!stripeSecretKey) {
+      res.status(503).json({
+        error: {
+          message: 'Stripe API key secret is not configured for Firebase Functions.',
+        },
+      });
+      return;
+    }
+
+    try {
+      const subscription = await setSubscriptionCancelAtPeriodEnd({
+        uid,
+        subscriptionId,
+        cancelAtPeriodEnd: true,
+        stripeSecretKey,
+        logPrefix: '[cancelStripeSubscription]',
+      });
+
+      res.status(200).json({ subscription });
+    } catch (error) {
+      console.error('[cancelStripeSubscription] Unexpected error:', {
+        uid,
+        subscriptionId: subscriptionId || null,
+        error,
+      });
+
+      const statusCode =
+        typeof error?.statusCode === 'number' && error.statusCode >= 400
+          ? error.statusCode
+          : 500;
+
+      res.status(statusCode).json({
+        error: formatHttpError(error, 'Could not cancel subscription.'),
+      });
+    }
+  }
+);
+
+exports.resumeStripeSubscription = onRequest(
+  {
+    cors: true,
+    region: 'us-central1',
+    timeoutSeconds: 30,
+    secrets: [STRIPE_API_KEY],
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: { message: 'Method not allowed.' } });
+      return;
+    }
+
+    const authResult = await verifyFirebaseRequest(req, '[resumeStripeSubscription]');
+    if (authResult.error) {
+      res.status(authResult.error.status).json({
+        error: { message: authResult.error.message },
+      });
+      return;
+    }
+
+    const uid = authResult.uid;
+    const subscriptionId =
+      req.body && typeof req.body.subscriptionId === 'string'
+        ? req.body.subscriptionId.trim()
+        : '';
+
+    const stripeSecretKey = STRIPE_API_KEY.value();
+    if (!stripeSecretKey) {
+      res.status(503).json({
+        error: {
+          message: 'Stripe API key secret is not configured for Firebase Functions.',
+        },
+      });
+      return;
+    }
+
+    try {
+      const subscription = await setSubscriptionCancelAtPeriodEnd({
+        uid,
+        subscriptionId,
+        cancelAtPeriodEnd: false,
+        stripeSecretKey,
+        logPrefix: '[resumeStripeSubscription]',
+      });
+
+      res.status(200).json({ subscription });
+    } catch (error) {
+      console.error('[resumeStripeSubscription] Unexpected error:', {
+        uid,
+        subscriptionId: subscriptionId || null,
+        error,
+      });
+
+      const statusCode =
+        typeof error?.statusCode === 'number' && error.statusCode >= 400
+          ? error.statusCode
+          : 500;
+
+      res.status(statusCode).json({
+        error: formatHttpError(error, 'Could not resume subscription.'),
       });
     }
   }
