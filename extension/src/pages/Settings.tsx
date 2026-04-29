@@ -199,7 +199,7 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
         <div>
           <h4 className="mb-2 text-sm font-medium text-zinc-200">Companion Web App</h4>
           <p className="text-xs text-zinc-400">
-            Open the full web app in a browser tab when you want more room.
+            See stats about your usage, and doxx your own usage through a sharable (and cancelable) public url! Create accountability rahhhhhhh
           </p>
         </div>
 

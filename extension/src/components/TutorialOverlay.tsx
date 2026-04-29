@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { Check, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
 import { COMPANION_WEB_APP_URL, TUTORIAL_EXACT_PROMPT } from '../constants';
 
@@ -97,20 +97,6 @@ const measureTarget = (selector: string | null): SpotlightRect => {
   };
 };
 
-const expandRect = (rect: SpotlightRect, padding: number): SpotlightRect => {
-  const left = Math.max(8, rect.left - padding);
-  const top = Math.max(8, rect.top - padding);
-  const right = Math.min(window.innerWidth - 8, rect.left + rect.width + padding);
-  const bottom = Math.min(window.innerHeight - 8, rect.top + rect.height + padding);
-
-  return {
-    top,
-    left,
-    width: right - left,
-    height: bottom - top,
-  };
-};
-
 const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
   if (step === 'invite') {
     return {
@@ -194,13 +180,20 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
 };
 
 const getCardPosition = (rect: SpotlightRect, step: TutorialStep): React.CSSProperties => {
-  const cardWidth = Math.min(step === 'complete' || step === 'companionWebApp' ? 360 : 330, window.innerWidth - 32);
+  const isCompleteStep = step === 'complete';
+  const isCompanionStep = step === 'companionWebApp';
+  const cardWidth = Math.min(isCompleteStep || isCompanionStep ? 360 : 330, window.innerWidth - 32);
+  if (isCompleteStep) {
+    return {
+      width: cardWidth,
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+    };
+  }
+
   const left = clamp(rect.left + rect.width / 2 - cardWidth / 2, 16, window.innerWidth - cardWidth - 16);
-  const estimatedHeight = step === 'complete'
-    ? Math.min(460, window.innerHeight - 32)
-    : step === 'companionWebApp'
-      ? 280
-      : 220;
+  const estimatedHeight = isCompanionStep ? 280 : 220;
   const shouldPlaceAbove = rect.top > window.innerHeight * 0.54;
 
   if (shouldPlaceAbove) {
@@ -229,13 +222,10 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
 }) => {
   const selector = TARGET_SELECTORS[step];
   const hasTargetSpotlight = selector !== null;
-  const cardRef = useRef<HTMLElement>(null);
   const [rect, setRect] = useState<SpotlightRect>(() => measureTarget(selector));
-  const [cardRect, setCardRect] = useState<SpotlightRect | null>(null);
   const copy = stepCopy(step, promptMismatch);
   const cardPosition = useMemo(() => getCardPosition(rect, step), [rect, step]);
   const stepIndex = STEP_INDEX[step];
-  const cardBacklightRect = cardRect ? expandRect(cardRect, 16) : null;
 
   useLayoutEffect(() => {
     const updateRect = () => setRect(measureTarget(selector));
@@ -251,33 +241,6 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
       window.removeEventListener('scroll', updateRect, true);
     };
   }, [selector, step]);
-
-  useLayoutEffect(() => {
-    const card = cardRef.current;
-    if (!card) return;
-
-    const updateCardRect = () => {
-      const nextRect = card.getBoundingClientRect();
-      setCardRect({
-        top: nextRect.top,
-        left: nextRect.left,
-        width: nextRect.width,
-        height: nextRect.height,
-      });
-    };
-
-    updateCardRect();
-    const animationFrame = window.requestAnimationFrame(updateCardRect);
-    const resizeObserver = new ResizeObserver(updateCardRect);
-    resizeObserver.observe(card);
-    window.addEventListener('resize', updateCardRect);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateCardRect);
-    };
-  }, [cardPosition, step]);
 
   return (
     <div aria-live="polite" className="pointer-events-none fixed inset-0 z-[80]">
@@ -313,19 +276,15 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
         <div className="fixed inset-0 bg-black/35" />
       )}
 
-      {!hasTargetSpotlight && cardBacklightRect && (
-        <div
-          className="fixed z-[81] rounded-[24px] border border-emerald-300/55 bg-emerald-300/[0.03] shadow-[0_0_0_1px_rgba(16,185,129,0.18),0_0_44px_rgba(16,185,129,0.26),0_0_96px_rgba(16,185,129,0.12)]"
-          style={cardBacklightRect}
-        />
-      )}
-
       <section
-        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label={copy.title}
-        className="pointer-events-auto fixed z-[82] max-h-[calc(100vh-32px)] overflow-y-auto rounded-xl border border-white/12 bg-zinc-950/96 p-4 text-white shadow-2xl shadow-black/50 ring-1 ring-white/10"
+        className={`pointer-events-auto fixed z-[82] max-h-[calc(100vh-32px)] overflow-y-auto rounded-xl border bg-zinc-950/96 p-4 text-white ${
+          hasTargetSpotlight
+            ? 'border-white/12 shadow-2xl shadow-black/50 ring-1 ring-white/10'
+            : 'border-emerald-300/55 shadow-[0_0_0_1px_rgba(16,185,129,0.20),0_0_42px_rgba(16,185,129,0.24),0_20px_64px_rgba(0,0,0,0.56)] ring-1 ring-emerald-300/20'
+        }`}
         style={cardPosition}
       >
         <button
