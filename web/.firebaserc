@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "intention-setter"
+  },
+  "targets": {},
+  "etags": {
+    "intention-setter": {
+      "extensionInstances": {
+        "firestore-stripe-payments": "6a46a513ca17863d07cd5b7f65d806a6de49f1ae95d10d8fc6fd7411f10eda03"
+      }
+    }
   }
 }
