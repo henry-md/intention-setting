@@ -270,6 +270,11 @@ export const RuleForm: React.FC<RuleFormProps> = ({
         setFormError('Please enter a valid number of extensions');
         return;
       }
+
+      if (onTutorialRuleSaved && (plusOnesNum !== 5 || plusOneDurationSeconds !== 60)) {
+        setFormError('For the tutorial, set 5 extensions of 1:00 each');
+        return;
+      }
     }
 
     await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
