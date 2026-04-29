@@ -7,6 +7,7 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  envPrefix: ['VITE_', 'HARD_REQUIREMENT_'],
   plugins: [
     react(),
     crx({ manifest }),
