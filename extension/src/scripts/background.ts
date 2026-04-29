@@ -131,8 +131,40 @@ const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
 const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
 const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
 const CURRENT_USAGE_DAY_KEY_STORAGE_KEY = 'currentUsageDayKey';
+const DEFAULT_ACTION_TITLE = 'Open Intention Setting';
+const LOCAL_DEV_ACTION_TITLE = `${DEFAULT_ACTION_TITLE} (local dev)`;
+const PRODUCTION_ACTION_ICONS: { [index: number]: string } = {
+  16: 'icons/32.png',
+  32: 'icons/64.png',
+  48: 'icons/128.png',
+  64: 'icons/128.png',
+  128: 'icons/256.png'
+};
+const LOCAL_DEV_ACTION_ICONS: { [index: number]: string } = {
+  16: 'icons/dev-32.png',
+  32: 'icons/dev-64.png',
+  48: 'icons/dev-128.png',
+  64: 'icons/dev-128.png',
+  128: 'icons/dev-256.png'
+};
 
 let lastUsageResetCheckAt = 0;
+
+async function syncActionIconForInstallType(): Promise<void> {
+  try {
+    const extensionInfo = await chrome.management.getSelf();
+    const isLocalDevInstall = extensionInfo.installType === 'development';
+
+    await chrome.action.setIcon({
+      path: isLocalDevInstall ? LOCAL_DEV_ACTION_ICONS : PRODUCTION_ACTION_ICONS
+    });
+    await chrome.action.setTitle({
+      title: isLocalDevInstall ? LOCAL_DEV_ACTION_TITLE : DEFAULT_ACTION_TITLE
+    });
+  } catch (error) {
+    console.warn('[ActionIcon] Failed to sync install-type icon:', error);
+  }
+}
 
 async function syncStoredUserEmailToFirestore(): Promise<void> {
   try {
@@ -1190,9 +1222,12 @@ async function startTimerForTab(
 // EVENT LISTENERS
 // ============================================================================
 
+void syncActionIconForInstallType();
+
 // Listen for when extension is installed or updated
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed/updated");
+  void syncActionIconForInstallType();
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
   syncStoredUserEmailToFirestore();
   checkAndApplyRemoteUsageReset(true);
@@ -1452,6 +1487,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // Service worker startup - recover timer state
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Timer] Service worker starting up');
+  await syncActionIconForInstallType();
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
   await syncStoredUserEmailToFirestore();
   await checkAndApplyRemoteUsageReset(true);

@@ -4,7 +4,14 @@
   "version": "1.0.3",
   "description": "Helps you set intentions on websites like youtube, tiktok, etc. to avoid doomscrolling.",
   "action": {
-    "default_title": "Open Intention Setting"
+    "default_title": "Open Intention Setting",
+    "default_icon": {
+      "16": "icons/32.png",
+      "32": "icons/64.png",
+      "48": "icons/128.png",
+      "64": "icons/128.png",
+      "128": "icons/256.png"
+    }
   },
   "side_panel": {
     "default_path": "index.html"
@@ -27,6 +34,8 @@
   ],
   "host_permissions": [
     "https://*.firebaseapp.com/*",
+    "https://intention-setter.web.app/*",
+    "https://intention-setting-production.up.railway.app/*",
     "https://*.googleapis.com/*",
     "https://*.gstatic.com/*",
     "https://*.youtube.com/*",
@@ -58,7 +67,7 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:24678 http://localhost:* https://*.firebaseapp.com https://*.googleapis.com https://*.gstatic.com https://*.cloudfunctions.net https://*.run.app;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:24678 http://localhost:* https://*.firebaseapp.com https://intention-setter.web.app https://intention-setting-production.up.railway.app https://*.googleapis.com https://*.gstatic.com https://*.cloudfunctions.net https://*.run.app;"
   },
   "key": "-----BEGIN PUBLIC KEY-----\nfnemliooiheogciefhmbiknheoeflaal\n-----END PUBLIC KEY-----"
 }
