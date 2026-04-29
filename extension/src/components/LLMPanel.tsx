@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, Loader2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import type { Rule, RuleTarget } from '../types/Rule';
@@ -15,6 +18,7 @@ import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatUrlForDisplay } from '../utils/urlDisplay';
+import { TUTORIAL_GROUP_NAME, TUTORIAL_RULE_NAME, TUTORIAL_SOCIAL_URLS } from '../constants';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool';
@@ -42,7 +46,101 @@ interface ToolCallDisplay {
 interface LLMPanelProps {
   user: User | null;
   onCollapse?: () => void;
+  tutorialExpectedPrompt?: string;
+  onTutorialPromptAccepted?: () => void;
+  onTutorialPromptMismatch?: (isMismatch: boolean) => void;
+  onAiChatFocus?: () => void;
+  onAiChatBlur?: () => void;
 }
+
+const markdownComponents: Components = {
+  p: ({ children }) => (
+    <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-white">{children}</strong>
+  ),
+  em: ({ children }) => (
+    <em className="italic text-zinc-100">{children}</em>
+  ),
+  a: ({ children, href }) => (
+    <a
+      className="text-sky-300 underline decoration-sky-300/40 underline-offset-2 hover:text-sky-200"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {children}
+    </a>
+  ),
+  ul: ({ children }) => (
+    <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>
+  ),
+  li: ({ children }) => (
+    <li className="leading-relaxed">{children}</li>
+  ),
+  code: ({ children, className }) => {
+    const isCodeBlock = Boolean(className);
+
+    return (
+      <code
+        className={
+          isCodeBlock
+            ? `${className} block overflow-x-auto whitespace-pre rounded bg-zinc-950/80 px-2 py-1.5 text-xs text-zinc-100`
+            : 'rounded bg-zinc-950/70 px-1 py-0.5 font-mono text-[0.85em] text-zinc-100'
+        }
+      >
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto">{children}</pre>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-zinc-500 pl-3 text-zinc-300">
+      {children}
+    </blockquote>
+  ),
+};
+
+const markdownPlugins = [remarkGfm, remarkBreaks];
+
+const MarkdownMessage: React.FC<{ content: string }> = ({ content }) => (
+  <div className="break-words">
+    <ReactMarkdown components={markdownComponents} remarkPlugins={markdownPlugins}>
+      {content}
+    </ReactMarkdown>
+  </div>
+);
+
+const AI_CHAT_SYSTEM_PROMPT = `You help users manage website groups and time rules. Your job is to choose the correct tool calls, not to chat at length.
+
+Decision rules:
+1. First decide whether the rule type is known. If the user wants a rule but the rule type is missing, ask the clarification question in rule 5 immediately. Do not call get_groups_and_rules first.
+2. Once the action and rule type are clear, call get_groups_and_rules before every create, update, or delete request and wait for the result. Do not call any create/update/delete tool in the same assistant message as get_groups_and_rules.
+3. After get_groups_and_rules returns, use the existing group/rule names from that result. Update existing matching items; do not create duplicates.
+4. If the user asks to create a rule for one explicit site, call create_rule with a url target. If the user asks for a category or a set of related sites, create or reuse a group, then create_rule with a group target.
+5. Rule type mapping:
+   - hard: user says hard, strict, block, blocking, or no access after time runs out.
+   - soft: user says soft, flexible, allow extensions, plus-ones, or "one more".
+   - session: user says session, per visit, ask me each time, or choose time when I open it.
+6. If the user wants a rule but the rule type is missing, ask exactly one clarification question and do not call tools: "Should this be hard, soft, or session? Hard blocks access after time runs out, soft allows extensions, and session asks each visit."
+7. Defaults only after rule type is known:
+   - Hard rule with no time: timeLimit 60.
+   - Soft rule with no time: timeLimit 60, plusOnes 3, plusOneDuration 300.
+   - Soft rule with plus-one count but no plus-one duration: plusOneDuration 300.
+   - Session rule: omit timeLimit, plusOnes, and plusOneDuration.
+8. URL rules: use lowercase bare domains only, without https:// or www. Use youtube.com, not https://www.youtube.com.
+9. Common category defaults:
+   - Social Media group: instagram.com, tiktok.com, facebook.com, x.com, twitter.com, reddit.com, snapchat.com.
+   - Video Sites group: youtube.com, netflix.com, hulu.com, disneyplus.com, twitch.tv.
+   - News group: nytimes.com, washingtonpost.com, cnn.com, foxnews.com, bbc.com, theguardian.com.
+10. When adding or removing individual URLs from an existing rule, call update_rule with addUrls or removeUrls. Do not create a new rule.
+11. Keep final responses brief and confirm exactly what changed.`;
 
 // Define OpenAI function tools
 const tools: ChatCompletionTool[] = [
@@ -50,7 +148,7 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'get_groups_and_rules',
-      description: 'Retrieves all existing groups and rules. Use this to see what groups and rules are already configured before creating new ones or when the user asks about existing configurations.',
+      description: 'Retrieves all existing groups and rules. Use this after the requested action and rule type are clear. If the user wants a rule but has not specified hard, soft, or session, ask a clarification question instead of calling this.',
       parameters: {
         type: 'object',
         properties: {},
@@ -62,18 +160,18 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_group',
-      description: 'Creates a new group of websites. Groups are collections of URLs that can be used in rules. When creating a group, provide a name and a list of website URLs.',
+      description: 'Creates a new group of websites after get_groups_and_rules confirms the group does not already exist. Use groups for categories or related sets of sites that should share one rule.',
       parameters: {
         type: 'object',
         properties: {
           name: {
             type: 'string',
-            description: 'The name for the group (e.g., "Social Media", "Video Sites")'
+            description: 'The group name, using title case (e.g., "Social Media", "Video Sites", "News")'
           },
           urls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Array of website URLs to include in the group (e.g., ["youtube.com", "instagram.com"]). Do not include https:// or www. - just the domain name.'
+            description: 'Bare lowercase domains only, without https:// or www. (e.g., ["youtube.com", "instagram.com"]).'
           }
         },
         required: ['name', 'urls']
@@ -84,13 +182,13 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_rule',
-      description: 'Creates a time rule on websites or groups. Rules restrict how long you can spend on specified sites. There are three types: "hard" (strict blocking after time expires), "soft" (allows extensions/plus-ones), and "session" (prompts for time rule when visiting). You can specify groups by name or individual URLs.',
+      description: 'Creates a time rule after get_groups_and_rules confirms no matching rule exists. Use a url target for one explicit site, and a group target for an existing or newly created category group.',
       parameters: {
         type: 'object',
         properties: {
           name: {
             type: 'string',
-            description: 'Optional name for the rule'
+            description: 'Optional concise rule name, usually "<Target> Limit" (e.g., "YouTube Limit", "Social Media Limit").'
           },
           targets: {
             type: 'array',
@@ -100,33 +198,33 @@ const tools: ChatCompletionTool[] = [
                 type: {
                   type: 'string',
                   enum: ['url', 'group'],
-                  description: 'Whether this target is a URL or a group name'
+                  description: 'Use "url" for one explicit site. Use "group" for a category or named group.'
                 },
                 value: {
                   type: 'string',
-                  description: 'The URL (e.g., "youtube.com") or group name (e.g., "Social Media")'
+                  description: 'Bare domain for url targets (e.g., "youtube.com") or exact group name for group targets (e.g., "Social Media").'
                 }
               },
               required: ['type', 'value']
             },
-            description: 'Array of targets (URLs or group names) to apply the rule to'
+            description: 'Array of targets. Prefer one group target for category rules.'
           },
           ruleType: {
             type: 'string',
             enum: ['hard', 'soft', 'session'],
-            description: 'Type of rule: "hard" (strict block), "soft" (allows extensions), or "session" (prompts on visit)'
+            description: '"hard" blocks after time expires, "soft" allows plus-one extensions, and "session" asks for a time on each visit.'
           },
           timeLimit: {
             type: 'number',
-            description: 'Time rule in minutes (not needed for session rules)'
+            description: 'Allowed time in minutes. Required for hard and soft rules. Omit for session rules.'
           },
           plusOnes: {
             type: 'number',
-            description: 'Number of time extensions allowed (only for soft rules). For ex. they can ask for 3 extensions of 5 minutes each. So they would get their allotted time, and be able to press a "one more" button 3 times for a total of 15 extra minutes on their sites.'
+            description: 'Number of extensions allowed. Use only for soft rules. Omit for hard and session rules.'
           },
           plusOneDuration: {
             type: 'number',
-            description: 'Duration of each extension in seconds (only for soft rules)'
+            description: 'Duration of each soft-rule extension in seconds. Five minutes is 300 seconds. Omit for hard and session rules.'
           }
         },
         required: ['targets', 'ruleType']
@@ -137,13 +235,13 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_rule',
-      description: 'Updates an existing rule. Use this to change the type, time, add/remove targets, or other properties of a rule. You can identify the rule by its name or by the group/URL it targets.',
+      description: 'Updates an existing rule after get_groups_and_rules returns it. Use this instead of creating a duplicate when the user changes type, time, extensions, or individual URL exceptions.',
       parameters: {
         type: 'object',
         properties: {
           identifier: {
             type: 'string',
-            description: 'The name of the rule, or the name of the group/URL it targets (e.g., "Social Media Rule" or "Social Media")'
+            description: 'Exact existing rule name when available; otherwise the existing group or URL it targets.'
           },
           ruleType: {
             type: 'string',
@@ -165,12 +263,12 @@ const tools: ChatCompletionTool[] = [
           addUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Spare URLs to add to the rule (optional - e.g., ["youtube.com", "reddit.com"]). Note: Cannot add/remove groups, only individual URLs.'
+            description: 'Bare lowercase domains to add as individual URL exceptions. Cannot add groups here.'
           },
           removeUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Spare URLs to remove from the rule (optional - e.g., ["facebook.com"])'
+            description: 'Bare lowercase domains to remove from individual URL exceptions.'
           }
         },
         required: ['identifier']
@@ -181,7 +279,7 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_group',
-      description: 'Updates an existing group. Use this to rename a group or add/remove URLs from it. You can identify the group by its name.',
+      description: 'Updates an existing group after get_groups_and_rules returns it. Use this for renaming a group or changing the group URL list.',
       parameters: {
         type: 'object',
         properties: {
@@ -196,12 +294,12 @@ const tools: ChatCompletionTool[] = [
           addUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'URLs to add to the group (optional - e.g., ["reddit.com", "twitter.com"])'
+            description: 'Bare lowercase domains to add to the group.'
           },
           removeUrls: {
             type: 'array',
             items: { type: 'string' },
-            description: 'URLs to remove from the group (optional - e.g., ["facebook.com"])'
+            description: 'Bare lowercase domains to remove from the group.'
           }
         },
         required: ['identifier']
@@ -212,7 +310,7 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'delete_group',
-      description: 'Deletes an existing group. Use this when the user wants to remove a group entirely.',
+      description: 'Deletes an existing group after get_groups_and_rules returns it and the user explicitly asks to delete the group.',
       parameters: {
         type: 'object',
         properties: {
@@ -229,7 +327,7 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'delete_rule',
-      description: 'Deletes an existing rule. Use this when the user wants to remove a rule entirely.',
+      description: 'Deletes an existing rule after get_groups_and_rules returns it and the user explicitly asks to delete the rule.',
       parameters: {
         type: 'object',
         properties: {
@@ -249,7 +347,15 @@ const tools: ChatCompletionTool[] = [
  * Displays at the bottom of the screen in a resizable panel.
  * Supports function calling to create groups and rules.
  */
-const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
+const LLMPanel: React.FC<LLMPanelProps> = ({
+  user,
+  onCollapse,
+  tutorialExpectedPrompt,
+  onTutorialPromptAccepted,
+  onTutorialPromptMismatch,
+  onAiChatFocus,
+  onAiChatBlur,
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -933,6 +1039,74 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     }
   };
 
+  const ensureTutorialSocialRule = async (): Promise<string> => {
+    if (!user?.uid) {
+      throw new Error('Please sign in to use the AI assistant.');
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userDocRef);
+    const data = userDoc.exists() ? userDoc.data() : {};
+    const existingGroups: Group[] = data.groups || [];
+    const existingRules: Rule[] = data.rules || [];
+    const normalizedSocialUrls = TUTORIAL_SOCIAL_URLS.map(url => normalizeUrl(`https://${url}`));
+
+    let groups = [...existingGroups];
+    let socialGroup = groups.find(group => group.name.toLowerCase() === TUTORIAL_GROUP_NAME.toLowerCase());
+
+    if (!socialGroup) {
+      socialGroup = {
+        id: `group:${Date.now()}`,
+        name: TUTORIAL_GROUP_NAME,
+        items: normalizedSocialUrls,
+        createdAt: new Date().toISOString(),
+      };
+      groups = [...groups, socialGroup];
+    } else {
+      const nextItems = [...socialGroup.items];
+      normalizedSocialUrls.forEach(url => {
+        if (!nextItems.includes(url)) {
+          nextItems.push(url);
+        }
+      });
+
+      socialGroup = {
+        ...socialGroup,
+        items: nextItems,
+      };
+      groups = groups.map(group => group.id === socialGroup?.id ? socialGroup : group);
+    }
+
+    const tutorialRuleIndex = existingRules.findIndex(rule => {
+      if (rule.name === TUTORIAL_RULE_NAME) return true;
+
+      return rule.targets?.some(target => target.type === 'group' && target.id === socialGroup?.id) ?? false;
+    });
+
+    const tutorialRule: Rule = {
+      ...(tutorialRuleIndex >= 0 ? existingRules[tutorialRuleIndex] : {
+        id: `rule:${Date.now() + 1}`,
+        createdAt: new Date().toISOString(),
+      }),
+      name: TUTORIAL_RULE_NAME,
+      type: 'soft',
+      targets: [{ type: 'group', id: socialGroup.id }],
+      timeLimit: 20,
+      plusOnes: 5,
+      plusOneDuration: 60,
+    };
+
+    const rules = tutorialRuleIndex >= 0
+      ? existingRules.map((rule, index) => index === tutorialRuleIndex ? tutorialRule : rule)
+      : [...existingRules, tutorialRule];
+
+    await setDoc(userDocRef, { groups, rules }, { merge: true });
+    await syncRulesToStorage(user.uid);
+    window.dispatchEvent(new CustomEvent('groupsOrRulesUpdated'));
+
+    return `Created ${TUTORIAL_RULE_NAME}: 20 minutes with 5 one-minute extensions for ${TUTORIAL_GROUP_NAME}.`;
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -942,6 +1116,49 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
     }
 
     const userMessageContent = input.trim();
+
+    if (tutorialExpectedPrompt && userMessageContent !== tutorialExpectedPrompt) {
+      setError('For the tutorial, type the prompt exactly as shown.');
+      onTutorialPromptMismatch?.(true);
+      return;
+    }
+
+    if (tutorialExpectedPrompt) {
+      const userMessage: Message = {
+        role: 'user',
+        content: userMessageContent,
+        openAiMessage: { role: 'user', content: userMessageContent }
+      };
+
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+      setLoading(true);
+      setStreamingContent('');
+      setError(null);
+      onTutorialPromptMismatch?.(false);
+
+      try {
+        const result = await ensureTutorialSocialRule();
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: `${result} Open it from the Rules list and switch it to Hard.`,
+          openAiMessage: {
+            role: 'assistant',
+            content: `${result} Open it from the Rules list and switch it to Hard.`
+          }
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+        onTutorialPromptAccepted?.();
+      } catch (err) {
+        setError(err instanceof Error ? `Error: ${err.message}` : 'An unexpected error occurred. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+
+      return;
+    }
+
     const userMessage: Message = {
       role: 'user',
       content: userMessageContent,
@@ -960,34 +1177,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({ user, onCollapse }) => {
       conversationMessages = [
         {
           role: 'system',
-          content: `You are a proactive assistant that helps users manage website groups and time rules. BE DECISIVE AND TAKE ACTION - don't ask unnecessary questions or ask for confirmation unless something is truly ambiguous.
-
-You have access to these tools:
-1. get_groups_and_rules: View all existing groups and rules
-2. create_group: Creates a collection of websites (e.g., "Social Media" group with youtube.com, instagram.com, etc.)
-3. update_group: Modifies an existing group (rename, add URLs, remove URLs)
-4. delete_group: Deletes a group entirely
-5. create_rule: Sets time restrictions on websites or groups
-6. update_rule: Modifies an existing rule (change type, time, extensions, add/remove spare URLs)
-   - Can add/remove individual URLs to a rule (spare URLs), but CANNOT change which groups are in the rule
-   - "hard": Strict blocking when time runs out
-   - "soft": Allows extensions/plus-ones after time expires
-   - "session": Prompts user to set time rule when visiting the site
-7. delete_rule: Deletes a rule entirely
-
-IMPORTANT GUIDELINES:
-- BE PROACTIVE: Don't ask for unnecessary confirmation. The only question you may have to ask frequenty is whether they want their rule to be a hard or soft rule, if they don't specify. Also clarify that a hard rule means they will not be able to access the site after their time for the rest of the day, while a soft rule allows extensions of their rule. Also note that they can choose a "session" rule, which will prompt them for how much time they want to spend every time they visit the site, instead of setting the number beforehand.
-- CHAIN TOOLS: When appropriate, make multiple tool calls in sequence. For example, if a user says "create a social media group and rule it to 60 minutes", call BOTH create_group AND create_rule
-- CHECK FIRST: Before creating duplicates, use get_groups_and_rules to see what exists
-- UPDATE, DON'T RECREATE: If a user asks to change an existing group or rule, use update_group or update_rule instead of creating new ones
-- SPARE URLS IN RULES: When a user asks to add an individual URL to an existing rule, use update_rule with addUrls parameter - don't create a new rule
-- USE DEFAULTS: If details are missing, use sensible defaults:
-  - Hard rules default to 60 minutes
-  - Soft rules default to 60 minutes with 3 extensions of 300 seconds (5 minutes) each
-  - Include common sites for well-known categories (e.g., Social Media = instagram, twitter, tiktok, facebook, etc.)
-- URLS: Use only domain names without https:// or www. (e.g., "youtube.com" not "https://www.youtube.com")
-- ERR ON THE SIDE OF CREATING GROUPS: If they ask you to "create a hard rule across all social media", it would be best to create a social media group, and then to create a rule using that group. This would be as opposed to creating a rule with spare urls.
-`
+          content: AI_CHAT_SYSTEM_PROMPT
         },
         // Build conversation from stored OpenAI messages
         ...messages
@@ -1000,11 +1190,10 @@ IMPORTANT GUIDELINES:
         requestMessages: ChatCompletionMessageParam[],
         includeTools: boolean
       ) => createOpenAIChatCompletion(user.uid, {
-        model: 'gpt-4',
         messages: requestMessages,
         tools: includeTools ? tools : undefined,
         tool_choice: includeTools ? 'auto' : undefined,
-        temperature: 0.7,
+        temperature: 0,
       });
 
       // First API call - may return tool calls
@@ -1199,8 +1388,12 @@ IMPORTANT GUIDELINES:
           console.error('=== END DEBUG ===');
         } else if (errorMsg.includes('authentication expired') || errorMsg.includes('unauthorized') || errorMsg.includes('401')) {
           userFriendlyMessage = 'Your session expired. Please sign out and sign back in.';
-        } else if (errorMsg.includes('proxy is not configured')) {
-          userFriendlyMessage = 'The AI backend is not configured yet. Add the OPENAI_API_KEY Firebase secret and redeploy the web project.';
+        } else if (
+          errorMsg.includes('proxy is not configured') ||
+          errorMsg.includes('openai_api_key') ||
+          errorMsg.includes('openai_chat_model')
+        ) {
+          userFriendlyMessage = 'The AI backend is not configured yet. Set OPENAI_API_KEY and OPENAI_CHAT_MODEL for Firebase Functions, then redeploy the web project.';
         } else if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
           userFriendlyMessage = 'API rate limit exceeded. Please wait a moment and try again.';
         } else if (errorMsg.includes('quota') || errorMsg.includes('billing')) {
@@ -1342,7 +1535,11 @@ IMPORTANT GUIDELINES:
                   : 'bg-zinc-800 text-zinc-100 border border-zinc-700'
               }`}
             >
-              <div className="whitespace-pre-wrap break-words">{message.content}</div>
+              {message.role === 'assistant' ? (
+                <MarkdownMessage content={message.content} />
+              ) : (
+                <div className="whitespace-pre-wrap break-words">{message.content}</div>
+              )}
               {message.toolCalls && message.toolCalls.length > 0 && (
                 <ToolCallsDisplay toolCalls={message.toolCalls} />
               )}
@@ -1352,7 +1549,7 @@ IMPORTANT GUIDELINES:
         {streamingContent && (
           <div className="flex justify-start">
             <div className="max-w-[80%] bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-              <div className="whitespace-pre-wrap break-words">{streamingContent}</div>
+              <MarkdownMessage content={streamingContent} />
               <span className="inline-block w-2 h-4 ml-1 bg-zinc-500 animate-pulse" />
             </div>
           </div>
@@ -1379,9 +1576,18 @@ IMPORTANT GUIDELINES:
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (tutorialExpectedPrompt && e.target.value.trim() === tutorialExpectedPrompt) {
+                onTutorialPromptMismatch?.(false);
+                setError(null);
+              }
+            }}
+            onFocus={onAiChatFocus}
+            onBlur={onAiChatBlur}
             onKeyDown={handleKeyDown}
             placeholder="Type your message..."
+            data-tutorial-target="ai-input"
             className="flex-1 bg-zinc-900 text-white border border-zinc-700 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-zinc-500"
             rows={2}
             disabled={loading}

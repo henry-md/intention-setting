@@ -50,11 +50,13 @@ https://www.youtube.com/watch?v=n09p8Y7XfNI
 
 ```
 cd web
+cp functions/.env.example functions/.env
 firebase functions:secrets:set OPENAI_API_KEY
 firebase deploy
 ```
 
 - The extension now calls `openaiChatCompletion` in Firebase Functions, so the OpenAI key stays server-side.
+- Set the chat model with `OPENAI_CHAT_MODEL` in `web/functions/.env`.
 
 ### Other
 

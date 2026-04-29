@@ -36,12 +36,13 @@ pnpm install
 pnpm build
 
 cd ../web
+cp functions/.env.example functions/.env
 firebase functions:secrets:set OPENAI_API_KEY
 firebase deploy
 ```
 
 - The build output will be in `build/`. This should be unpacked in your extension manager, which you can access at `chrome://extensions/`.
-- The AI assistant now reads `OPENAI_API_KEY` from Firebase Functions secrets. Do not put the OpenAI key in `extension/.env`.
+- The AI assistant reads `OPENAI_API_KEY` from Firebase Functions secrets and `OPENAI_CHAT_MODEL` from `web/functions/.env`. Do not put the OpenAI key in `extension/.env`.
 
 # LLM Context
 Firebase docs for configuring OAuth (not great):

@@ -1,5 +1,5 @@
 const { onRequest } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const Stripe = require('stripe');
 
@@ -8,7 +8,17 @@ if (!admin.apps.length) {
 }
 
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+const OPENAI_CHAT_MODEL = defineString('OPENAI_CHAT_MODEL', {
+  description: 'OpenAI model used for extension AI chat responses.',
+});
 const STRIPE_API_KEY = defineSecret('firestore-stripe-payments-STRIPE_API_KEY-3ltd');
+
+const CANCELLABLE_SUBSCRIPTION_STATUSES = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+]);
 
 function getBearerToken(req) {
   const authHeader = req.get('authorization') || '';
@@ -29,7 +39,6 @@ function sanitizePayload(body) {
     tools,
     tool_choice,
     temperature,
-    model,
   } = body;
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -59,25 +68,13 @@ function sanitizePayload(body) {
     throw new Error('temperature must be a number when provided.');
   }
 
-  if (model !== undefined && typeof model !== 'string') {
-    throw new Error('model must be a string when provided.');
-  }
-
   return {
-    model: model || 'gpt-4',
     messages,
     tools,
     tool_choice,
     temperature,
   };
 }
-
-const CANCELLABLE_SUBSCRIPTION_STATUSES = new Set([
-  'active',
-  'trialing',
-  'past_due',
-  'unpaid',
-]);
 
 function normalizeStripeTimestamp(value) {
   return typeof value === 'number' ? value : undefined;
@@ -310,6 +307,18 @@ exports.openaiChatCompletion = onRequest(
       });
       return;
     }
+
+    const chatModel = OPENAI_CHAT_MODEL.value().trim();
+    if (!chatModel) {
+      res.status(503).json({
+        error: {
+          message: 'OPENAI_CHAT_MODEL env parameter is not configured for Firebase Functions.',
+        },
+      });
+      return;
+    }
+
+    payload.model = chatModel;
 
     try {
       const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {

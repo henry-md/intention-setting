@@ -20,6 +20,7 @@ This was **not** a git-history leak in the commits we checked, but it **was** a 
 - Added `web/functions/index.js` with `openaiChatCompletion`, which:
   - verifies the Firebase auth token,
   - reads `OPENAI_API_KEY` from Firebase Secret Manager,
+  - reads the server-owned chat model from `OPENAI_CHAT_MODEL`,
   - sends the real request to OpenAI server-side.
 - Removed the direct `openai.com` host permission from the extension manifest and replaced it with Firebase Functions access.
 - Updated setup docs so `OPENAI_API_KEY` is configured as a Firebase Functions secret, not a `VITE_` env var.

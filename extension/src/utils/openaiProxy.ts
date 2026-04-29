@@ -32,15 +32,19 @@ export async function createOpenAIChatCompletion(
     | null;
 
   if (!response.ok) {
+    const errorMessage = data && 'error' in data ? data.error?.message : null;
+
     if (response.status === 401 || response.status === 403) {
       throw new Error('Authentication expired. Please sign out and sign back in.');
     }
 
     if (response.status === 503) {
-      throw new Error('OpenAI proxy is not configured yet. Set the OPENAI_API_KEY Firebase secret and redeploy.');
+      throw new Error(
+        errorMessage ||
+          'OpenAI proxy is not configured yet. Set OPENAI_API_KEY and OPENAI_CHAT_MODEL for Firebase Functions, then redeploy.'
+      );
     }
 
-    const errorMessage = data && 'error' in data ? data.error?.message : null;
     throw new Error(errorMessage || `OpenAI proxy request failed (${response.status})`);
   }
 

@@ -52,7 +52,6 @@ export interface ChatCompletionResponse {
 
 export interface ChatCompletionRequestPayload {
   messages: ChatCompletionMessageParam[];
-  model: string;
   tools?: ChatCompletionTool[];
   tool_choice?: 'auto' | 'none';
   temperature?: number;
