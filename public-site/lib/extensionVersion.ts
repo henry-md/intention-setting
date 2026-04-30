@@ -44,10 +44,14 @@ function getNextPatchVersion(version: string): string {
   return normalizedParts.join('.');
 }
 
-export function getExtensionVersionResponse() {
+interface ExtensionVersionResponseOptions {
+  advertiseUpgradePrompt?: boolean;
+}
+
+export function getExtensionVersionResponse(options: ExtensionVersionResponseOptions = {}) {
   const forceUpgradeModalToShow = readBooleanEnv(process.env.FORCE_UPGRADE_MODAL_TO_SHOW, false);
 
-  if (!forceUpgradeModalToShow) {
+  if (!forceUpgradeModalToShow && !options.advertiseUpgradePrompt) {
     return EXTENSION_VERSION_RESPONSE;
   }
 
@@ -56,7 +60,9 @@ export function getExtensionVersionResponse() {
   return {
     ...EXTENSION_VERSION_RESPONSE,
     latestVersion: forcedVersion,
-    minSupportedVersion: forcedVersion,
+    minSupportedVersion: forceUpgradeModalToShow
+      ? forcedVersion
+      : EXTENSION_VERSION_RESPONSE.minSupportedVersion,
     forceUpgradeModalToShow,
   };
 }
@@ -68,7 +74,7 @@ export function getExtensionClientMessages() {
   const tutorialDisabledMessage = readStringEnv(process.env.TUTORIAL_DISABLED_MSG);
 
   return {
-    ...getExtensionVersionResponse(),
+    ...getExtensionVersionResponse({ advertiseUpgradePrompt: Boolean(upgradeMessage) }),
     upgradeMessage,
     modalMessage,
     aiChatFocusModalMessage,
