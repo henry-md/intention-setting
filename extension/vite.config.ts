@@ -14,17 +14,41 @@ function isLocalUrl(value: string): boolean {
   }
 }
 
-function getManifestForCommand(command: string): typeof manifest {
-  if (command !== 'build') {
-    return manifest;
+function readBooleanEnv(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((value || '').trim().toLowerCase());
+}
+
+function getUrlOrigin(value: string | undefined): string | null {
+  if (!value) {
+    return null;
   }
 
-  const extensionPagesCsp = manifest.content_security_policy.extension_pages
-    .replace(' ws://localhost:24678', '')
-    .replace(' http://localhost:*', '');
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getManifestForCommand(
+  command: string,
+  localPublicSiteOrigin: string | null
+): typeof manifest {
+  const shouldKeepLocalConnections = Boolean(localPublicSiteOrigin);
+  const extensionPagesCsp = command === 'build' && !shouldKeepLocalConnections
+    ? manifest.content_security_policy.extension_pages
+      .replace(' ws://localhost:24678', '')
+      .replace(' http://localhost:*', '')
+    : manifest.content_security_policy.extension_pages;
 
   return {
     ...manifest,
+    host_permissions: localPublicSiteOrigin
+      ? Array.from(new Set([
+        ...manifest.host_permissions,
+        `${localPublicSiteOrigin}/*`,
+      ]))
+      : manifest.host_permissions,
     content_security_policy: {
       ...manifest.content_security_policy,
       extension_pages: extensionPagesCsp,
@@ -36,19 +60,25 @@ function getManifestForCommand(command: string): typeof manifest {
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const publicSiteUrl = env.VITE_PUBLIC_SITE_URL?.trim();
+  const isLocalPublicSite = Boolean(publicSiteUrl && isLocalUrl(publicSiteUrl));
+  const allowLocalExtensionBuild = readBooleanEnv(env.ALLOW_LOCAL_EXTENSION_BUILD);
 
-  if (command === 'build' && publicSiteUrl && isLocalUrl(publicSiteUrl)) {
+  if (command === 'build' && isLocalPublicSite && !allowLocalExtensionBuild) {
     throw new Error(
       'Refusing to build a packaged extension with local VITE_PUBLIC_SITE_URL. Use .env.production for Chrome Web Store builds.'
     );
   }
+
+  const localPublicSiteOrigin = command === 'build' && isLocalPublicSite && allowLocalExtensionBuild
+    ? getUrlOrigin(publicSiteUrl)
+    : null;
 
   return {
     base: './',
     envPrefix: ['VITE_', 'HARD_REQUIREMENT_', 'SHOW_END_OF_TUTORIAL_ANIMATION'],
     plugins: [
       react(),
-      crx({ manifest: getManifestForCommand(command) }),
+      crx({ manifest: getManifestForCommand(command, localPublicSiteOrigin) }),
       tailwindcss(),
     ],
     resolve: {

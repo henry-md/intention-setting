@@ -16,4 +16,4 @@ Chrome Web Store reads the uploaded zip's `manifest.json`; there is no separate 
 
 Deploy the public site after changing `public-site/lib/extensionVersion.ts`, or the API will keep serving the old latest/min-supported versions.
 
-For local upgrade-modal testing, set `FORCE_UPGRADE_MODAL_TO_SHOW=true` in `public-site/.env`; keep production false. HMR will not update the version shown in `chrome://extensions`; reload the extension card after changing `manifest.json`.
+For local upgrade-modal testing, set `FORCE_UPGRADE_MODAL_TO_SHOW=true` in `public-site/.env`; keep production false. The extension under test must also be pointed at the local public site (`VITE_PUBLIC_SITE_URL=http://localhost:4232`). If testing from `extension/build`, run `pnpm build:local` in `extension`; ordinary `pnpm build` uses `.env.production` and calls the Railway API, so it will not see the local force flag. HMR will not update the version shown in `chrome://extensions`; reload the extension card after changing `manifest.json`.

@@ -504,27 +504,77 @@ const Popup: React.FC = () => {
   };
 
   const activeClientModal = clientModalQueue[0] || null;
+  const clientModalOverlay = (
+    <>
+      {activeClientModal === 'upgrade' && clientModalState?.updatePrompt && (
+        <ExtensionUpdateModal
+          prompt={clientModalState.updatePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'message' && clientModalState?.messagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.messagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'aiChatFocusMessage' && clientModalState?.aiChatFocusMessagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.aiChatFocusMessagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+
+      {activeClientModal === 'tutorialDisabledMessage' && clientModalState?.tutorialDisabledMessagePrompt && (
+        <ClientMessageModal
+          prompt={clientModalState.tutorialDisabledMessagePrompt}
+          onClose={() => {
+            void closeClientModal();
+          }}
+        />
+      )}
+    </>
+  );
 
   if (authLoading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center">
-        <Spinner />
-      </div>
+      <>
+        <div className="h-screen w-full flex items-center justify-center">
+          <Spinner />
+        </div>
+        {clientModalOverlay}
+      </>
     );
   }
 
   if (!user && HARD_REQUIREMENT_GOOGLE_SIGN_IN) {
-    return <SignInRequiredScreen onSignIn={handleSignIn} />;
+    return (
+      <>
+        <SignInRequiredScreen onSignIn={handleSignIn} />
+        {clientModalOverlay}
+      </>
+    );
   }
 
   if (isManageSubscriptionOpen) {
     return (
-      <div className="h-screen w-full extension-gradient-bg">
-        <ManageSubscription
-          user={user}
-          onBack={() => setIsManageSubscriptionOpen(false)}
-        />
-      </div>
+      <>
+        <div className="h-screen w-full extension-gradient-bg">
+          <ManageSubscription
+            user={user}
+            onBack={() => setIsManageSubscriptionOpen(false)}
+          />
+        </div>
+        {clientModalOverlay}
+      </>
     );
   }
 
@@ -744,41 +794,7 @@ const Popup: React.FC = () => {
         />
       )}
 
-      {activeClientModal === 'upgrade' && clientModalState?.updatePrompt && (
-        <ExtensionUpdateModal
-          prompt={clientModalState.updatePrompt}
-          onClose={() => {
-            void closeClientModal();
-          }}
-        />
-      )}
-
-      {activeClientModal === 'message' && clientModalState?.messagePrompt && (
-        <ClientMessageModal
-          prompt={clientModalState.messagePrompt}
-          onClose={() => {
-            void closeClientModal();
-          }}
-        />
-      )}
-
-      {activeClientModal === 'aiChatFocusMessage' && clientModalState?.aiChatFocusMessagePrompt && (
-        <ClientMessageModal
-          prompt={clientModalState.aiChatFocusMessagePrompt}
-          onClose={() => {
-            void closeClientModal();
-          }}
-        />
-      )}
-
-      {activeClientModal === 'tutorialDisabledMessage' && clientModalState?.tutorialDisabledMessagePrompt && (
-        <ClientMessageModal
-          prompt={clientModalState.tutorialDisabledMessagePrompt}
-          onClose={() => {
-            void closeClientModal();
-          }}
-        />
-      )}
+      {clientModalOverlay}
     </div>
   );
 };

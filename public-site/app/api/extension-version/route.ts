@@ -16,13 +16,16 @@ export function GET() {
     minSupportedVersion,
     storeUrl,
     upgradeMessage,
+    forceUpgradeModalToShow,
   } = getExtensionClientMessages();
 
   return NextResponse.json({
     latestVersion,
     minSupportedVersion,
     storeUrl,
+    upgradeMessage,
     message: upgradeMessage,
+    forceUpgradeModalToShow,
   }, {
     headers: responseHeaders,
   });

@@ -29,6 +29,7 @@ export const EXTENSION_VERSION_RESPONSE = {
   latestVersion: EXTENSION_LATEST_VERSION,
   minSupportedVersion: EXTENSION_MIN_SUPPORTED_VERSION,
   storeUrl: EXTENSION_STORE_URL,
+  forceUpgradeModalToShow: false,
 };
 
 function getNextPatchVersion(version: string): string {
