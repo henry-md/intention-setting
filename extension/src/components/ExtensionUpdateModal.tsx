@@ -1,9 +1,6 @@
-import React, { useState } from 'react';
-import { AlertTriangle, ExternalLink, RefreshCw, RotateCw, X } from 'lucide-react';
-import {
-  type ExtensionUpdatePrompt,
-  requestExtensionUpdate,
-} from '../utils/extensionUpdate';
+import React from 'react';
+import { AlertTriangle, ExternalLink, X } from 'lucide-react';
+import type { ExtensionUpdatePrompt } from '../utils/extensionUpdate';
 
 interface ExtensionUpdateModalProps {
   prompt: ExtensionUpdatePrompt;
@@ -11,23 +8,13 @@ interface ExtensionUpdateModalProps {
 }
 
 const ExtensionUpdateModal: React.FC<ExtensionUpdateModalProps> = ({ prompt, onClose }) => {
-  const [isChecking, setIsChecking] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [canReload, setCanReload] = useState(false);
+  const defaultMessage = prompt.isRequired
+    ? 'This extension version is no longer supported. Open the Chrome Web Store page to upgrade.'
+    : 'A newer extension version is available.';
 
   const openStorePage = () => {
     if (!prompt.storeUrl) return;
     chrome.tabs.create({ url: prompt.storeUrl });
-  };
-
-  const checkForUpdate = async () => {
-    setIsChecking(true);
-    setStatusMessage(null);
-
-    const result = await requestExtensionUpdate();
-    setStatusMessage(result.message);
-    setCanReload(result.status === 'update_available');
-    setIsChecking(false);
   };
 
   return (
@@ -54,7 +41,7 @@ const ExtensionUpdateModal: React.FC<ExtensionUpdateModalProps> = ({ prompt, onC
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-amber-200/80">
-              Update Available
+              {prompt.isRequired ? 'Update Required' : 'Update Available'}
             </p>
             <h2 id="extension-update-title" className="text-base font-semibold leading-tight">
               Intention Setting {prompt.latestVersion}
@@ -63,7 +50,7 @@ const ExtensionUpdateModal: React.FC<ExtensionUpdateModalProps> = ({ prompt, onC
         </div>
 
         <p className="text-sm leading-5 text-zinc-300">
-          {prompt.message || 'A newer extension version is available.'}
+          {prompt.message || defaultMessage}
         </p>
 
         <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-400">
@@ -73,53 +60,16 @@ const ExtensionUpdateModal: React.FC<ExtensionUpdateModalProps> = ({ prompt, onC
             : ''}
         </div>
 
-        {statusMessage && (
-          <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">
-            {statusMessage}
-          </div>
+        {prompt.storeUrl && (
+          <button
+            type="button"
+            onClick={openStorePage}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/45 bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/15"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open Chrome Web Store upgrade page
+          </button>
         )}
-
-        <div className="mt-4 flex flex-col gap-2">
-          {canReload ? (
-            <button
-              type="button"
-              onClick={() => chrome.runtime.reload()}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200"
-            >
-              <RotateCw className="h-4 w-4" />
-              Reload Extension
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={checkForUpdate}
-              disabled={isChecking}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <RefreshCw className={`h-4 w-4 ${isChecking ? 'animate-spin' : ''}`} />
-              {isChecking ? 'Checking...' : 'Check for Update'}
-            </button>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={openStorePage}
-              disabled={!prompt.storeUrl}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Web Store
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
-            >
-              Later
-            </button>
-          </div>
-        </div>
       </section>
     </div>
   );

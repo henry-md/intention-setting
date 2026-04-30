@@ -14,6 +14,7 @@ export interface ExtensionVersionResponse {
   modalMessage?: string;
   aiChatFocusModalMessage?: string;
   tutorialDisabledMessage?: string;
+  forceUpgradeModalToShow?: boolean;
   showUpgradeModalBeforeMessageModal?: boolean;
   showMessageModalIfUpgradeModalIsActive?: boolean;
 }
@@ -122,6 +123,10 @@ async function fetchExtensionClientMessages(): Promise<ExtensionVersionResponse 
     modalMessage: readOptionalString(data.modalMessage),
     aiChatFocusModalMessage: readOptionalString(data.aiChatFocusModalMessage),
     tutorialDisabledMessage: readOptionalString(data.tutorialDisabledMessage),
+    forceUpgradeModalToShow:
+      typeof data.forceUpgradeModalToShow === 'boolean'
+        ? data.forceUpgradeModalToShow
+        : false,
     showUpgradeModalBeforeMessageModal:
       typeof data.showUpgradeModalBeforeMessageModal === 'boolean'
         ? data.showUpgradeModalBeforeMessageModal
@@ -141,17 +146,20 @@ async function getDailyExtensionUpdatePrompt(
   const isBelowMinimum = versionInfo.minSupportedVersion
     ? compareExtensionVersions(currentVersion, versionInfo.minSupportedVersion) < 0
     : false;
+  const isForced = versionInfo.forceUpgradeModalToShow === true;
 
-  if (!isBehindLatest && !isBelowMinimum) {
+  if (!isForced && !isBehindLatest && !isBelowMinimum) {
     return null;
   }
 
-  const lastShownAt = Number(await getStorageValue<number>(EXTENSION_UPDATE_PROMPT_STORAGE_KEY) || 0);
-  if (Date.now() - lastShownAt < EXTENSION_UPDATE_PROMPT_INTERVAL_MS) {
-    return null;
-  }
+  if (!isForced) {
+    const lastShownAt = Number(await getStorageValue<number>(EXTENSION_UPDATE_PROMPT_STORAGE_KEY) || 0);
+    if (Date.now() - lastShownAt < EXTENSION_UPDATE_PROMPT_INTERVAL_MS) {
+      return null;
+    }
 
-  await setStorageValue(EXTENSION_UPDATE_PROMPT_STORAGE_KEY, Date.now());
+    await setStorageValue(EXTENSION_UPDATE_PROMPT_STORAGE_KEY, Date.now());
+  }
 
   return {
     currentVersion,
