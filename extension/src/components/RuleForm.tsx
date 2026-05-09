@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Pencil } from 'lucide-react';
 import type { Group } from '../types/Group';
-import type { RuleTarget } from '../types/Rule';
+import type { RuleTarget, RuleType, TimeLimitSchedule, WeekdayKey } from '../types/Rule';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { checkTyposquatting } from '../utils/typosquatting';
 import { prepareUrl } from '../utils/urlValidation';
@@ -10,21 +10,29 @@ import { ItemListInput } from './ItemListInput';
 import { GroupIcons } from './GroupIcons';
 import { formatUrlForDisplay, getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 import { DEFAULT_PLUS_ONE_DURATION_SECONDS, DEFAULT_SOFT_RULE_PLUS_ONES } from '../constants';
+import {
+  DEFAULT_TIME_LIMIT_SCHEDULE,
+  WEEKDAY_OPTIONS,
+  isTimeLimitScheduleValid,
+  normalizeTimeLimitSchedule,
+} from '../utils/timeLimitSchedule';
 
 interface RuleFormProps {
   ruleId?: string; // If provided, we're editing; if not, we're creating
   initialName?: string;
   initialTargetItems?: RuleTarget[];
-  initialRuleType?: 'hard' | 'soft' | 'session';
+  initialRuleType?: RuleType;
   initialTimeLimit?: number;
+  initialSchedule?: TimeLimitSchedule;
   initialPlusOnes?: number;
   initialPlusOneDuration?: number;
   groups: Group[];
   onSave: (
     name: string,
     targetItems: RuleTarget[],
-    ruleType: 'hard' | 'soft' | 'session',
+    ruleType: RuleType,
     timeLimit: number,
+    schedule?: TimeLimitSchedule,
     plusOnes?: number,
     plusOneDuration?: number
   ) => Promise<void>;
@@ -46,6 +54,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   initialTargetItems = [],
   initialRuleType = 'hard',
   initialTimeLimit = 60,
+  initialSchedule = DEFAULT_TIME_LIMIT_SCHEDULE,
   initialPlusOnes = DEFAULT_SOFT_RULE_PLUS_ONES,
   initialPlusOneDuration = DEFAULT_PLUS_ONE_DURATION_SECONDS,
   groups,
@@ -61,8 +70,12 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   const [isRuleNameFocused, setIsRuleNameFocused] = useState(false);
   const [targetItems, setTargetItems] = useState<RuleTarget[]>(initialTargetItems);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [ruleType, setRuleType] = useState<'hard' | 'soft' | 'session'>(initialRuleType);
+  const [ruleType, setRuleType] = useState<RuleType>(initialRuleType);
   const [timeLimit, setTimeLimit] = useState(initialTimeLimit.toString());
+  const normalizedInitialSchedule = normalizeTimeLimitSchedule(initialSchedule);
+  const [selectedDays, setSelectedDays] = useState<WeekdayKey[]>(normalizedInitialSchedule.days);
+  const [startTime, setStartTime] = useState(normalizedInitialSchedule.startTime);
+  const [endTime, setEndTime] = useState(normalizedInitialSchedule.endTime);
   const [plusOnes, setPlusOnes] = useState(initialPlusOnes.toString());
   const [plusOneMinutes, setPlusOneMinutes] = useState(Math.floor(initialPlusOneDuration / 60).toString());
   const [plusOneSeconds, setPlusOneSeconds] = useState((initialPlusOneDuration % 60).toString());
@@ -90,11 +103,24 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       setTargetItems(initialTargetItems);
       setRuleType(initialRuleType);
       setTimeLimit(initialTimeLimit.toString());
+      const nextSchedule = normalizeTimeLimitSchedule(initialSchedule);
+      setSelectedDays(nextSchedule.days);
+      setStartTime(nextSchedule.startTime);
+      setEndTime(nextSchedule.endTime);
       setPlusOnes(initialPlusOnes.toString());
       setPlusOneMinutes(Math.floor(initialPlusOneDuration / 60).toString());
       setPlusOneSeconds((initialPlusOneDuration % 60).toString());
     }
-  }, [ruleId]);
+  }, [
+    ruleId,
+    initialName,
+    initialTargetItems,
+    initialRuleType,
+    initialTimeLimit,
+    initialSchedule,
+    initialPlusOnes,
+    initialPlusOneDuration,
+  ]);
 
   // Get matching group suggestions
   const getGroupSuggestions = () => {
@@ -188,6 +214,19 @@ export const RuleForm: React.FC<RuleFormProps> = ({
     }
   };
 
+  const toggleSelectedDay = (day: WeekdayKey) => {
+    setSelectedDays((currentDays) => {
+      if (currentDays.includes(day)) {
+        return currentDays.filter((currentDay) => currentDay !== day);
+      }
+
+      const nextDays = [...currentDays, day];
+      return WEEKDAY_OPTIONS
+        .map((option) => option.key)
+        .filter((optionDay) => nextDays.includes(optionDay));
+    });
+  };
+
   // Remove target from list
   const handleRemoveTargetFromList = (targetId: string) => {
     setTargetItems(targetItems.filter(t => t.id !== targetId));
@@ -237,10 +276,24 @@ export const RuleForm: React.FC<RuleFormProps> = ({
     // For session rules, time limit is set when visiting the site
     // For hard/soft rules, validate time limit
     let timeLimitNum = 0;
-    if (ruleType !== 'session') {
+    if (ruleType !== 'session' && ruleType !== 'time') {
       timeLimitNum = parseInt(timeLimit);
       if (isNaN(timeLimitNum) || timeLimitNum <= 0) {
         setFormError('Please enter a valid time limit');
+        return;
+      }
+    }
+
+    let schedule: TimeLimitSchedule | undefined;
+    if (ruleType === 'time') {
+      schedule = normalizeTimeLimitSchedule({
+        days: selectedDays,
+        startTime,
+        endTime,
+      });
+
+      if (!isTimeLimitScheduleValid(schedule)) {
+        setFormError('Choose at least one day and different start/end times');
         return;
       }
     }
@@ -270,7 +323,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       }
     }
 
-    await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, plusOnesNum, plusOneDurationSeconds);
+    await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, schedule, plusOnesNum, plusOneDurationSeconds);
 
     if (isEditMode && ruleType === 'soft') {
       onTutorialRuleSaved?.();
@@ -494,7 +547,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       {/* Rule Type Selection */}
       <div>
         <label className="block text-zinc-400 text-xs mb-1">Rule Type</label>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <button
             onClick={() => {
               setRuleType('hard');
@@ -524,7 +577,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({
           </button>
           <button
             onClick={() => setRuleType('session')}
-            className={`flex-1 px-3 py-2 rounded-lg text-sm ${
+            className={`px-2 py-2 rounded-lg text-sm ${
               ruleType === 'session'
                 ? 'border border-blue-500/50 bg-blue-500/12 text-blue-200'
                 : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
@@ -532,11 +585,21 @@ export const RuleForm: React.FC<RuleFormProps> = ({
           >
             Session
           </button>
+          <button
+            onClick={() => setRuleType('time')}
+            className={`px-2 py-2 rounded-lg text-sm ${
+              ruleType === 'time'
+                ? 'border border-emerald-500/50 bg-emerald-500/14 text-emerald-200'
+                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+            }`}
+          >
+            Time
+          </button>
         </div>
       </div>
 
       {/* Time Limit (hidden for session rules) */}
-      {ruleType !== 'session' && (
+      {ruleType !== 'session' && ruleType !== 'time' && (
         <div>
           <label className="block text-zinc-400 text-xs mb-1">Time Limit (minutes)</label>
           <input
@@ -546,6 +609,56 @@ export const RuleForm: React.FC<RuleFormProps> = ({
             min="1"
             className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
+        </div>
+      )}
+
+      {/* Time rule schedule */}
+      {ruleType === 'time' && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-zinc-400 text-xs mb-1">Allowed Days</label>
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAY_OPTIONS.map((day) => {
+                const isSelected = selectedDays.includes(day.key);
+                return (
+                  <button
+                    key={day.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => toggleSelectedDay(day.key)}
+                    className={`h-9 rounded-lg text-xs font-semibold transition-colors ${
+                      isSelected
+                        ? 'border border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
+                        : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-zinc-400 text-xs mb-1">Start</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs mb-1">End</label>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500"
+              />
+            </div>
+          </div>
         </div>
       )}
 

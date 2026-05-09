@@ -5,7 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
-import type { Rule, RuleTarget } from '../types/Rule';
+import type { Rule, RuleTarget, RuleType, TimeLimitSchedule } from '../types/Rule';
 import type {
   AssistantChatCompletionMessage,
   ChatCompletionMessageParam,
@@ -18,6 +18,7 @@ import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { formatUrlForDisplay } from '../utils/urlDisplay';
+import { DEFAULT_TIME_LIMIT_SCHEDULE, formatTimeLimitSchedule, normalizeTimeLimitSchedule } from '../utils/timeLimitSchedule';
 import {
   DEFAULT_PLUS_ONE_DURATION_SECONDS,
   DEFAULT_SOFT_RULE_PLUS_ONES,
@@ -135,12 +136,14 @@ Decision rules:
    - hard: user says hard, strict, block, blocking, or no access after time runs out.
    - soft: user says soft, flexible, allow extensions, plus-ones, or "one more".
    - session: user says session, per visit, ask me each time, or choose time when I open it.
-6. If the user wants a rule but the rule type is missing, ask exactly one clarification question and do not call tools: "Should this be hard, soft, or session? Hard blocks access after time runs out, soft allows extensions, and session asks each visit."
+   - time: user says schedule, allowed hours, only during, before/after a clock time, days of week, or time window.
+6. If the user wants a rule but the rule type is missing, ask exactly one clarification question and do not call tools: "Should this be hard, soft, session, or time? Hard blocks access after time runs out, soft allows extensions, session asks each visit, and time allows access only during selected days and hours."
 7. Defaults only after rule type is known:
    - Hard rule with no time: timeLimit 60.
    - Soft rule with no time: timeLimit 60, plusOnes ${DEFAULT_SOFT_RULE_PLUS_ONES}, plusOneDuration ${DEFAULT_PLUS_ONE_DURATION_SECONDS}.
    - Soft rule with plus-one count but no plus-one duration: plusOneDuration ${DEFAULT_PLUS_ONE_DURATION_SECONDS}.
    - Session rule: omit timeLimit, plusOnes, and plusOneDuration.
+   - Time rule: omit timeLimit, plusOnes, and plusOneDuration. If days/times are missing, ask one concise question for the missing schedule details.
 8. URL rules: use lowercase bare domains only, without https:// or www. Use youtube.com, not https://www.youtube.com.
 9. Common category defaults:
    - Social Media group: instagram.com, tiktok.com, facebook.com, x.com, twitter.com, reddit.com, snapchat.com.
@@ -155,7 +158,7 @@ const tools: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'get_groups_and_rules',
-      description: 'Retrieves all existing groups and rules. Use this after the requested action and rule type are clear. If the user wants a rule but has not specified hard, soft, or session, ask a clarification question instead of calling this.',
+      description: 'Retrieves all existing groups and rules. Use this after the requested action and rule type are clear. If the user wants a rule but has not specified hard, soft, session, or time, ask a clarification question instead of calling this.',
       parameters: {
         type: 'object',
         properties: {},
@@ -218,12 +221,12 @@ const tools: ChatCompletionTool[] = [
           },
           ruleType: {
             type: 'string',
-            enum: ['hard', 'soft', 'session'],
-            description: '"hard" blocks after time expires, "soft" allows plus-one extensions, and "session" asks for a time on each visit.'
+            enum: ['hard', 'soft', 'session', 'time'],
+            description: '"hard" blocks after time expires, "soft" allows plus-one extensions, "session" asks for a time on each visit, and "time" allows visits only during selected days/hours.'
           },
           timeLimit: {
             type: 'number',
-            description: 'Allowed time in minutes. Required for hard and soft rules. Omit for session rules.'
+            description: 'Allowed time in minutes. Required for hard and soft rules. Omit for session and time rules.'
           },
           plusOnes: {
             type: 'number',
@@ -231,7 +234,20 @@ const tools: ChatCompletionTool[] = [
           },
           plusOneDuration: {
             type: 'number',
-            description: 'Duration of each soft-rule extension in seconds. One minute is 60 seconds. Omit for hard and session rules.'
+            description: 'Duration of each soft-rule extension in seconds. One minute is 60 seconds. Omit for hard, session, and time rules.'
+          },
+          schedule: {
+            type: 'object',
+            description: 'Use only for time rules. Days are lowercase mon/tue/wed/thu/fri/sat/sun. Times use 24-hour HH:mm local time.',
+            properties: {
+              days: {
+                type: 'array',
+                items: { type: 'string', enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }
+              },
+              startTime: { type: 'string' },
+              endTime: { type: 'string' }
+            },
+            required: ['days', 'startTime', 'endTime']
           }
         },
         required: ['targets', 'ruleType']
@@ -252,7 +268,7 @@ const tools: ChatCompletionTool[] = [
           },
           ruleType: {
             type: 'string',
-            enum: ['hard', 'soft', 'session'],
+            enum: ['hard', 'soft', 'session', 'time'],
             description: 'New rule type (optional - only include if changing)'
           },
           timeLimit: {
@@ -266,6 +282,19 @@ const tools: ChatCompletionTool[] = [
           plusOneDuration: {
             type: 'number',
             description: 'New duration of each extension in seconds (optional - only for soft rules)'
+          },
+          schedule: {
+            type: 'object',
+            description: 'New allowed days/hours for time rules. Days are lowercase mon/tue/wed/thu/fri/sat/sun. Times use 24-hour HH:mm local time.',
+            properties: {
+              days: {
+                type: 'array',
+                items: { type: 'string', enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }
+              },
+              startTime: { type: 'string' },
+              endTime: { type: 'string' }
+            },
+            required: ['days', 'startTime', 'endTime']
           },
           addUrls: {
             type: 'array',
@@ -545,6 +574,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
           let ruleDetails = '';
           if (type === 'session') {
             ruleDetails = 'session-based (prompts on visit)';
+          } else if (type === 'time') {
+            ruleDetails = `allowed ${formatTimeLimitSchedule(rule.schedule)}`;
           } else if (type === 'soft') {
             ruleDetails = `${time} minutes, ${rule.plusOnes} extensions of ${rule.plusOneDuration}s each`;
           } else {
@@ -703,14 +734,15 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
   // Tool execution: Update Rule
   const executeUpdateRule = async (
     identifier: string,
-    ruleType?: 'hard' | 'soft' | 'session',
+    ruleType?: RuleType,
     timeLimit?: number,
     plusOnes?: number,
     plusOneDuration?: number,
+    schedule?: TimeLimitSchedule,
     addUrls?: string[],
     removeUrls?: string[]
   ): Promise<string> => {
-    console.log('executeUpdateRule called with:', { identifier, ruleType, timeLimit, plusOnes, plusOneDuration, addUrls, removeUrls });
+    console.log('executeUpdateRule called with:', { identifier, ruleType, timeLimit, plusOnes, plusOneDuration, schedule, addUrls, removeUrls });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
@@ -767,15 +799,32 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         if (ruleType === 'soft') {
           updatedRule.plusOnes = plusOnes !== undefined ? plusOnes : (updatedRule.plusOnes || DEFAULT_SOFT_RULE_PLUS_ONES);
           updatedRule.plusOneDuration = plusOneDuration !== undefined ? plusOneDuration : (updatedRule.plusOneDuration || DEFAULT_PLUS_ONE_DURATION_SECONDS);
+          delete updatedRule.schedule;
+        } else if (ruleType === 'time') {
+          updatedRule.schedule = normalizeTimeLimitSchedule(schedule || updatedRule.schedule || DEFAULT_TIME_LIMIT_SCHEDULE);
+          updatedRule.timeLimit = 0;
+          delete updatedRule.plusOnes;
+          delete updatedRule.plusOneDuration;
         } else {
           // If not soft, remove plusOnes and plusOneDuration
           delete updatedRule.plusOnes;
           delete updatedRule.plusOneDuration;
+          delete updatedRule.schedule;
         }
       }
 
-      if (timeLimit !== undefined) {
+      if (timeLimit !== undefined && updatedRule.type !== 'time') {
         updatedRule.timeLimit = timeLimit;
+      }
+
+      if (schedule !== undefined) {
+        updatedRule.schedule = normalizeTimeLimitSchedule(schedule);
+        if (updatedRule.type !== 'time') {
+          updatedRule.type = 'time';
+          updatedRule.timeLimit = 0;
+          delete updatedRule.plusOnes;
+          delete updatedRule.plusOneDuration;
+        }
       }
 
       if (ruleType === 'soft' || updatedRule.type === 'soft') {
@@ -827,8 +876,11 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
       if (ruleType !== undefined) {
         changes.push(`type changed to ${ruleType}`);
       }
-      if (timeLimit !== undefined) {
+      if (timeLimit !== undefined && updatedRule.type !== 'time') {
         changes.push(`time rule changed to ${timeLimit} minutes`);
+      }
+      if (schedule !== undefined) {
+        changes.push(`schedule changed to ${formatTimeLimitSchedule(schedule)}`);
       }
       if (addUrls && addUrls.length > 0) {
         changes.push(`added ${addUrls.length} URL(s): ${addUrls.join(', ')}`);
@@ -953,12 +1005,13 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
   const executeCreateRule = async (
     name: string | undefined,
     targets: Array<{ type: 'url' | 'group'; value: string }>,
-    ruleType: 'hard' | 'soft' | 'session',
+    ruleType: RuleType,
     timeLimit: number | undefined,
     plusOnes: number | undefined,
-    plusOneDuration: number | undefined
+    plusOneDuration: number | undefined,
+    schedule: TimeLimitSchedule | undefined
   ): Promise<string> => {
-    console.log('executeCreateRule called with:', { name, targets, ruleType, timeLimit, plusOnes, plusOneDuration });
+    console.log('executeCreateRule called with:', { name, targets, ruleType, timeLimit, plusOnes, plusOneDuration, schedule });
 
     if (!user?.uid) {
       return 'Error: User not authenticated';
@@ -1007,9 +1060,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         return 'Error: No valid targets specified';
       }
 
-      const resolvedTimeLimit = ruleType === 'session' ? 0 : (timeLimit ?? 60);
+      const resolvedTimeLimit = ruleType === 'session' || ruleType === 'time' ? 0 : (timeLimit ?? 60);
       const resolvedPlusOnes = plusOnes ?? DEFAULT_SOFT_RULE_PLUS_ONES;
       const resolvedPlusOneDuration = plusOneDuration ?? DEFAULT_PLUS_ONE_DURATION_SECONDS;
+      const resolvedSchedule = normalizeTimeLimitSchedule(schedule || DEFAULT_TIME_LIMIT_SCHEDULE);
 
       // Create new rule
       const newRule: Rule = {
@@ -1029,6 +1083,10 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
         newRule.plusOneDuration = resolvedPlusOneDuration;
       }
 
+      if (ruleType === 'time') {
+        newRule.schedule = resolvedSchedule;
+      }
+
       console.log('Creating rule:', newRule);
 
       // Save to Firestore
@@ -1040,6 +1098,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
       const targetNames = targets.map(t => t.value).join(', ');
       const ruleDetails = ruleType === 'session'
         ? 'session-based (prompts on visit)'
+        : ruleType === 'time'
+        ? `allowed ${formatTimeLimitSchedule(resolvedSchedule)}`
         : ruleType === 'soft'
         ? `${resolvedTimeLimit} minutes with ${resolvedPlusOnes} extensions of ${resolvedPlusOneDuration}s each`
         : `${resolvedTimeLimit} minutes (hard block)`;
@@ -1274,7 +1334,8 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
                 args.ruleType,
                 args.timeLimit,
                 args.plusOnes,
-                args.plusOneDuration
+                args.plusOneDuration,
+                args.schedule
               );
             } else if (toolCall.function.name === 'update_rule') {
               toolResult = await executeUpdateRule(
@@ -1283,6 +1344,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
                 args.timeLimit,
                 args.plusOnes,
                 args.plusOneDuration,
+                args.schedule,
                 args.addUrls,
                 args.removeUrls
               );

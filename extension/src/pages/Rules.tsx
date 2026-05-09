@@ -3,7 +3,7 @@ import { Plus, Trash2, Clock, Folder } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
-import type { Rule, RuleTarget } from '../types/Rule';
+import type { Rule, RuleTarget, RuleType, TimeLimitSchedule } from '../types/Rule';
 import type { Group } from '../types/Group';
 import Spinner from '../components/Spinner';
 import { RuleForm } from '../components/RuleForm';
@@ -11,6 +11,7 @@ import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 import { DEFAULT_PLUS_ONE_DURATION_SECONDS, DEFAULT_SOFT_RULE_PLUS_ONES, TUTORIAL_RULE_NAME } from '../constants';
+import { DEFAULT_TIME_LIMIT_SCHEDULE, formatTimeLimitSchedule, normalizeTimeLimitSchedule } from '../utils/timeLimitSchedule';
 import type { TutorialStep } from '../components/TutorialOverlay';
 import {
   Dialog,
@@ -129,6 +130,8 @@ const Rules: React.FC<RulesProps> = ({
   };
 
   const getRuleMaxSeconds = (rule: Rule): number => {
+    if (rule.type === 'time') return 0;
+
     const base = Math.max(0, Math.floor((rule.timeLimit || 0) * 60));
     if (rule.type !== 'soft') return base;
 
@@ -210,8 +213,9 @@ const Rules: React.FC<RulesProps> = ({
   const handleSaveRule = async (
     name: string,
     targetItems: RuleTarget[],
-    ruleType: 'hard' | 'soft' | 'session',
+    ruleType: RuleType,
     timeLimit: number,
+    schedule?: TimeLimitSchedule,
     plusOnes?: number,
     plusOneDuration?: number
   ) => {
@@ -226,6 +230,12 @@ const Rules: React.FC<RulesProps> = ({
             targets: targetItems,
             timeLimit,
           };
+
+          if (ruleType === 'time') {
+            updatedRule.schedule = normalizeTimeLimitSchedule(schedule);
+          } else {
+            delete updatedRule.schedule;
+          }
 
           if (ruleType === 'soft') {
             updatedRule.plusOnes = plusOnes;
@@ -259,6 +269,10 @@ const Rules: React.FC<RulesProps> = ({
       if (ruleType === 'soft') {
         newRule.plusOnes = plusOnes;
         newRule.plusOneDuration = plusOneDuration;
+      }
+
+      if (ruleType === 'time') {
+        newRule.schedule = normalizeTimeLimitSchedule(schedule);
       }
 
       const updatedRules = [...rules, newRule];
@@ -341,6 +355,7 @@ const Rules: React.FC<RulesProps> = ({
           initialTargetItems={editingRule?.targets || []}
           initialRuleType={editingRule?.type || 'hard'}
           initialTimeLimit={editingRule?.timeLimit || 60}
+          initialSchedule={editingRule?.schedule || DEFAULT_TIME_LIMIT_SCHEDULE}
           initialPlusOnes={editingRule?.plusOnes || DEFAULT_SOFT_RULE_PLUS_ONES}
           initialPlusOneDuration={editingRule?.plusOneDuration || DEFAULT_PLUS_ONE_DURATION_SECONDS}
           groups={groups}
@@ -372,6 +387,7 @@ const Rules: React.FC<RulesProps> = ({
             const ratio = progressMax > 0 ? Math.min(safeUsed / progressMax, 1) : 0;
             const percent = Math.round(ratio * 100);
             const isOverLimit = progressMax > 0 && safeUsed > progressMax;
+            const hasProgressLimit = progressMax > 0;
 
             return (
               <div
@@ -390,6 +406,7 @@ const Rules: React.FC<RulesProps> = ({
                 <div className={`p-2 rounded-lg ${
                   rule.type === 'hard' ? 'border border-red-500/50 bg-red-500/10' :
                   rule.type === 'soft' ? 'border border-amber-500/50 bg-amber-500/12' :
+                  rule.type === 'time' ? 'border border-emerald-500/50 bg-emerald-500/12' :
                   'border border-zinc-500 bg-zinc-700'
                 }`}>
                   <Clock
@@ -399,7 +416,9 @@ const Rules: React.FC<RulesProps> = ({
                         ? 'text-red-200'
                         : rule.type === 'soft'
                           ? 'text-amber-200'
-                          : 'text-zinc-100'
+                          : rule.type === 'time'
+                            ? 'text-emerald-200'
+                            : 'text-zinc-100'
                     }
                   />
                 </div>
@@ -459,14 +478,16 @@ const Rules: React.FC<RulesProps> = ({
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-zinc-400">
                             {rule.type.charAt(0).toUpperCase() + rule.type.slice(1)}
-                            {rule.type !== 'session' && ` • ${rule.timeLimit} min`}
+                            {rule.type !== 'session' && rule.type !== 'time' && ` • ${rule.timeLimit} min`}
                             {rule.type === 'session' && ' • Set on visit'}
+                            {rule.type === 'time' && ` • ${formatTimeLimitSchedule(rule.schedule)}`}
                             {rule.type === 'soft' && rule.plusOnes !== undefined && ` • ${rule.plusOnes} plus ones`}
                             {rule.type === 'soft' && rule.plusOneDuration !== undefined && ` (${formatPlusOneDuration(rule.plusOneDuration)} each)`}
                           </span>
                         </div>
 
                         {/* Progress */}
+                        {hasProgressLimit ? (
                         <div className="mt-2">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className={`${isOverLimit ? 'text-red-300' : 'text-zinc-300'}`}>
@@ -485,6 +506,11 @@ const Rules: React.FC<RulesProps> = ({
                             />
                           </div>
                         </div>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-zinc-400">
+                            {formatProgressTime(safeUsed)} tracked today
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
