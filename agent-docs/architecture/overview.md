@@ -17,3 +17,7 @@ Production extension client messaging should point to the public-site Railway ap
 ## AI Chat Backend
 
 The extension calls `openaiChatCompletion` in `web/functions/index.js` through `extension/src/utils/openaiProxy.ts`. The OpenAI API key is a Firebase Functions secret named `OPENAI_API_KEY`; the chat model is server-owned via `OPENAI_CHAT_MODEL` in `web/functions/.env` and should not be sent from the extension client.
+
+## Time Window Rules
+
+Rules support a fourth `type: "time"` for clock-window access. These store `schedule: { days, startTime, endTime }` on the Firestore rule, sync that schedule into `compiledRules`, and enforce it in the background timer loop. Time rules are allow windows: outside the selected local days/hours the tab redirects immediately. While inside a window, the content script uses the compiled schedule to flash the red near-limit overlay during the final 10 seconds before the window closes.

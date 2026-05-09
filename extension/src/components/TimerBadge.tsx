@@ -8,6 +8,8 @@ import {
   MIN_TIMER_BADGE_WIDTH_SCALE,
 } from '../constants';
 import { formatTime } from '../utils/timeFormat';
+import type { RuleType, TimeLimitSchedule } from '../types/Rule';
+import type { TimeLimitScheduleState } from '../utils/timeLimitSchedule';
 
 interface TimerBadgeProps {
   timeSpent: number; // in seconds
@@ -17,7 +19,9 @@ interface TimerBadgeProps {
   relevantLimit?: {
     ruleId: string;
     ruleName?: string;
-    ruleType?: 'hard' | 'soft' | 'session';
+    ruleType?: RuleType;
+    schedule?: TimeLimitSchedule;
+    scheduleState?: TimeLimitScheduleState;
     plusOnes?: number;
     plusOneDuration?: number;
     timeSpent: number;
@@ -55,12 +59,14 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
   const displayedTimeSpent = relevantLimit?.timeSpent ?? timeSpent;
   const displayedTimeLimit = relevantLimit?.timeLimit ?? timeLimit;
   const percentage = displayedTimeLimit > 0 ? (displayedTimeSpent / displayedTimeLimit) * 100 : 0;
-  const isOverLimit = displayedTimeSpent >= displayedTimeLimit;
+  const isScheduleLimit = relevantLimit?.ruleType === 'time';
+  const isOverLimit = displayedTimeLimit > 0 && displayedTimeSpent >= displayedTimeLimit;
   const hasBreakdown = !!relevantLimit && relevantLimit.siteBreakdown.length > 0;
 
   const formatRuleLabel = (label: string): string =>
     label
       .replace(/\s+(hard|soft|session)\s+limit$/i, '')
+      .replace(/\s+time\s+limit$/i, '')
       .replace(/\s+limit$/i, '')
       .trim();
 
@@ -85,6 +91,15 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
       }
     }
     return `Limit: ${base}`;
+  })();
+
+  const scheduleLimitDisplay = (() => {
+    const secondsUntilEnd = relevantLimit?.scheduleState?.secondsUntilEnd;
+    if (typeof secondsUntilEnd === 'number') {
+      return `${formatTime(secondsUntilEnd)} left`;
+    }
+
+    return 'Allowed window';
   })();
 
   const dims = useMemo(() => {
@@ -284,7 +299,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
           marginBottom: `${dims.gapSmall}px`,
         }}
       >
-        {formatTime(displayedTimeSpent)}
+        {isScheduleLimit ? scheduleLimitDisplay : formatTime(displayedTimeSpent)}
       </div>
 
       {renderSiteBreakdown()}

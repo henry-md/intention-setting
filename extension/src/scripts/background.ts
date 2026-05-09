@@ -3,9 +3,11 @@ import { format } from 'date-fns';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME, TUTORIAL_INSTAGRAM_BADGE_STEP_KEY } from '../constants';
 import { db } from '../utils/firebase';
-import { getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
+import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { getTimeLimitScheduleState } from '../utils/timeLimitSchedule';
 import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
+import type { RuleType, TimeLimitSchedule } from '../types/Rule';
 
 // Test imports
 const testDate = new Date();
@@ -30,9 +32,10 @@ interface SiteTimeData {
 
 interface SiteRules {
   [siteKey: string]: {
-    ruleType: 'hard' | 'soft' | 'session';
+    ruleType: RuleType;
     timeLimit: number;
     ruleId: string;
+    schedule?: TimeLimitSchedule;
     plusOnes?: number;
     plusOneDuration?: number;
   };
@@ -44,9 +47,10 @@ interface SiteRuleIds {
 
 interface CompiledRules {
   [ruleId: string]: {
-    ruleType: 'hard' | 'soft' | 'session';
+    ruleType: RuleType;
     timeLimit: number;
     ruleName?: string;
+    schedule?: TimeLimitSchedule;
     plusOnes?: number;
     plusOneDuration?: number;
     siteKeys: string[];
@@ -108,7 +112,7 @@ function createDailyUsageHistoryEntry(
 interface ExceededRuleInfo {
   ruleId: string;
   rule: {
-    ruleType: 'hard' | 'soft' | 'session';
+    ruleType: RuleType;
     timeLimit: number;
     plusOnes?: number;
     plusOneDuration?: number;
@@ -511,6 +515,36 @@ async function showSoftLimitPopup(tabId: number, siteKey: string, exceededRule: 
   }
 }
 
+function getRuleTimeSpent(
+  rule: CompiledRules[string],
+  siteTimeData: Record<string, SiteTimeData>
+): number {
+  return rule.siteKeys.reduce((sum, memberSiteKey) => {
+    return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
+  }, 0);
+}
+
+function getBlockingTimeRuleId(
+  siteKey: string,
+  siteRuleIds: SiteRuleIds,
+  compiledRules: CompiledRules,
+  now: Date
+): string | null {
+  const timeRuleIds = getApplicableTimeRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
+
+  for (const ruleId of timeRuleIds) {
+    const rule = compiledRules[ruleId];
+    if (!rule || rule.ruleType !== 'time') continue;
+
+    const scheduleState = getTimeLimitScheduleState(rule.schedule, now);
+    if (!scheduleState.isAllowed) {
+      return ruleId;
+    }
+  }
+
+  return null;
+}
+
 // ============================================================================
 // DAILY RESET LOGIC
 // ============================================================================
@@ -837,20 +871,43 @@ async function timerTick(): Promise<void> {
   const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
 
   if (siteTimeData[siteKey]) {
+    const blockingTimeRuleId = getBlockingTimeRuleId(
+      siteKey,
+      siteRuleIds,
+      compiledRules,
+      new Date(currentTickTimestamp)
+    );
+
+    if (blockingTimeRuleId) {
+      console.log(`[Timer] Time limit window closed for ${siteKey}: ${blockingTimeRuleId}`);
+      stopCurrentTimer();
+      await redirectTabToRandomUrl(currentTimer.tabId);
+      return;
+    }
+
     const oldTime = siteTimeData[siteKey].timeSpent;
     siteTimeData[siteKey].timeSpent += 1;
     siteTimeData[siteKey].lastUpdated = currentTickTimestamp;
 
     const selectedRuleId = getMostRestrictiveRuleIdForSite(siteKey, siteRuleIds, compiledRules);
+    const timeRuleIds = getApplicableTimeRuleIdsForSite(siteKey, siteRuleIds, compiledRules);
+    for (const ruleId of timeRuleIds) {
+      const rule = compiledRules[ruleId];
+      if (!rule) continue;
+
+      ruleUsageData[ruleId] = {
+        timeSpent: Math.max(0, Math.floor(getRuleTimeSpent(rule, siteTimeData))),
+        lastUpdated: currentTickTimestamp
+      };
+    }
+
     const exceededRules: ExceededRuleInfo[] = [];
 
     for (const ruleId of selectedRuleId ? [selectedRuleId] : []) {
       const rule = compiledRules[ruleId];
-      if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
+      if (!rule || rule.ruleType === 'session' || rule.ruleType === 'time' || rule.timeLimit <= 0) continue;
 
-      const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
-        return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
-      }, 0);
+      const totalTimeSpent = getRuleTimeSpent(rule, siteTimeData);
       const safeTotalTimeSpent = Math.max(0, Math.floor(totalTimeSpent));
 
       ruleUsageData[ruleId] = {
@@ -1084,13 +1141,19 @@ async function startTimerForTab(
   let shouldRedirectImmediately = false;
   let softBoundaryRule: ExceededRuleInfo | null = null;
 
+  const blockingTimeRuleId = getBlockingTimeRuleId(siteKey, siteRuleIds, compiledRules, new Date(now));
+  if (blockingTimeRuleId) {
+    console.log(`[Timer] Time limit window is closed for ${siteKey}: ${blockingTimeRuleId}`);
+    await chrome.storage.local.set({ siteTimeData, ruleUsageData });
+    await redirectTabToRandomUrl(tabId);
+    return;
+  }
+
   for (const ruleId of selectedRuleId ? [selectedRuleId] : []) {
     const rule = compiledRules[ruleId];
-    if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) continue;
+    if (!rule || rule.ruleType === 'session' || rule.ruleType === 'time' || rule.timeLimit <= 0) continue;
 
-    const totalTimeSpent = rule.siteKeys.reduce((sum, memberSiteKey) => {
-      return sum + (siteTimeData[memberSiteKey]?.timeSpent || 0);
-    }, 0);
+    const totalTimeSpent = getRuleTimeSpent(rule, siteTimeData);
     const safeTotalTimeSpent = Math.max(0, Math.floor(totalTimeSpent));
 
     ruleUsageData[ruleId] = {

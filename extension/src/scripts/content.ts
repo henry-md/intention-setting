@@ -13,13 +13,19 @@ import {
   MIN_UPCOMING_LIMIT_REMINDER_SECONDS,
   TUTORIAL_INSTAGRAM_BADGE_STEP_KEY,
 } from '../constants';
-import { getMostRestrictiveRuleIdForSite, getTotalAllowedSeconds } from '../utils/ruleSelection';
+import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite, getTotalAllowedSeconds } from '../utils/ruleSelection';
+import {
+  TIME_LIMIT_WARNING_SECONDS,
+  getTimeLimitScheduleState,
+} from '../utils/timeLimitSchedule';
 import { normalizeHostname } from '../utils/urlNormalization';
+import type { RuleType, TimeLimitSchedule } from '../types/Rule';
 
 /** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
 interface StoredSiteRule {
-  ruleType?: 'hard' | 'soft' | 'session';
+  ruleType?: RuleType;
   timeLimit?: number;
+  schedule?: TimeLimitSchedule;
   ruleId?: string;
   plusOnes?: number;
   plusOneDuration?: number;
@@ -213,7 +219,7 @@ const checkAndShowIntentionPopup = async () => {
       const hasVisitedToday = siteData && siteData.lastUpdated && !isNewDay(siteData.lastUpdated, dailyResetTime);
 
       if (hasVisitedToday) {
-        // Same day revisit - for hard/soft rules, just show the timer badge
+        // Same day revisit - for non-session rules, just show the timer badge
         // For session rules, skip everything (already prompted today)
         console.log('Already visited today');
         if (ruleData.ruleType !== 'session' && ruleData.timeLimit != null) {
@@ -229,8 +235,8 @@ const checkAndShowIntentionPopup = async () => {
         pauseAllMedia();
         showIntentionPopup();
       } else if (ruleData.timeLimit != null) {
-        // For hard/soft rules, start timer immediately with the configured time limit
-        console.log('Starting timer for hard/soft rule (first visit today):', ruleData);
+        // For non-session rules, start timer immediately with the configured time limit
+        console.log('Starting timer for non-session rule (first visit today):', ruleData);
         await startTimeTracking(ruleData.timeLimit);
       }
     }
@@ -360,8 +366,9 @@ const getDebugInfo = async () => {
   const storage = await safeStorageGet(['siteRuleIds', 'compiledRules', 'siteTimeData']);
   const siteRuleIds: Record<string, string[]> = storage?.siteRuleIds || {};
   const compiledRules: Record<string, {
-    ruleType: 'hard' | 'soft' | 'session';
+    ruleType: RuleType;
     timeLimit: number;
+    schedule?: TimeLimitSchedule;
     plusOnes?: number;
     plusOneDuration?: number;
     siteKeys: string[];
@@ -373,7 +380,9 @@ const getDebugInfo = async () => {
   type ApplicableLimitItem = {
     ruleId: string;
     ruleName?: string;
-    ruleType: 'hard' | 'soft' | 'session';
+    ruleType: RuleType;
+    schedule?: TimeLimitSchedule;
+    scheduleState?: ReturnType<typeof getTimeLimitScheduleState>;
     plusOnes?: number;
     plusOneDuration?: number;
     totalAllowedTime: number;
@@ -382,7 +391,7 @@ const getDebugInfo = async () => {
     siteBreakdown: Array<{ siteKey: string; timeSpent: number }>;
   };
 
-  const applicableLimits: ApplicableLimitItem[] = (selectedRuleId ? [selectedRuleId] : [])
+  const durationLimits: ApplicableLimitItem[] = (selectedRuleId ? [selectedRuleId] : [])
     .map((ruleId): ApplicableLimitItem | null => {
       const rule = compiledRules[ruleId];
       if (!rule) return null;
@@ -397,6 +406,7 @@ const getDebugInfo = async () => {
         ruleId,
         ruleName: rule.ruleName,
         ruleType: rule.ruleType,
+        schedule: rule.schedule,
         plusOnes: rule.plusOnes,
         plusOneDuration: rule.plusOneDuration,
         totalAllowedTime: getTotalAllowedSeconds(rule),
@@ -407,6 +417,37 @@ const getDebugInfo = async () => {
     })
     .filter((rule): rule is ApplicableLimitItem => rule !== null)
     .sort((a, b) => b.timeSpent - a.timeSpent);
+
+  const timeLimits: ApplicableLimitItem[] = getApplicableTimeRuleIdsForSite(normalizedHostname, siteRuleIds, compiledRules)
+    .map((ruleId): ApplicableLimitItem | null => {
+      const rule = compiledRules[ruleId];
+      if (!rule || rule.ruleType !== 'time') return null;
+
+      const siteBreakdown = rule.siteKeys
+        .map((siteKey) => ({
+          siteKey,
+          timeSpent: siteTimeData[siteKey]?.timeSpent || 0
+        }))
+        .sort((a, b) => b.timeSpent - a.timeSpent);
+      const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);
+
+      return {
+        ruleId,
+        ruleName: rule.ruleName,
+        ruleType: rule.ruleType,
+        schedule: rule.schedule,
+        scheduleState: getTimeLimitScheduleState(rule.schedule),
+        plusOnes: rule.plusOnes,
+        plusOneDuration: rule.plusOneDuration,
+        totalAllowedTime: 0,
+        timeLimit: 0,
+        timeSpent,
+        siteBreakdown,
+      };
+    })
+    .filter((rule): rule is ApplicableLimitItem => rule !== null);
+
+  const applicableLimits = [...durationLimits, ...timeLimits];
 
   return {
     currentUrl: window.location.href,
@@ -910,14 +951,15 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
   const reminderStorage = await safeStorageGet(['upcomingLimitReminderSeconds']);
   const reminderSeconds = clampReminderSeconds(reminderStorage?.upcomingLimitReminderSeconds);
 
-  const operativeSpent = relevantLimit?.timeSpent ?? timeSpent ?? 0;
-  let reminderTarget = relevantLimit?.timeLimit ?? timeLimit ?? 0;
+  const durationLimit = debugInfo.applicableLimits.find((limit) => limit.ruleType !== 'time');
+  const operativeSpent = durationLimit?.timeSpent ?? timeSpent ?? 0;
+  let reminderTarget = durationLimit?.timeLimit ?? timeLimit ?? 0;
 
   // Soft rules should warn before the NEXT soft boundary (base limit, then each extension step).
-  if (relevantLimit?.ruleType === 'soft') {
-    const baseLimit = relevantLimit.timeLimit;
-    const plusOneDuration = relevantLimit.plusOneDuration || 0;
-    const plusOnes = Math.max(0, relevantLimit.plusOnes || 0);
+  if (durationLimit?.ruleType === 'soft') {
+    const baseLimit = durationLimit.timeLimit;
+    const plusOneDuration = durationLimit.plusOneDuration || 0;
+    const plusOnes = Math.max(0, durationLimit.plusOnes || 0);
 
     if (plusOneDuration > 0 && plusOnes > 0) {
       if (operativeSpent < baseLimit) {
@@ -934,7 +976,13 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
   }
 
   const remaining = reminderTarget - operativeSpent;
-  const isNearLimit = reminderTarget > 0 && remaining > 0 && remaining <= reminderSeconds;
+  const isNearDurationLimit = reminderTarget > 0 && remaining > 0 && remaining <= reminderSeconds;
+  const isNearTimeLimit = debugInfo.applicableLimits.some((limit) => {
+    if (limit.ruleType !== 'time') return false;
+    const secondsUntilEnd = limit.scheduleState?.secondsUntilEnd;
+    return typeof secondsUntilEnd === 'number' && secondsUntilEnd > 0 && secondsUntilEnd <= TIME_LIMIT_WARNING_SECONDS;
+  });
+  const isNearLimit = isNearDurationLimit || isNearTimeLimit;
   setNearLimitOverlayVisible(isNearLimit);
 
   // Render both components

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import type { RuleType, TimeLimitSchedule } from '../types/Rule';
+import { formatTimeLimitSchedule } from '../utils/timeLimitSchedule';
 
 interface DebugPanelProps {
   debugInfo: {
@@ -11,7 +13,8 @@ interface DebugPanelProps {
     applicableLimits: Array<{
       ruleId: string;
       ruleName?: string;
-      ruleType: 'hard' | 'soft' | 'session';
+      ruleType: RuleType;
+      schedule?: TimeLimitSchedule;
       timeLimit: number;
       timeSpent: number;
       siteBreakdown: Array<{
@@ -114,9 +117,13 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ debugInfo }) => {
               debugInfo.applicableLimits.map((limit) => (
                 <div key={limit.ruleId} style={{ marginBottom: '6px' }}>
                   <div>{limit.ruleName || limit.ruleId}</div>
-                  <div>
-                    Total: {formatTime(limit.timeSpent)} / {formatTime(limit.timeLimit)}
-                  </div>
+                  {limit.ruleType === 'time' ? (
+                    <div>Window: {formatTimeLimitSchedule(limit.schedule)}</div>
+                  ) : (
+                    <div>
+                      Total: {formatTime(limit.timeSpent)} / {formatTime(limit.timeLimit)}
+                    </div>
+                  )}
                   <details style={{ marginTop: '4px' }}>
                     <summary style={{ cursor: 'pointer', opacity: 0.8 }}>
                       Sites in this limit ({limit.siteBreakdown.length})

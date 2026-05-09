@@ -14,12 +14,22 @@ export interface RuleTarget {
   id: string;
 }
 
+export type RuleType = 'hard' | 'soft' | 'session' | 'time';
+export type WeekdayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface TimeLimitSchedule {
+  days: WeekdayKey[];
+  startTime: string;
+  endTime: string;
+}
+
 export interface Rule {
   id: string;
   name?: string;
-  type: 'hard' | 'soft' | 'session';
+  type: RuleType;
   targets: RuleTarget[];
   timeLimit: number; // in minutes
+  schedule?: TimeLimitSchedule;
   plusOnes?: number;
   plusOneDuration?: number; // in seconds
   createdAt: string;

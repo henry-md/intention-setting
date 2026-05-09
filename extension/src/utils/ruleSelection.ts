@@ -1,5 +1,5 @@
 export interface CompiledRuleForSelection {
-  ruleType: 'hard' | 'soft' | 'session';
+  ruleType: 'hard' | 'soft' | 'session' | 'time';
   timeLimit: number;
   plusOnes?: number;
   plusOneDuration?: number;
@@ -18,14 +18,15 @@ export const getTotalAllowedSeconds = (rule: CompiledRuleForSelection): number =
   return rule.timeLimit;
 };
 
-const getRuleTypeRank = (ruleType: 'hard' | 'soft' | 'session'): number => {
+const getRuleTypeRank = (ruleType: 'hard' | 'soft' | 'session' | 'time'): number => {
   if (ruleType === 'hard') return 0;
   if (ruleType === 'soft') return 1;
+  if (ruleType === 'time') return 2;
   return 2;
 };
 
 /**
- * Returns a single non-session rule ID for `siteKey`: the most restrictive rule,
+ * Returns a single duration rule ID for `siteKey`: the most restrictive rule,
  * defined as the one allowing the least total time.
  */
 export function getMostRestrictiveRuleIdForSite(
@@ -37,7 +38,7 @@ export function getMostRestrictiveRuleIdForSite(
   const candidateRuleIds = mappedRuleIds.length > 0
     ? mappedRuleIds
     : Object.entries(compiledRules)
-        .filter(([, rule]) => rule.ruleType !== 'session' && rule.siteKeys.includes(siteKey))
+        .filter(([, rule]) => rule.ruleType !== 'session' && rule.ruleType !== 'time' && rule.siteKeys.includes(siteKey))
         .map(([ruleId]) => ruleId);
 
   let bestRuleId: string | null = null;
@@ -45,7 +46,7 @@ export function getMostRestrictiveRuleIdForSite(
 
   for (const ruleId of candidateRuleIds) {
     const rule = compiledRules[ruleId];
-    if (!rule || rule.ruleType === 'session' || rule.timeLimit <= 0) {
+    if (!rule || rule.ruleType === 'session' || rule.ruleType === 'time' || rule.timeLimit <= 0) {
       continue;
     }
 
@@ -80,4 +81,22 @@ export function getMostRestrictiveRuleIdForSite(
   }
 
   return bestRuleId;
+}
+
+export function getApplicableTimeRuleIdsForSite(
+  siteKey: string,
+  siteRuleIds: SiteRuleIdsForSelection,
+  compiledRules: CompiledRulesForSelection
+): string[] {
+  const mappedRuleIds = siteRuleIds[siteKey] || [];
+  const candidateRuleIds = mappedRuleIds.length > 0
+    ? mappedRuleIds
+    : Object.entries(compiledRules)
+        .filter(([, rule]) => rule.ruleType === 'time' && rule.siteKeys.includes(siteKey))
+        .map(([ruleId]) => ruleId);
+
+  return candidateRuleIds.filter((ruleId) => {
+    const rule = compiledRules[ruleId];
+    return !!rule && rule.ruleType === 'time' && rule.siteKeys.includes(siteKey);
+  });
 }

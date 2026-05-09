@@ -1,22 +1,25 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { expandTargetsToUrls } from './ruleHelpers';
-import type { Rule } from '../types/Rule';
+import type { Rule, RuleType, TimeLimitSchedule } from '../types/Rule';
 import type { Group } from '../types/Group';
 import { getNormalizedHostname } from './urlNormalization';
+import { normalizeTimeLimitSchedule } from './timeLimitSchedule';
 
 interface SiteRuleData {
-  ruleType: 'hard' | 'soft' | 'session';
+  ruleType: RuleType;
   timeLimit: number; // in seconds (converted from Rule.timeLimit which is in minutes)
+  schedule?: TimeLimitSchedule;
   plusOnes?: number;
   plusOneDuration?: number; // in seconds
   ruleId: string;
 }
 
 interface CompiledRuleData {
-  ruleType: 'hard' | 'soft' | 'session';
+  ruleType: RuleType;
   timeLimit: number;
   ruleName?: string;
+  schedule?: TimeLimitSchedule;
   plusOnes?: number;
   plusOneDuration?: number;
   siteKeys: string[];
@@ -25,6 +28,10 @@ interface CompiledRuleData {
 interface RuleUsageEntry {
   timeSpent: number;
   lastUpdated: number;
+}
+
+function isDurationRuleType(ruleType: RuleType): boolean {
+  return ruleType === 'hard' || ruleType === 'soft';
 }
 
 function shouldReplacePrimaryRule(existing: SiteRuleData, nextRule: Rule): boolean {
@@ -36,7 +43,15 @@ function shouldReplacePrimaryRule(existing: SiteRuleData, nextRule: Rule): boole
     return false;
   }
 
-  if (existing.ruleType !== 'session' && nextRule.type !== 'session') {
+  if (existing.ruleType === 'time' && isDurationRuleType(nextRule.type)) {
+    return true;
+  }
+
+  if (isDurationRuleType(existing.ruleType) && nextRule.type === 'time') {
+    return false;
+  }
+
+  if (isDurationRuleType(existing.ruleType) && isDurationRuleType(nextRule.type)) {
     const nextLimitSeconds = nextRule.timeLimit * 60;
     return nextLimitSeconds < existing.timeLimit;
   }
@@ -117,6 +132,10 @@ export async function syncRulesToStorage(userId: string): Promise<void> {
           ruleId: rule.id
         };
 
+        if (rule.type === 'time') {
+          nextSiteRule.schedule = normalizeTimeLimitSchedule(rule.schedule);
+        }
+
         if (rule.type === 'soft') {
           nextSiteRule.plusOnes = rule.plusOnes;
           nextSiteRule.plusOneDuration = rule.plusOneDuration;
@@ -143,6 +162,10 @@ export async function syncRulesToStorage(userId: string): Promise<void> {
         ruleName: rule.name,
         siteKeys: Array.from(uniqueSiteKeys)
       };
+
+      if (rule.type === 'time') {
+        compiledRules[rule.id].schedule = normalizeTimeLimitSchedule(rule.schedule);
+      }
 
       if (rule.type === 'soft') {
         compiledRules[rule.id].plusOnes = rule.plusOnes;

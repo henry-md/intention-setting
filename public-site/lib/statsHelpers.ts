@@ -2,6 +2,7 @@ import type {
   Group,
   Rule,
   RuleTarget,
+  RuleType,
   UserData,
 } from '@/hooks/useUserData';
 import type { DailyUsageHistoryEntry } from '@/lib/dailyUsageHistory';
@@ -100,10 +101,14 @@ export function getProgressColor(percentage: number): string {
  * Get status text based on rule type and progress
  */
 export function getStatusText(
-  ruleType: 'hard' | 'soft' | 'session',
+  ruleType: RuleType,
   timeSpent: number,
   timeLimit: number
 ): string {
+  if (ruleType === 'time') {
+    return timeSpent > 0 ? 'Tracked' : 'Scheduled';
+  }
+
   const percentage = calculateProgress(timeSpent, timeLimit);
 
   if (timeSpent >= timeLimit) {
@@ -141,7 +146,7 @@ export interface RuleProgressSiteBreakdownItem {
 export interface RuleProgressStats {
   ruleId: string;
   ruleName: string;
-  ruleType: 'hard' | 'soft' | 'session';
+  ruleType: RuleType;
   timeSpent: number;
   timeLimit: number;
   percentage: number;
@@ -200,7 +205,7 @@ export function buildSiteStats(
       const siteKey = getNormalizedHostname(url);
 
       const timeSpent = Math.max(0, Math.floor(Number(latestSiteTotals[siteKey]) || 0));
-      const timeLimit = rule.timeLimit * 60; // Convert minutes to seconds
+      const timeLimit = rule.type === 'time' ? 0 : rule.timeLimit * 60; // Convert minutes to seconds
       const percentage = calculateProgress(timeSpent, timeLimit);
       const remaining = Math.max(timeLimit - timeSpent, 0);
 
@@ -233,7 +238,7 @@ export function buildRuleProgressStats(
   const latestSiteTotals = latestEntry?.siteTotals || {};
 
   return rules
-    .filter((rule) => rule.timeLimit > 0)
+    .filter((rule) => rule.type === 'time' || rule.timeLimit > 0)
     .map((rule) => {
       const urls = expandTargetsToUrls(rule.targets, groups);
       const uniqueSiteKeys = Array.from(new Set(urls.map((url) => getNormalizedHostname(url))));
@@ -246,7 +251,9 @@ export function buildRuleProgressStats(
         .sort((a, b) => b.timeSpent - a.timeSpent);
 
       const timeSpent = siteBreakdown.reduce((sum, site) => sum + site.timeSpent, 0);
-      const baseLimitSeconds = Math.max(0, Math.round(rule.timeLimit * 60));
+      const baseLimitSeconds = rule.type === 'time'
+        ? 0
+        : Math.max(0, Math.round(rule.timeLimit * 60));
       const softExtraSeconds =
         rule.type === 'soft'
           ? Math.max(0, rule.plusOnes || 0) * Math.max(0, rule.plusOneDuration || 0)
