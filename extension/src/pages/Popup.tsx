@@ -9,7 +9,6 @@ import ManageSubscription from './ManageSubscription';
 import Spinner from '../components/Spinner';
 import LLMPanel from '../components/LLMPanel';
 import TutorialOverlay, { type TutorialStep } from '../components/TutorialOverlay';
-import EndOfTutorialAnimation from '../components/EndOfTutorialAnimation';
 import ExtensionUpdateModal from '../components/ExtensionUpdateModal';
 import ClientMessageModal from '../components/ClientMessageModal';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '../components/ui/resizable';
@@ -32,7 +31,6 @@ type TabType = 'home' | 'rules' | 'settings';
 type RulesView = 'rules' | 'groups' | 'groupEdit';
 type ClientModalKind = 'upgrade' | 'message' | 'aiChatFocusMessage' | 'tutorialDisabledMessage';
 const HARD_REQUIREMENT_GOOGLE_SIGN_IN = import.meta.env.HARD_REQUIREMENT_GOOGLE_SIGN_IN === 'true';
-const SHOW_END_OF_TUTORIAL_ANIMATION = import.meta.env.SHOW_END_OF_TUTORIAL_ANIMATION === 'true';
 
 const getTutorialInstagramTabId = (value: unknown): number | null => {
   if (!value || typeof value !== 'object') return null;
@@ -135,7 +133,6 @@ const Popup: React.FC = () => {
   const [clientModalQueue, setClientModalQueue] = useState<ClientModalKind[]>([]);
   const [hasLoadedClientModalState, setHasLoadedClientModalState] = useState(false);
   const [isAiChatInputFocused, setIsAiChatInputFocused] = useState(false);
-  const [showEndOfTutorialAnimation, setShowEndOfTutorialAnimation] = useState(false);
   const aiPanelRef = useRef<ImperativePanelHandle>(null);
   const lastUserIdRef = useRef<string | null>(null);
 
@@ -291,7 +288,7 @@ const Popup: React.FC = () => {
   };
 
   const exitTutorial = () => {
-    saveTutorialStatus(tutorialStep === 'complete' ? 'completed' : 'dismissed');
+    saveTutorialStatus('dismissed');
     clearTutorialInstagramBadgeStep();
     setTutorialStep(null);
     setTutorialPromptMismatch(false);
@@ -302,9 +299,6 @@ const Popup: React.FC = () => {
     clearTutorialInstagramBadgeStep();
     setTutorialStep(null);
     setTutorialPromptMismatch(false);
-    if (SHOW_END_OF_TUTORIAL_ANIMATION) {
-      setShowEndOfTutorialAnimation(true);
-    }
   };
 
   const showCompanionWebAppStep = () => {
@@ -336,7 +330,7 @@ const Popup: React.FC = () => {
     }
 
     if (tutorialStep === 'companionWebApp') {
-      setTutorialStep('complete');
+      finishTutorial();
     }
   };
 
@@ -783,14 +777,7 @@ const Popup: React.FC = () => {
           onDecline={declineTutorial}
           onExit={exitTutorial}
           onContinue={continueTutorial}
-          onFinish={finishTutorial}
           onOpenInstagram={openTutorialInstagram}
-        />
-      )}
-
-      {showEndOfTutorialAnimation && (
-        <EndOfTutorialAnimation
-          onDone={() => setShowEndOfTutorialAnimation(false)}
         />
       )}
 

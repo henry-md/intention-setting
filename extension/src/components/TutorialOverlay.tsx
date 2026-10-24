@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Check, Copy as CopyIcon, ExternalLink, Mail, Sparkles, X } from 'lucide-react';
+import { Check, Copy as CopyIcon, ExternalLink, Sparkles, X } from 'lucide-react';
 import { COMPANION_WEB_APP_URL, TUTORIAL_EXACT_PROMPT } from '../constants';
 
 export type TutorialStep =
@@ -13,8 +13,7 @@ export type TutorialStep =
   | 'setPlusOneCount'
   | 'saveSoft'
   | 'replayTutorial'
-  | 'companionWebApp'
-  | 'complete';
+  | 'companionWebApp';
 
 interface SpotlightRect {
   top: number;
@@ -30,7 +29,6 @@ interface TutorialOverlayProps {
   onDecline: () => void;
   onExit: () => void;
   onContinue: () => void;
-  onFinish: () => void;
   onOpenInstagram: () => void;
 }
 
@@ -46,7 +44,6 @@ const TARGET_SELECTORS: Record<TutorialStep, string | null> = {
   saveSoft: '[data-tutorial-target="save-rule-button"]',
   replayTutorial: '[data-tutorial-target="replay-tutorial-button"]',
   companionWebApp: '[data-tutorial-target="companion-web-app-link"]',
-  complete: null,
 };
 
 const TUTORIAL_STEP_COUNT = 8;
@@ -63,11 +60,7 @@ const STEP_INDEX: Record<TutorialStep, number | null> = {
   saveSoft: 6,
   replayTutorial: 7,
   companionWebApp: 8,
-  complete: null,
 };
-
-const DEVELOPER_PHOTO_SRC = './images/developer-hello.jpg';
-const DEVELOPER_EMAIL_URL = 'https://mail.google.com/mail/u/0/?to=henrymdeutsch%40gmail.com&tf=cm';
 
 const getFallbackRect = (): SpotlightRect => {
   const width = Math.min(window.innerWidth - 48, 320);
@@ -210,33 +203,16 @@ const stepCopy = (step: TutorialStep, promptMismatch: boolean) => {
     };
   }
 
-  if (step === 'companionWebApp') {
-    return {
-      eyebrow: `Step 8 of ${TUTORIAL_STEP_COUNT}`,
-      title: 'There is a web app too',
-      body: 'The companion web app lives here if you want to open Intention Setting in a regular browser tab.',
-    };
-  }
-
   return {
-    eyebrow: 'Tutorial complete',
-    title: 'You are set',
-    body: ":o hello! This is a very new app! So if you want to chat with me, the developer, about your bad UX or to say what's up, pls do!",
+    eyebrow: `Step 8 of ${TUTORIAL_STEP_COUNT}`,
+    title: 'There is a web app too',
+    body: 'The companion web app lives here if you want to open Intention Setting in a regular browser tab.',
   };
 };
 
 const getCardPosition = (rect: SpotlightRect, step: TutorialStep): React.CSSProperties => {
-  const isCompleteStep = step === 'complete';
   const isCompanionStep = step === 'companionWebApp';
-  const cardWidth = Math.min(isCompleteStep || isCompanionStep ? 360 : 330, window.innerWidth - 32);
-  if (isCompleteStep) {
-    return {
-      width: cardWidth,
-      left: '50%',
-      top: '50%',
-      transform: 'translate(-50%, -50%)',
-    };
-  }
+  const cardWidth = Math.min(isCompanionStep ? 360 : 330, window.innerWidth - 32);
 
   const left = clamp(rect.left + rect.width / 2 - cardWidth / 2, 16, window.innerWidth - cardWidth - 16);
   const estimatedHeight = isCompanionStep ? 280 : 220;
@@ -264,7 +240,6 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   onDecline,
   onExit,
   onContinue,
-  onFinish,
   onOpenInstagram,
 }) => {
   const selector = TARGET_SELECTORS[step];
@@ -311,15 +286,6 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
     } catch (error) {
       console.error('Failed to copy tutorial prompt:', error);
     }
-  };
-
-  const handleExitClick = () => {
-    if (step === 'complete') {
-      onExit();
-      return;
-    }
-
-    setIsConfirmingExit(true);
   };
 
   return (
@@ -370,7 +336,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
         >
         <button
           type="button"
-          onClick={handleExitClick}
+          onClick={() => setIsConfirmingExit(true)}
           className="absolute right-3 top-3 rounded-md p-1 text-zinc-400 transition-colors hover:bg-white/8 hover:text-white"
           aria-label="Exit tutorial"
           title="Exit tutorial"
@@ -380,7 +346,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
 
         <div className="mb-3 flex items-center gap-2 pr-8">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/30 bg-emerald-400/10 text-emerald-200">
-            {step === 'complete' ? <Check className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+            <Sparkles className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-emerald-200/80">
@@ -389,14 +355,6 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
             <h2 className="text-base font-semibold leading-tight text-white">{copy.title}</h2>
           </div>
         </div>
-
-        {step === 'complete' && (
-          <img
-            src={DEVELOPER_PHOTO_SRC}
-            alt="Henry waving hello"
-            className="mx-auto mb-3 h-40 w-36 rounded-xl border border-white/10 object-cover shadow-lg shadow-black/35"
-          />
-        )}
 
         <p className="text-sm leading-5 text-zinc-300">{copy.body}</p>
 
@@ -445,7 +403,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               onClick={onDecline}
               className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
             >
-              Nah
+              No
             </button>
             <button
               type="button"
@@ -504,31 +462,11 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               onClick={onContinue}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
             >
-              Cool
+              Done
             </button>
           </div>
         )}
 
-        {step === 'complete' && (
-          <div className="mt-4 flex flex-col gap-2">
-            <a
-              href={DEVELOPER_EMAIL_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/70 bg-emerald-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-200"
-            >
-              <Mail className="h-4 w-4" />
-              Email me
-            </a>
-            <button
-              type="button"
-              onClick={onFinish}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
-            >
-              Woah
-            </button>
-          </div>
-        )}
         </section>
       )}
 

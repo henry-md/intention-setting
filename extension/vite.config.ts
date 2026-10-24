@@ -75,7 +75,7 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: './',
-    envPrefix: ['VITE_', 'HARD_REQUIREMENT_', 'SHOW_END_OF_TUTORIAL_ANIMATION'],
+    envPrefix: ['VITE_', 'HARD_REQUIREMENT_'],
     plugins: [
       react(),
       crx({ manifest: getManifestForCommand(command, localPublicSiteOrigin) }),
