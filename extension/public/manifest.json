@@ -28,6 +28,7 @@
     "offscreen",
     "alarms",
     "tabs",
+    "webNavigation",
     "activeTab",
     "scripting",
     "sidePanel"
@@ -38,6 +39,8 @@
     "https://intention-setting-production.up.railway.app/*",
     "https://*.googleapis.com/*",
     "https://*.gstatic.com/*",
+    "https://*.instagram.com/*",
+    "https://*.tiktok.com/*",
     "https://*.youtube.com/*",
     "https://*.cloudfunctions.net/*",
     "https://*.run.app/*"
@@ -49,7 +52,8 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/scripts/content.ts"]
+      "js": ["src/scripts/content.ts"],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [

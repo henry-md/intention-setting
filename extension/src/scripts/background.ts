@@ -7,6 +7,8 @@ import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite } from
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
 import { getTimeLimitScheduleState } from '../utils/timeLimitSchedule';
 import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezone';
+import { getHomeUrlForMessages, getMessagesRedirect, isDirectMessageUrl } from '../site-experiences';
+import { normalizeHostname } from '../utils/urlNormalization';
 import type { RuleType, TimeLimitSchedule } from '../types/Rule';
 
 // Test imports
@@ -141,6 +143,8 @@ const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
 const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
 const CURRENT_USAGE_DAY_KEY_STORAGE_KEY = 'currentUsageDayKey';
 const DEFAULT_ACTION_TITLE = 'Open Intention Setting';
+const DM_HOME_BYPASSES_KEY = 'dmHomeBypasses';
+const DM_HOME_TOKENS_KEY = 'dmHomeTokens';
 const USAGE_INSTALLATION_ID_KEY = 'usageInstallationId';
 const USAGE_CONTRIBUTION_STATE_KEY = 'usageContributionState';
 const LOCAL_DEV_ACTION_TITLE = `${DEFAULT_ACTION_TITLE} (local dev)`;
@@ -162,6 +166,10 @@ const LOCAL_DEV_ACTION_ICONS: { [index: number]: string } = {
 let lastUsageResetCheckAt = 0;
 let usageHydrationPromise: Promise<void> | null = null;
 let usageSyncPromise: Promise<void> | null = null;
+const socialRedirectsInFlight = new Map<number, string>();
+const pendingSocialRootRedirects = new Map<number, { messagesUrl: string; previousUrl?: string }>();
+const SOCIAL_ROOT_REDIRECT_GRACE_MS = 400;
+const SOCIAL_HOME_TOKEN_TTL_MS = 2_000;
 
 type UsageContributionState = {
   dayKey: string;
@@ -243,6 +251,102 @@ async function hydrateSharedUsageForCurrentDay(): Promise<void> {
   return usageHydrationPromise;
 }
 
+async function hasDmHomeBypass(tabId: number, url: string | undefined): Promise<boolean> {
+  if (!url) return false;
+  const storage = await chrome.storage.session.get(DM_HOME_BYPASSES_KEY);
+  const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+  const bypassHomeUrl = bypasses[String(tabId)];
+  if (!bypassHomeUrl) return false;
+
+  try {
+    // Home mode belongs to the social-site tab, not just its literal `/`
+    // URL. Instagram opens comments and posts at their own routes before
+    // returning to `/`, and those journeys must retain the user's explicit
+    // choice to browse Home.
+    return new URL(bypassHomeUrl).origin === new URL(url).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function consumeDmHomeToken(tabId: number, url: string): Promise<boolean> {
+  const storage = await chrome.storage.session.get([DM_HOME_TOKENS_KEY, DM_HOME_BYPASSES_KEY]);
+  const tokens = (storage[DM_HOME_TOKENS_KEY] || {}) as Record<string, { origin: string; expiresAt: number }>;
+  const token = tokens[String(tabId)];
+  if (!token || token.expiresAt < Date.now() || token.origin !== new URL(url).origin) return false;
+
+  delete tokens[String(tabId)];
+  const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+  bypasses[String(tabId)] = `${new URL(url).origin}/`;
+  await chrome.storage.session.set({ [DM_HOME_TOKENS_KEY]: tokens, [DM_HOME_BYPASSES_KEY]: bypasses });
+  return true;
+}
+
+async function clearDmHomeBypass(tabId: number): Promise<void> {
+  const storage = await chrome.storage.session.get(DM_HOME_BYPASSES_KEY);
+  const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+  if (!(String(tabId) in bypasses)) return;
+  delete bypasses[String(tabId)];
+  await chrome.storage.session.set({ [DM_HOME_BYPASSES_KEY]: bypasses });
+}
+
+async function clearDmHomeBypassAfterLeavingSite(tabId: number, url: string): Promise<void> {
+  const storage = await chrome.storage.session.get(DM_HOME_BYPASSES_KEY);
+  const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+  const bypassHomeUrl = bypasses[String(tabId)];
+  if (!bypassHomeUrl) return;
+
+  try {
+    if (new URL(bypassHomeUrl).origin === new URL(url).origin) return;
+  } catch {
+    // A malformed target is outside the known social-site tab scope.
+  }
+
+  await clearDmHomeBypass(tabId);
+}
+
+async function redirectSocialRootBeforeSiteNavigation(tabId: number, url: string): Promise<void> {
+  const messagesRedirect = getMessagesRedirect(url);
+  if (!messagesRedirect) return;
+
+  // A Home navigation is an explicit, per-tab opt-out from the DM-first
+  // behavior. Clear any older fallback from a previous root visit before the
+  // root navigation can commit.
+  if (await hasDmHomeBypass(tabId, url) || await consumeDmHomeToken(tabId, url)) {
+    pendingSocialRootRedirects.delete(tabId);
+    socialRedirectsInFlight.delete(tabId);
+    return;
+  }
+
+  let previousUrl: string | undefined;
+  try {
+    previousUrl = (await chrome.tabs.get(tabId)).url;
+  } catch {
+    // The commit fallback still redirects a root visit when the tab cannot be
+    // read during its navigation transition.
+  }
+  pendingSocialRootRedirects.set(tabId, { messagesUrl: messagesRedirect, previousUrl });
+
+  if (socialRedirectsInFlight.has(tabId)) return;
+  socialRedirectsInFlight.set(tabId, messagesRedirect);
+  setTimeout(() => {
+    void (async () => {
+      const pendingRedirect = pendingSocialRootRedirects.get(tabId);
+      if (!pendingRedirect) return;
+      const tab = await chrome.tabs.get(tabId);
+      if (await hasDmHomeBypass(tabId, tab.url)) {
+        pendingSocialRootRedirects.delete(tabId);
+        return;
+      }
+      pendingSocialRootRedirects.delete(tabId);
+      await chrome.tabs.update(tabId, { url: pendingRedirect.messagesUrl });
+    })().catch((error) => {
+      console.error('[SiteExperience] Delayed DM redirect failed:', error);
+    }).finally(() => {
+      socialRedirectsInFlight.delete(tabId);
+    });
+  }, SOCIAL_ROOT_REDIRECT_GRACE_MS);
+}
 
 async function syncActionIconForInstallType(): Promise<void> {
   try {
@@ -1241,7 +1345,7 @@ function stopCurrentTimer(): void {
 async function startTimerForTab(
   tabId: number,
   siteKey: string,
-  options: { skipImmediateSoftBoundaryCheck?: boolean } = {}
+  options: { skipImmediateSoftBoundaryCheck?: boolean; url?: string } = {}
 ): Promise<void> {
   await checkAndApplyRemoteUsageReset();
   console.log(`[Timer] Request to start timer - tabId: ${tabId}, site: ${siteKey}`);
@@ -1260,20 +1364,35 @@ async function startTimerForTab(
     stopCurrentTimer();
   }
 
-  await ensureCurrentUsageDayState('start-timer');
-  await hydrateSharedUsageForCurrentDay();
-
-  // Verify tab still exists and is active
+  // Verify tab still exists and is active, and route social homepages before
+  // any limit enforcement has a chance to redirect the user elsewhere.
+  let currentUrl = options.url;
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab.active) {
       console.log(`[Timer] Tab ${tabId} is not active, aborting`);
       return;
     }
+    currentUrl ||= tab.url;
   } catch {
     console.log(`[Timer] Tab ${tabId} no longer exists`);
     return;
   }
+
+  const messagesRedirect = currentUrl ? getMessagesRedirect(currentUrl) : null;
+  if (messagesRedirect && !(await hasDmHomeBypass(tabId, currentUrl))) {
+    stopCurrentTimer();
+    return;
+  }
+
+  const dmSettings = await chrome.storage.local.get(['restrictDmTime']);
+  if (dmSettings.restrictDmTime !== true && isDirectMessageUrl(currentUrl)) {
+    stopCurrentTimer();
+    return;
+  }
+
+  await ensureCurrentUsageDayState('start-timer');
+  await hydrateSharedUsageForCurrentDay();
 
   // Check if site has a rule
   const storage = await chrome.storage.local.get([
@@ -1535,7 +1654,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'tab-focused') {
     if (sender.tab?.id) {
-      startTimerForTab(sender.tab.id, message.siteKey);
+      startTimerForTab(sender.tab.id, message.siteKey, { url: message.url });
     }
     return false;
   }
@@ -1552,9 +1671,84 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (activeTimer?.tabId === sender.tab.id) {
         stopCurrentTimer();
       }
-      startTimerForTab(sender.tab.id, message.newSiteKey);
+      startTimerForTab(sender.tab.id, message.newSiteKey, { url: message.url });
     }
     return false;
+  }
+
+  if (message.action === 'open-site-home') {
+    (async () => {
+      const tabId = sender.tab?.id;
+      const homeUrl = sender.tab?.url ? getHomeUrlForMessages(sender.tab.url) : null;
+      if (!tabId || !homeUrl) {
+        sendResponse({ success: false });
+        return;
+      }
+
+      const storage = await chrome.storage.session.get(DM_HOME_BYPASSES_KEY);
+      const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+      await chrome.storage.session.set({
+        [DM_HOME_BYPASSES_KEY]: { ...bypasses, [String(tabId)]: homeUrl }
+      });
+      // Do not let a fallback scheduled for an earlier root visit re-apply
+      // after the user explicitly asks to open Home.
+      pendingSocialRootRedirects.delete(tabId);
+      socialRedirectsInFlight.delete(tabId);
+      await chrome.tabs.update(tabId, { url: homeUrl });
+      sendResponse({ success: true });
+    })().catch((error) => {
+      console.error('[SiteExperience] Failed to open social home:', error);
+      sendResponse({ success: false });
+    });
+    return true;
+  }
+
+  if (message.action === 'entered-social-home-from-dm') {
+    (async () => {
+      const tabId = sender.tab?.id;
+      const homeUrl = typeof message.url === 'string' && getMessagesRedirect(message.url)
+        ? `${new URL(message.url).origin}/`
+        : null;
+      if (!tabId || !homeUrl || !isDirectMessageUrl(message.previousUrl)) {
+        sendResponse({ success: false });
+        return;
+      }
+
+      const storage = await chrome.storage.session.get(DM_HOME_BYPASSES_KEY);
+      const bypasses = (storage[DM_HOME_BYPASSES_KEY] || {}) as Record<string, string>;
+      await chrome.storage.session.set({
+        [DM_HOME_BYPASSES_KEY]: { ...bypasses, [String(tabId)]: homeUrl }
+      });
+      pendingSocialRootRedirects.delete(tabId);
+      sendResponse({ success: true });
+    })().catch((error) => {
+      console.error('[SiteExperience] Failed to retain native social Home mode:', error);
+      sendResponse({ success: false });
+    });
+    return true;
+  }
+
+  if (message.action === 'arm-social-home-token') {
+    (async () => {
+      const tabId = sender.tab?.id;
+      const currentUrl = sender.tab?.url;
+      if (!tabId || !currentUrl || !isDirectMessageUrl(currentUrl)) {
+        sendResponse({ success: false });
+        return;
+      }
+      const tokens = (await chrome.storage.session.get(DM_HOME_TOKENS_KEY))[DM_HOME_TOKENS_KEY] || {};
+      await chrome.storage.session.set({
+        [DM_HOME_TOKENS_KEY]: {
+          ...tokens,
+          [String(tabId)]: { origin: new URL(currentUrl).origin, expiresAt: Date.now() + SOCIAL_HOME_TOKEN_TTL_MS }
+        }
+      });
+      sendResponse({ success: true });
+    })().catch((error) => {
+      console.error('[SiteExperience] Failed to arm Home token:', error);
+      sendResponse({ success: false });
+    });
+    return true;
   }
 
   if (message.action === 'signIn') {
@@ -1688,7 +1882,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // CHROME TABS EVENT LISTENERS
 // ============================================================================
 
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
+  void redirectSocialRootBeforeSiteNavigation(details.tabId, details.url);
+});
+
+// Some sites (notably TikTok) issue a server redirect quickly enough to win
+// the first tabs.update race. Keep the root-navigation intent and redirect on
+// the resulting top-level commit as a deterministic fallback.
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId !== 0) return;
+  const pendingRedirect = pendingSocialRootRedirects.get(details.tabId);
+  if (!pendingRedirect) return;
+  if (details.url === pendingRedirect.messagesUrl) {
+    pendingSocialRootRedirects.delete(details.tabId);
+    return;
+  }
+
+  // The delayed redirect above gives in-page Home transitions time to mark
+  // their tab as Home mode, while preserving DM-first behavior for fresh
+  // root visits and TikTok server redirects.
+});
+
 // Tab activation (user switches tabs)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const navigationUrl = changeInfo.url;
+  if (!navigationUrl) return;
+
+  void (async () => {
+    try {
+      const messagesRedirect = getMessagesRedirect(navigationUrl);
+      if (messagesRedirect) {
+        if (!(await hasDmHomeBypass(tabId, navigationUrl))) {
+          await redirectSocialRootBeforeSiteNavigation(tabId, navigationUrl);
+          return;
+        }
+      } else {
+        await clearDmHomeBypassAfterLeavingSite(tabId, navigationUrl);
+      }
+
+      if (!tab.active) return;
+      const siteKey = normalizeHostname(new URL(navigationUrl).hostname);
+      await startTimerForTab(tabId, siteKey, { url: navigationUrl });
+    } catch {
+      // Ignore non-web URLs and malformed navigation events.
+    }
+  })();
+});
+
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   console.log(`[Timer] Tab activated: ${activeInfo.tabId}`);
 
@@ -1707,7 +1948,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     });
 
     if (response?.siteKey && response?.hasSiteRule) {
-      startTimerForTab(activeInfo.tabId, response.siteKey);
+      startTimerForTab(activeInfo.tabId, response.siteKey, { url: response.url });
     }
   } catch (error: unknown) {
     // Content script may not be loaded yet - this is expected
@@ -1729,6 +1970,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (activeTimer?.tabId === tabId) {
     stopCurrentTimer();
   }
+  void clearDmHomeBypass(tabId);
 });
 
 // Window focus changes
@@ -1750,7 +1992,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
           });
 
           if (response?.siteKey && response?.hasSiteRule) {
-            startTimerForTab(tabs[0].id, response.siteKey);
+            startTimerForTab(tabs[0].id, response.siteKey, { url: response.url });
           }
         } catch {
           // Content script may not be loaded yet - this is normal
@@ -1780,7 +2022,7 @@ chrome.runtime.onStartup.addListener(async () => {
       });
 
       if (response?.siteKey && response?.hasSiteRule) {
-        startTimerForTab(tabs[0].id, response.siteKey);
+        startTimerForTab(tabs[0].id, response.siteKey, { url: response.url });
       }
     } catch {
       // Content script may not be injected yet - this is normal on startup

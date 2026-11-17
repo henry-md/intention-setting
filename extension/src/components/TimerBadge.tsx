@@ -15,6 +15,7 @@ interface TimerBadgeProps {
   timeSpent: number; // in seconds
   timeLimit: number; // in seconds
   isNearLimit?: boolean;
+  isInactive?: boolean;
   currentSiteKey?: string;
   relevantLimit?: {
     ruleId: string;
@@ -47,6 +48,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
   timeSpent,
   timeLimit,
   isNearLimit = false,
+  isInactive = false,
   currentSiteKey,
   relevantLimit,
 }) => {
@@ -244,12 +246,16 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
 
   const showRuleName = displayMode !== 'complex';
   const showLimitLine = displayMode === 'compact';
-  const backgroundColor = isNearLimit
+  const backgroundColor = isInactive
+    ? '#27272a'
+    : isNearLimit
     ? (isNearLimitFlashOn ? '#47272d' : '#3a1f24')
     : isOverLimit
       ? '#3b171d'
       : '#18181b';
-  const borderColor = isNearLimit
+  const borderColor = isInactive
+    ? '#52525b'
+    : isNearLimit
     ? (isNearLimitFlashOn ? '#a05b66' : '#8b4b55')
     : isOverLimit
       ? '#b56a76'
@@ -259,11 +265,11 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
     <div
       style={{
         backgroundColor,
-        color: 'white',
+        color: isInactive ? '#d4d4d8' : 'white',
         width: `${dims.width}px`,
         padding: `${dims.paddingY}px ${dims.paddingX}px`,
         borderRadius: `${dims.borderRadius}px`,
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        boxShadow: isInactive ? '0 3px 10px rgba(0, 0, 0, 0.2)' : '0 4px 12px rgba(0, 0, 0, 0.3)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontWeight: 600,
         border: `${dims.borderWidth}px solid ${borderColor}`,
@@ -288,6 +294,19 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
           }}
         >
           {relevantRuleLabel}
+        </div>
+      )}
+
+      {isInactive && (
+        <div
+          style={{
+            marginBottom: `${Math.max(2, dims.gapXSmall)}px`,
+            fontSize: `${dims.labelSize}px`,
+            textAlign: 'center',
+            opacity: 0.72,
+          }}
+        >
+          Not counting
         </div>
       )}
 
@@ -319,7 +338,7 @@ const TimerBadge: React.FC<TimerBadgeProps> = ({
               style={{
                 width: `${Math.min(percentage, 100)}%`,
                 height: '100%',
-                backgroundColor: isOverLimit ? '#fca5a5' : '#71717a',
+                backgroundColor: isInactive ? '#a1a1aa' : isOverLimit ? '#fca5a5' : '#71717a',
                 transition: 'width 0.3s ease',
               }}
             />

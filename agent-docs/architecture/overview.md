@@ -23,3 +23,7 @@ The extension calls `openaiChatCompletion` in `web/functions/index.js` through `
 ## Time Window Rules
 
 Rules support a fourth `type: "time"` for clock-window access. These store `schedule: { days, startTime, endTime }` on the Firestore rule, sync that schedule into `compiledRules`, and enforce it in the background timer loop. Time rules are allow windows: outside the selected local days/hours the tab redirects immediately. While inside a window, the content script uses the compiled schedule to flash the red near-limit overlay during the final 10 seconds before the window closes.
+
+## Social DM Entry
+
+`extension/src/site-experiences/` isolates URL behavior for supported social sites. The background worker routes Instagram and TikTok root visits to their DM inboxes before generic limit enforcement; `restrictDmTime` is a local setting that defaults to false, so DM pages bypass timers and remain reachable after a daily limit. A DM-to-root SPA transition marks the tab as Home mode before the worker's short root-redirect grace period expires, without injecting or replacing site UI. That bypass is site-scoped for the lifetime of the tab, so comments, posts, and profiles opened from Home can return to the root feed; it clears when the tab leaves the site or closes. Root routing must remain in the background worker (not an unconditional declarative-network redirect) so that explicit Home navigation can be honored.

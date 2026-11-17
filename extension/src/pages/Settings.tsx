@@ -38,6 +38,7 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
   const [timerBadgeTextScale, setTimerBadgeTextScale] = useState<number>(DEFAULT_TIMER_BADGE_TEXT_SCALE);
   const [upcomingLimitReminderSeconds, setUpcomingLimitReminderSeconds] = useState<number>(DEFAULT_UPCOMING_LIMIT_REMINDER_SECONDS);
   const [redirectUrls, setRedirectUrls] = useState<string[]>([]);
+  const [restrictDmTime, setRestrictDmTime] = useState(false);
   const [newRedirectUrl, setNewRedirectUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,8 +54,8 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
   // Load current settings from storage
   useEffect(() => {
     const keys = ALLOW_CUSTOM_RESET_TIME
-      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls']
-      : ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls'];
+      ? ['dailyResetTime', 'dailyResetTimezone', 'timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls', 'restrictDmTime']
+      : ['timerDisplayMode', 'simpleTimerDisplay', 'timerBadgeWidthScale', 'timerBadgeTextScale', 'timerBadgeScale', 'upcomingLimitReminderSeconds', 'redirectUrls', 'restrictDmTime'];
 
     chrome.storage.local.get(keys, (result) => {
       if (ALLOW_CUSTOM_RESET_TIME && result.dailyResetTime) {
@@ -77,6 +78,7 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
       if (result.redirectUrls && Array.isArray(result.redirectUrls)) {
         setRedirectUrls(result.redirectUrls);
       }
+      setRestrictDmTime(result.restrictDmTime === true);
       if (typeof result.timerBadgeWidthScale === 'number') {
         const scale = Math.min(MAX_TIMER_BADGE_WIDTH_SCALE, Math.max(MIN_TIMER_BADGE_WIDTH_SCALE, result.timerBadgeWidthScale));
         setTimerBadgeWidthScale(scale);
@@ -115,7 +117,8 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
         timerBadgeWidthScale: timerBadgeWidthScale,
         timerBadgeTextScale: timerBadgeTextScale,
         upcomingLimitReminderSeconds: upcomingLimitReminderSeconds,
-        redirectUrls: redirectUrls
+        redirectUrls: redirectUrls,
+        restrictDmTime
       });
 
       // Note: Reset will be automatically detected on the next timer tick
@@ -261,6 +264,33 @@ const Settings: React.FC<SettingsProps> = ({ user, isTutorialReplayDisabled = fa
       )}
 
       {/* Timer Display Setting */}
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-600 bg-zinc-800 p-4">
+        <div>
+          <h4 className="mb-2 text-sm font-medium text-zinc-200">Direct Messages</h4>
+          <p className="text-xs text-zinc-400">
+            Instagram and TikTok open to direct messages first. By default, time spent messaging does not count toward your daily limit and remains available after a limit is reached.
+          </p>
+        </div>
+
+        <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg p-2 transition-colors hover:bg-zinc-700">
+          <div>
+            <div className="text-sm font-medium text-zinc-200">Restrict DM Time</div>
+            <div className="text-xs text-zinc-400">Count Instagram and TikTok direct-message time toward your limits.</div>
+          </div>
+          <input
+            id="restrict-dm-time"
+            type="checkbox"
+            checked={restrictDmTime}
+            onChange={async (event) => {
+              const enabled = event.target.checked;
+              setRestrictDmTime(enabled);
+              await chrome.storage.local.set({ restrictDmTime: enabled });
+            }}
+            className="h-4 w-4 accent-zinc-200"
+          />
+        </label>
+      </div>
+
       <div className="flex flex-col space-y-4 bg-zinc-800 border border-zinc-600 rounded-lg p-4">
         <div>
           <h4 className="text-sm font-medium text-zinc-200 mb-3">Timer Display Mode</h4>

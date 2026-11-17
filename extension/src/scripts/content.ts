@@ -19,6 +19,7 @@ import {
   getTimeLimitScheduleState,
 } from '../utils/timeLimitSchedule';
 import { normalizeHostname } from '../utils/urlNormalization';
+import { getMessagesRedirect, isDirectMessageUrl } from '../site-experiences';
 import type { RuleType, TimeLimitSchedule } from '../types/Rule';
 
 /** Shape of a site rule as stored in chrome.storage (siteRules[siteKey]) */
@@ -174,6 +175,23 @@ let nearLimitOverlayStyle: HTMLStyleElement | null = null;
 let timerBadgeWrapper: HTMLElement | null = null;
 let tutorialBadgeSpotlightContainer: HTMLElement | null = null;
 let isTutorialBadgeSpotlightOpening = false;
+let lastSocialHomeTokenAt = 0;
+
+const armSocialHomeToken = (event: PointerEvent): void => {
+  if (!isDirectMessageUrl(window.location.href) || event.clientX > 96) return;
+  const now = Date.now();
+  if (now - lastSocialHomeTokenAt < 500) return;
+  lastSocialHomeTokenAt = now;
+  void safeSendMessage({ action: 'arm-social-home-token' }).catch((error) => {
+    reportAsyncError('arm-social-home-token message', error);
+  });
+};
+
+// Instagram and TikTok place native Home in the left rail. Hover arms a
+// short-lived token before the site's SPA navigation begins; pointer-down
+// covers touch and quick clicks.
+document.addEventListener('pointerover', armSocialHomeToken, true);
+document.addEventListener('pointerdown', armSocialHomeToken, true);
 const DEBUG_UI = import.meta.env.VITE_DEBUG_UI === 'true';
 const clampReminderSeconds = (value: unknown): number => {
   const parsed = Number(value);
@@ -182,6 +200,22 @@ const clampReminderSeconds = (value: unknown): number => {
     MAX_UPCOMING_LIMIT_REMINDER_SECONDS,
     Math.max(MIN_UPCOMING_LIMIT_REMINDER_SECONDS, Math.round(parsed))
   );
+};
+
+const shouldSkipDmTracking = async (): Promise<boolean> => {
+  if (!isDirectMessageUrl(window.location.href)) return false;
+  const storage = await safeStorageGet(['restrictDmTime']);
+  return storage?.restrictDmTime !== true;
+};
+
+const showInactiveTimerBadge = async () => {
+  currentSiteKey = getCurrentSiteKey();
+  const storage = await safeStorageGet(['siteRules', 'siteTimeData']);
+  const ruleData = storage?.siteRules?.[currentSiteKey] as StoredSiteRule | undefined;
+  const siteData = storage?.siteTimeData?.[currentSiteKey] as { timeSpent?: number; timeLimit?: number } | undefined;
+  const timeLimit = siteData?.timeLimit ?? ruleData?.timeLimit;
+  if (typeof timeLimit !== 'number') return;
+  await renderContainer(siteData?.timeSpent || 0, timeLimit, true);
 };
 
 // Check if current URL matches user's saved URLs
@@ -776,7 +810,7 @@ const showTutorialBadgeSpotlightIfNeeded = async () => {
 };
 
 // Render the container with both timer badge and debug panel
-const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
+const renderContainer = async (timeSpent?: number, timeLimit?: number, isInactive = false) => {
   // Check if container already exists
   let container = document.getElementById('timer-debug-container');
 
@@ -982,7 +1016,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
     const secondsUntilEnd = limit.scheduleState?.secondsUntilEnd;
     return typeof secondsUntilEnd === 'number' && secondsUntilEnd > 0 && secondsUntilEnd <= TIME_LIMIT_WARNING_SECONDS;
   });
-  const isNearLimit = isNearDurationLimit || isNearTimeLimit;
+  const isNearLimit = !isInactive && (isNearDurationLimit || isNearTimeLimit);
   setNearLimitOverlayVisible(isNearLimit);
 
   // Render both components
@@ -996,6 +1030,7 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number) => {
         timeSpent: timeSpent,
         timeLimit: timeLimit,
         isNearLimit,
+        isInactive,
         currentSiteKey: debugInfo.normalizedHostname,
         relevantLimit
       })
@@ -1025,8 +1060,8 @@ const showTimerBadge = async (timeSpent: number, timeLimit: number) => {
 };
 
 // Update timer badge display (now updates the whole container)
-const updateTimerBadge = async (timeSpent: number, timeLimit: number) => {
-  await renderContainer(timeSpent, timeLimit);
+const updateTimerBadge = async (timeSpent: number, timeLimit: number, isInactive = false) => {
+  await renderContainer(timeSpent, timeLimit, isInactive);
 };
 
 // Show debug panel on its own (when there's no timer)
@@ -1203,6 +1238,11 @@ chrome.storage.onChanged.addListener((changes) => {
       }
     }
 
+    if (changes.restrictDmTime && isDirectMessageUrl(window.location.href)) {
+      await initialize();
+      return;
+    }
+
     const shouldRefreshForDebug = !!(
       changes.siteRuleIds ||
       changes.compiledRules ||
@@ -1214,7 +1254,7 @@ chrome.storage.onChanged.addListener((changes) => {
       const newData = changes.siteTimeData?.newValue || {};
       const siteData = newData[currentSiteKey];
       if (siteData && containerRoot) {
-        await updateTimerBadge(siteData.timeSpent, siteData.timeLimit);
+        await updateTimerBadge(siteData.timeSpent, siteData.timeLimit, await shouldSkipDmTracking());
       } else if (DEBUG_UI && containerRoot) {
         // Update debug panel even if no timer data
         await showDebugPanel();
@@ -1349,14 +1389,29 @@ const initialize = async () => {
     return;
   }
 
+  if (await shouldSkipDmTracking()) {
+    const renderMutedBadge = () => {
+      void showInactiveTimerBadge().catch((error) => reportAsyncError('inactive timer badge', error));
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMutedBadge, { once: true });
+    } else {
+      renderMutedBadge();
+    }
+    return;
+  }
+
   await checkAndShowIntentionPopup();
   await checkAndShowTimer();
   // Show debug panel if DEBUG_UI is enabled (even if no timer)
   await showDebugPanel();
 };
 
-// Run check when page loads
-if (document.readyState === 'loading') {
+// Direct-message pages only mount the lightweight site-entry control (or skip
+// tracking), so they can initialize immediately at document_start.
+if (isDirectMessageUrl(window.location.href)) {
+  void initialize().catch((error) => reportAsyncError('direct-message initialize', error));
+} else if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     void initialize().catch((error) => reportAsyncError('DOMContentLoaded initialize', error));
   });
@@ -1374,6 +1429,7 @@ new MutationObserver(() => {
 
   const url = location.href;
   if (url !== lastUrl) {
+    const previousUrl = lastUrl;
     lastUrl = url;
 
     const previousSiteKey = currentSiteKey;
@@ -1390,6 +1446,17 @@ new MutationObserver(() => {
         newSiteKey: newSiteKey,
         url: url
       }).catch((error) => reportAsyncError('tab-navigated message', error));
+    }
+
+    // Native social Home is an SPA transition. Tell the background that this
+    // root route came from DMs before its short root-redirect grace window
+    // expires. Typed/new-tab root visits never have this in-page transition.
+    if (isDirectMessageUrl(previousUrl) && getMessagesRedirect(url)) {
+      void safeSendMessage({
+        action: 'entered-social-home-from-dm',
+        previousUrl,
+        url,
+      }).catch((error) => reportAsyncError('entered-social-home-from-dm message', error));
     }
 
     // Re-initialize UI
