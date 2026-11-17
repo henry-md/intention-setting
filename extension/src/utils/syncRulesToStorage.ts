@@ -1,4 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore/lite';
 import { db } from './firebase';
 import { expandTargetsToUrls } from './ruleHelpers';
 import type { Rule, RuleType, TimeLimitSchedule } from '../types/Rule';

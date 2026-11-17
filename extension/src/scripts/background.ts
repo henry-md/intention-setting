@@ -1,6 +1,6 @@
 import "./firebase-config";
 import { format } from 'date-fns';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME, TUTORIAL_INSTAGRAM_BADGE_STEP_KEY } from '../constants';
 import { db } from '../utils/firebase';
 import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
@@ -1499,7 +1499,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (result.user?.uid) {
         try {
           const userDocRef = doc(db, 'users', result.user.uid);
-          const { arrayUnion } = await import('firebase/firestore');
+          const { arrayUnion } = await import('firebase/firestore/lite');
 
           await setDoc(userDocRef, {
             intentions: arrayUnion(intentionData)

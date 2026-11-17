@@ -8,7 +8,7 @@ import {
   onSnapshot,
   deleteDoc,
 } from 'firebase/firestore';
-import { auth, db, firebaseConfig } from './firebase';
+import { auth, realtimeDb as db, firebaseConfig } from './firebase';
 // Firebase auth types imported on demand to avoid unused imports
 import { FirebaseError } from 'firebase/app';
 import { getFirebaseIdToken } from './firebaseIdToken';

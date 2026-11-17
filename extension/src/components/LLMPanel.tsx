@@ -12,7 +12,7 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
 } from '../types/openaiChat';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import { db } from '../utils/firebase';
 import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
