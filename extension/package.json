@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "build:local": "tsc -b && ALLOW_LOCAL_EXTENSION_BUILD=true vite build --mode development",
     "lint": "eslint .",
+    "test:usage-sync": "node scripts/test-usage-sync.mjs",
     "preview": "vite preview",
     "zip": "pnpm build && rm -f extension.zip && cd build && zip -r ../extension.zip . -x '*.map' '*.DS_Store' '__MACOSX/*' '.vite/*' '.vite/'"
   },

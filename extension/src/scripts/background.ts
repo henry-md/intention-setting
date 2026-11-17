@@ -1,6 +1,6 @@
 import "./firebase-config";
 import { format } from 'date-fns';
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore/lite';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME, TUTORIAL_INSTAGRAM_BADGE_STEP_KEY } from '../constants';
 import { db } from '../utils/firebase';
 import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
@@ -141,6 +141,8 @@ const USAGE_RESET_CHECK_INTERVAL_MS = 10_000;
 const USAGE_RESET_ALARM_NAME = 'usage-reset-check';
 const CURRENT_USAGE_DAY_KEY_STORAGE_KEY = 'currentUsageDayKey';
 const DEFAULT_ACTION_TITLE = 'Open Intention Setting';
+const USAGE_INSTALLATION_ID_KEY = 'usageInstallationId';
+const USAGE_CONTRIBUTION_STATE_KEY = 'usageContributionState';
 const LOCAL_DEV_ACTION_TITLE = `${DEFAULT_ACTION_TITLE} (local dev)`;
 const PRODUCTION_ACTION_ICONS: { [index: number]: string } = {
   16: 'icons/32.png',
@@ -158,6 +160,89 @@ const LOCAL_DEV_ACTION_ICONS: { [index: number]: string } = {
 };
 
 let lastUsageResetCheckAt = 0;
+let usageHydrationPromise: Promise<void> | null = null;
+let usageSyncPromise: Promise<void> | null = null;
+
+type UsageContributionState = {
+  dayKey: string;
+  siteTotals: Record<string, number>;
+  seeded?: boolean;
+};
+
+type SharedUsageHistoryEntry = DailyUsageHistoryEntry & {
+  /**
+   * Version 2 stores each installed copy's absolute contribution separately.
+   * That makes concurrent local and Web Store installs additive instead of
+   * allowing whichever one syncs last to replace the day's total.
+   */
+  usageFormatVersion?: number;
+  legacySiteTotals?: Record<string, number>;
+  installationUsage?: Record<string, { siteTotals: Record<string, number>; updatedAt: number }>;
+};
+
+const getInstallationUsageTotals = (
+  installationUsage: SharedUsageHistoryEntry['installationUsage'],
+  excludedInstallationId?: string
+): Record<string, number> => {
+  const totals: Record<string, number> = {};
+
+  for (const [installationId, usage] of Object.entries(installationUsage || {})) {
+    if (installationId === excludedInstallationId) continue;
+    for (const [siteKey, seconds] of Object.entries(usage.siteTotals || {})) {
+      totals[siteKey] = (totals[siteKey] || 0) + Math.max(0, Math.floor(Number(seconds) || 0));
+    }
+  }
+
+  return normalizeSiteTotals(totals);
+};
+
+const addSiteTotals = (...groups: Record<string, number>[]): Record<string, number> => {
+  const totals: Record<string, number> = {};
+  for (const group of groups) {
+    for (const [siteKey, seconds] of Object.entries(group)) {
+      totals[siteKey] = (totals[siteKey] || 0) + Math.max(0, Math.floor(Number(seconds) || 0));
+    }
+  }
+  return normalizeSiteTotals(totals);
+};
+
+async function getUsageInstallationId(): Promise<string> {
+  const storage = await chrome.storage.local.get(USAGE_INSTALLATION_ID_KEY);
+  if (typeof storage[USAGE_INSTALLATION_ID_KEY] === 'string') return storage[USAGE_INSTALLATION_ID_KEY];
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ [USAGE_INSTALLATION_ID_KEY]: id });
+  return id;
+}
+
+async function hydrateSharedUsageForCurrentDay(): Promise<void> {
+  if (usageHydrationPromise) return usageHydrationPromise;
+  usageHydrationPromise = (async () => {
+    const storage = await chrome.storage.local.get(['user', 'siteTimeData']);
+    if (!storage.user?.uid) return;
+    const resetSchedule = await getResetSchedule();
+    const dayKey = getCurrentUsageDayKey(Date.now(), resetSchedule.resetHour, resetSchedule.resetMinute);
+    const snapshot = await getDoc(doc(db, 'users', storage.user.uid));
+    const entry = snapshot.data()?.dailyUsageHistory?.[dayKey] as DailyUsageHistoryEntry | undefined;
+    if (!entry?.siteTotals) return;
+    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+    for (const [siteKey, total] of Object.entries(entry.siteTotals)) {
+      siteTimeData[siteKey] = {
+        ...(siteTimeData[siteKey] || { timeLimit: 0 }),
+        // Do not discard locally accumulated, not-yet-synced time while an
+        // install is coming online. The next contribution transaction seeds
+        // only the delta beyond the shared aggregate.
+        timeSpent: Math.max(
+          Math.max(0, Math.floor(siteTimeData[siteKey]?.timeSpent || 0)),
+          Math.max(0, Math.floor(total || 0))
+        ),
+        lastUpdated: Date.now()
+      };
+    }
+    await chrome.storage.local.set({ siteTimeData });
+  })().finally(() => { usageHydrationPromise = null; });
+  return usageHydrationPromise;
+}
+
 
 async function syncActionIconForInstallType(): Promise<void> {
   try {
@@ -692,7 +777,12 @@ async function resetAllSiteTime(
       siteTimeData: resetSiteTimeData,
       ruleUsageData: resetRuleUsageData,
       lastResetTimestamp: now,
-      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey
+      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey,
+      [USAGE_CONTRIBUTION_STATE_KEY]: {
+        dayKey: currentUsageDayKey,
+        siteTotals: {},
+        seeded: true
+      }
     });
     secondsCounter = 0;
 
@@ -705,14 +795,23 @@ async function resetAllSiteTime(
       const storedUser = storageForProfile.user as { uid?: string; email?: string } | undefined;
       const safeEmail = storedUser?.uid === userId ? (storedUser.email || '') : '';
       const userDocRef = doc(db, 'users', userId);
-      await setDoc(userDocRef, {
-        lastDailyResetTimestamp: now,
-        email: safeEmail,
-        dailyUsageHistory: {
-          [historyKey]: historyEntry,
-          [currentUsageDayKey]: currentDayZeroEntry
-        }
-      }, { merge: true });
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(userDocRef);
+        const history = snapshot.data()?.dailyUsageHistory as Record<string, DailyUsageHistoryEntry> | undefined;
+
+        // More than one installed copy can cross midnight at once. Keep an
+        // existing shared entry rather than replacing it with a potentially
+        // stale local snapshot from the other install.
+        const dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {};
+        if (!history?.[historyKey]) dailyUsageHistory[historyKey] = historyEntry;
+        if (!history?.[currentUsageDayKey]) dailyUsageHistory[currentUsageDayKey] = currentDayZeroEntry;
+
+        transaction.set(userDocRef, {
+          lastDailyResetTimestamp: now,
+          email: safeEmail,
+          ...(Object.keys(dailyUsageHistory).length > 0 ? { dailyUsageHistory } : {})
+        }, { merge: true });
+      });
 
       console.log('[DailyReset] ✓ Reset synced to Firestore');
     }
@@ -729,27 +828,38 @@ async function resetAllSiteTime(
  * Syncs accumulated time to Firestore.
  * Called every 5 seconds by syncInterval or immediately on timer stop.
  */
-async function syncToFirestore(): Promise<void> {
+function syncToFirestore(): Promise<void> {
+  // A timer tick and a tab change can both request a sync. Serialize those
+  // requests so each tick is acknowledged exactly once.
+  if (usageSyncPromise) return usageSyncPromise;
+
+  usageSyncPromise = syncToFirestoreInternal().finally(() => {
+    usageSyncPromise = null;
+  });
+  return usageSyncPromise;
+}
+
+async function syncToFirestoreInternal(): Promise<void> {
   if (!activeTimer || secondsCounter === 0) {
     return;
   }
 
   const { siteKey } = activeTimer;
+  const secondsToSync = secondsCounter;
 
-  console.log(`[Timer] Syncing ${secondsCounter}s to Firestore for ${siteKey}`);
+  console.log(`[Timer] Syncing ${secondsToSync}s to Firestore for ${siteKey}`);
 
   try {
     await ensureCurrentUsageDayState('sync-to-firestore');
 
-    if (!activeTimer || secondsCounter === 0) {
+    if (secondsToSync <= 0) {
       return;
     }
 
     // Get user and time data
-    const storage = await chrome.storage.local.get(['user', 'siteTimeData', 'compiledRules']);
+    const storage = await chrome.storage.local.get(['user', 'siteTimeData']);
     const user = storage.user;
     const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-    const compiledRules: CompiledRules = storage.compiledRules || {};
 
     if (!user?.uid || !siteTimeData[siteKey]) {
       console.log('[Timer] Cannot sync - no user or site data');
@@ -764,26 +874,84 @@ async function syncToFirestore(): Promise<void> {
       resetSchedule.resetMinute
     );
     const historyKey = getCurrentUsageDayKey(now, resetSchedule.resetHour, resetSchedule.resetMinute);
-    const currentHistoryEntry = createDailyUsageHistoryEntry(
-      collectTrackedSiteTotals(siteTimeData, compiledRules),
-      currentBoundary,
-      now,
-      now
-    );
+    const installationId = await getUsageInstallationId();
+    const contributionStorage = await chrome.storage.local.get(USAGE_CONTRIBUTION_STATE_KEY);
+    const previousContribution = contributionStorage[USAGE_CONTRIBUTION_STATE_KEY] as UsageContributionState | undefined;
+    const localBaselineTotals: Record<string, number> = {};
+    for (const [key, value] of Object.entries(siteTimeData)) {
+      const seconds = Math.max(0, Math.floor(value.timeSpent || 0));
+      if (seconds > 0) localBaselineTotals[key] = seconds;
+    }
 
-    // Write directly to Firestore
     const userDocRef = doc(db, 'users', user.uid);
-    console.log(`[Timer] Writing to Firestore dailyUsageHistory for users/${user.uid}: ${historyKey}`);
+    const syncResult = await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(userDocRef);
+      const existing = snapshot.data()?.dailyUsageHistory?.[historyKey] as SharedUsageHistoryEntry | undefined;
+      const installationUsage = { ...(existing?.installationUsage || {}) };
+      const hasInstallationUsage = Object.keys(installationUsage).length > 0;
+      // Before this format existed, siteTotals was the complete shared value.
+      // Preserve it once as a legacy baseline. Once installationUsage exists,
+      // siteTotals is already derived and must never become another baseline.
+      const legacySiteTotals = existing?.usageFormatVersion === 2
+        ? normalizeSiteTotals(existing.legacySiteTotals || {})
+        : hasInstallationUsage
+          ? {}
+          : normalizeSiteTotals(existing?.siteTotals || {});
+      const remoteTotalsWithoutThisInstall = addSiteTotals(
+        legacySiteTotals,
+        getInstallationUsageTotals(installationUsage, installationId)
+      );
 
-    await setDoc(userDocRef, {
-      email: user.email || '',
-      dailyUsageHistory: {
-        [historyKey]: currentHistoryEntry
+      const hasSeededContribution = previousContribution?.dayKey === historyKey && previousContribution.seeded === true;
+      const contributionTotals = hasSeededContribution
+        ? normalizeSiteTotals(previousContribution.siteTotals || {})
+        : Object.fromEntries(
+          Object.keys(localBaselineTotals).map((key): [string, number] => [
+            key,
+            Math.max(
+              0,
+              (localBaselineTotals[key] || 0)
+                - (remoteTotalsWithoutThisInstall[key] || 0)
+                - (key === siteKey ? secondsToSync : 0)
+            )
+          ])
+        );
+      contributionTotals[siteKey] = Math.max(0, Math.floor(contributionTotals[siteKey] || 0)) + secondsToSync;
+      installationUsage[installationId] = { siteTotals: contributionTotals, updatedAt: now };
+      const mergedSiteTotals = addSiteTotals(legacySiteTotals, getInstallationUsageTotals(installationUsage));
+      const nextEntry: SharedUsageHistoryEntry = {
+        ...createDailyUsageHistoryEntry(mergedSiteTotals, currentBoundary, now, now),
+        usageFormatVersion: 2,
+        legacySiteTotals,
+        installationUsage,
+      };
+      transaction.set(userDocRef, {
+        email: user.email || '',
+        dailyUsageHistory: { [historyKey]: nextEntry }
+      }, { merge: true });
+      return { entry: nextEntry, contributionTotals };
+    });
+
+    for (const [key, total] of Object.entries(syncResult.entry.siteTotals)) {
+      siteTimeData[key] = {
+        ...(siteTimeData[key] || { timeLimit: 0 }),
+        timeSpent: total,
+        lastUpdated: now
+      };
+    }
+    await chrome.storage.local.set({
+      siteTimeData,
+      [USAGE_CONTRIBUTION_STATE_KEY]: {
+        dayKey: historyKey,
+        siteTotals: syncResult.contributionTotals,
+        seeded: true
       }
-    }, { merge: true });
+    });
 
-    secondsCounter = 0;
-    console.log('[Timer] ✓ Firestore sync complete - data written successfully');
+    // Keep ticks that happened while the transaction was in flight for the
+    // next sync instead of erasing them with the acknowledged batch.
+    secondsCounter = Math.max(0, secondsCounter - secondsToSync);
+    console.log('[Timer] ✓ Firestore contribution sync complete');
   } catch (error) {
     console.error('[Timer] Firestore sync failed (will retry):', error);
     // Don't reset counter - will retry on next interval
@@ -1093,6 +1261,7 @@ async function startTimerForTab(
   }
 
   await ensureCurrentUsageDayState('start-timer');
+  await hydrateSharedUsageForCurrentDay();
 
   // Verify tab still exists and is active
   try {
