@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Preserve existing client behavior outside the canonical counter namespace.
+    match /{collection}/{document=**} {
+      allow read: if collection != 'usageCounters';
+      allow write: if collection != 'usageCounters' && collection != 'users';
+    }
+
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      function protectedUsageFields() {
+        return ['dailyUsageHistory', 'usageResetRequestedAt', 'usageResetAppliedAt', 'usageCountersVersion'];
+      }
+
+      function hasGuardedCounters() {
+        return resource.data.get('usageCountersVersion', 0) == 1;
+      }
+
+      allow create: if !request.resource.data.keys().hasAny(['usageCountersVersion']);
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['usageCountersVersion'])
+        && (!hasGuardedCounters() || (isOwner()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedUsageFields())));
+      allow delete: if !hasGuardedCounters();
+    }
+
+    // Preserve existing subcollection access without matching users/{uid}.
+    match /users/{uid}/{subcollection}/{documentId}/{nested=**} {
+      allow read, write: if true;
+    }
+
+    match /usageCounters/{uid}/days/{dayKey}/values/{counterId} {
+      function isCounterOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      function isValidCounter() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['seconds', 'kind', 'siteKey', 'installationId'])
+          && data.keys().hasOnly(['seconds', 'kind', 'siteKey', 'installationId'])
+          && data.seconds is int
+          && data.seconds >= 0
+          && data.seconds <= 9007199254740991
+          && data.kind in ['legacy', 'installation', 'site', 'total']
+          && data.siteKey is string
+          && data.installationId is string
+          && ((data.kind == 'total' && data.siteKey == '' && data.installationId == '')
+            || (data.kind in ['legacy', 'site'] && data.siteKey.size() > 0
+              && data.siteKey.size() <= 253 && data.installationId == '')
+            || (data.kind == 'installation' && data.siteKey.size() > 0
+              && data.siteKey.size() <= 253 && data.installationId.size() > 0
+              && data.installationId.size() <= 128));
+      }
+
+      allow read: if isCounterOwner();
+      allow create: if isCounterOwner() && isValidCounter();
+      allow update: if isCounterOwner() && isValidCounter()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seconds'])
+        && request.resource.data.seconds >= resource.data.seconds;
+      allow delete: if false;
+    }
+  }
+}

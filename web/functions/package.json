@@ -2,8 +2,12 @@
   "name": "intention-setting-functions",
   "private": true,
   "main": "index.js",
+  "scripts": {
+    "test:usage": "node --test test-usage.cjs test-usage-counters.cjs test-counter-invariants.cjs test-counter-sensitivity.cjs",
+    "test:counter-rules": "node ../scripts/test-counter-rules.cjs"
+  },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",

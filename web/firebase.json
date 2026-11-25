@@ -1,4 +1,7 @@
 {
+  "firestore": {
+    "rules": "firestore-counter-rollout.rules"
+  },
   "functions": {
     "source": "functions"
   },

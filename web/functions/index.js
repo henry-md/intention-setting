@@ -2,6 +2,8 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const Stripe = require('stripe');
+const { validateUsageDay, validateUsagePayload, mergeStoredUsageEntries, syncUsageForUser } = require('./usage');
+const { readUsageCounters, raiseUsageCounters } = require('./usageCounters');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -246,6 +248,90 @@ async function setSubscriptionCancelAtPeriodEnd({
 
   return normalizeSubscription(updatedSubscription);
 }
+
+function usageCounterStore(uid, dayKey, idToken) {
+  const db = admin.firestore();
+  const projectId = process.env.GCLOUD_PROJECT || admin.app().options.projectId;
+  return {
+    read: () => readUsageCounters(db, uid, dayKey),
+    raise: (entry) => raiseUsageCounters({ projectId, idToken, uid, dayKey, entry }),
+  };
+}
+
+exports.getUsage = onRequest(
+  { cors: true, region: 'us-central1', timeoutSeconds: 30 },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: { message: 'Method not allowed.' } }); return; }
+    const authResult = await verifyFirebaseRequest(req, '[getUsage]');
+    if (authResult.error) {
+      res.status(authResult.error.status).json({ error: { message: authResult.error.message } });
+      return;
+    }
+    try {
+      const dayKey = req.body?.dayKey;
+      validateUsageDay(dayKey);
+      const db = admin.firestore();
+      const [authority, mirror] = await Promise.all([
+        readUsageCounters(db, authResult.uid, dayKey),
+        db.collection('users').doc(authResult.uid).get(),
+      ]);
+      const mirrorEntry = mirror.data()?.dailyUsageHistory?.[dayKey];
+      let entry = mergeStoredUsageEntries(authority, mirrorEntry);
+      // Secure saved usage on the first refreshed read, even when no new tick
+      // is pending. This copies existing values; it does not add elapsed time.
+      if (!authority && entry) {
+        const bootstrap = await syncUsageForUser(db, authResult.uid, {
+          dayKey,
+          installationId: Object.keys(entry.installationUsage)[0] || 'guard-bootstrap',
+          siteTotals: {},
+          baselineSiteTotals: {},
+          periodStart: entry.periodStart || validateUsageDay(dayKey),
+        }, Date.now(), usageCounterStore(authResult.uid, dayKey, getBearerToken(req)));
+        entry = bootstrap.entry;
+      }
+      res.status(200).json({ entry: entry || null });
+    } catch (error) {
+      const status = error?.statusCode === 400 ? 400 : 500;
+      if (status === 500) console.error('[getUsage] Usage read failed:', error);
+      res.status(status).json({ error: formatHttpError(error, 'Could not read usage.') });
+    }
+  }
+);
+
+exports.syncUsage = onRequest(
+  { cors: true, region: 'us-central1', timeoutSeconds: 30 },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: { message: 'Method not allowed.' } });
+      return;
+    }
+    const authResult = await verifyFirebaseRequest(req, '[syncUsage]');
+    if (authResult.error) {
+      res.status(authResult.error.status).json({ error: { message: authResult.error.message } });
+      return;
+    }
+    try {
+      const payload = validateUsagePayload(req.body);
+      const result = await syncUsageForUser(admin.firestore(), authResult.uid, payload, Date.now(),
+        usageCounterStore(authResult.uid, payload.dayKey, getBearerToken(req)));
+      if (result.ignoredStaleContributionCount > 0) {
+        console.warn('[syncUsage] Ignored lower contribution counters:', {
+          count: result.ignoredStaleContributionCount,
+        });
+      }
+      res.status(200).json({ entry: result.entry, contributionTotals: result.contributionTotals });
+    } catch (error) {
+      const status = error?.statusCode === 400 ? 400 : 500;
+      if (status === 500) console.error('[syncUsage] Usage sync failed:', error);
+      res.status(status).json({ error: formatHttpError(error, 'Could not save usage.') });
+    }
+  }
+);
 
 exports.openaiChatCompletion = onRequest(
   {
