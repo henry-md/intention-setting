@@ -20,7 +20,7 @@ To get from Test to Live mode
 Note:
 - When uploading to chrome web store, you need to delete key in manifest.json. Then when you reload locally, add it back again so that you keep your constant extension id, which is required for redirection url to work in Stripe.
 - In inspect element, make sure you have Settings > Sources > "Javascript source maps" enabled for source maps.
-- Was running into some troubles that might be resolved from setting the Firebase rules to the most permissive things possible, allowing all reads and writes always.
+- Keep the counter protections in `web/firestore-counter-rollout.rules` enabled. Blanket allow-all rules would permit stale clients to overwrite saved usage.
 
 ### Things to change when going from Test to Prod for Stripe
 
@@ -43,6 +43,12 @@ firebase deploy
 
 - The build output will be in `build/`. This should be unpacked in your extension manager, which you can access at `chrome://extensions/`.
 - The AI assistant reads `OPENAI_API_KEY` from Firebase Functions secrets and `OPENAI_CHAT_MODEL` from `web/functions/.env`. Do not put the OpenAI key in `extension/.env`.
+
+### Verify timekeeping
+
+Install the extension and Functions dependencies, then run `npm --prefix web test` from the repository root. This runs the timer regressions, sync failure tests, and an isolated Firestore emulator suite without production credentials. Node.js 22, pnpm 9, Java 21 or newer, and Firebase CLI 14.9.0 are required.
+
+Use `npm --prefix web run test:timekeeping -- --unit-only` for the faster local tests. The full suite also runs on pushes and pull requests through `.github/workflows/timekeeping.yml`. The coverage, guarantees, and limitations are documented in `agent-docs/architecture/timekeeping-verification.md`.
 
 # LLM Context
 Firebase docs for configuring OAuth (not great):

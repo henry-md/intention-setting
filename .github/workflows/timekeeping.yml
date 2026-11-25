@@ -1,0 +1,42 @@
+name: Timekeeping
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timekeeping-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  counter-invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/functions/package-lock.json
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install test tools
+        run: npm install --global pnpm@9.9.0 firebase-tools@14.9.0
+      - name: Install dependencies
+        run: |
+          pnpm --dir extension install --frozen-lockfile
+          npm --prefix web/functions ci --no-audit --no-fund
+      - name: Verify counters and database enforcement
+        run: npm --prefix web test
+      - name: Lint and build extension
+        run: |
+          pnpm --dir extension lint
+          pnpm --dir extension build

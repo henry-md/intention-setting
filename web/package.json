@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:timekeeping",
+    "test:timekeeping": "node scripts/verify-timekeeping.cjs"
   },
   "keywords": [],
   "author": "",
