@@ -10,7 +10,13 @@
     "lint": "eslint .",
     "test:usage-sync": "node scripts/test-usage-sync.mjs",
     "preview": "vite preview",
-    "zip": "pnpm build && rm -f extension.zip && cd build && zip -r ../extension.zip . -x '*.map' '*.DS_Store' '__MACOSX/*' '.vite/*' '.vite/'"
+    "zip": "pnpm build && rm -f extension.zip && cd build && zip -r ../extension.zip . -x '*.map' '*.DS_Store' '__MACOSX/*' '.vite/*' '.vite/'",
+    "test:content-timer": "node scripts/test-content-timer.mjs",
+    "test:usage-day-reset": "node scripts/test-usage-day-reset.mjs",
+    "test:timer-lifecycle": "node scripts/test-timer-lifecycle.mjs",
+    "test:timer-startup": "node scripts/test-timer-startup.mjs",
+    "test:timekeeping": "node --test scripts/test-usage-sync.mjs scripts/test-content-timer.mjs scripts/test-usage-day-reset.mjs scripts/test-timer-lifecycle.mjs scripts/test-timer-startup.mjs scripts/test-counter-interleavings.mjs",
+    "test:counter-interleavings": "node scripts/test-counter-interleavings.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

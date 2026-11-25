@@ -362,25 +362,10 @@ const startTimeTracking = async (timeLimit: number) => {
   const result = await safeStorageGet(['siteTimeData']);
   if (!result) return; // Extension reloaded
 
-  const siteTimeData = result.siteTimeData || {};
-
-  // Initialize time tracking for this site if not exists
-  if (!siteTimeData[currentSiteKey]) {
-    siteTimeData[currentSiteKey] = {
-      timeSpent: 0,
-      timeLimit: timeLimit,
-      lastUpdated: Date.now()
-    };
-  } else {
-    // Update time limit if provided
-    siteTimeData[currentSiteKey].timeLimit = timeLimit;
-  }
-
-  const success = await safeStorageSet({ siteTimeData });
-  if (!success) return; // Extension reloaded
-
-  // Show timer badge
-  await showTimerBadge(siteTimeData[currentSiteKey].timeSpent, timeLimit);
+  // The background owns counter initialization and updates. Writing this
+  // snapshot back could erase ticks or another site's newly recorded time.
+  const timeSpent = result.siteTimeData?.[currentSiteKey]?.timeSpent || 0;
+  await showTimerBadge(timeSpent, timeLimit);
 
   // Notify background worker if tab is visible
   if (!document.hidden) {
@@ -809,8 +794,11 @@ const showTutorialBadgeSpotlightIfNeeded = async () => {
   await showTutorialBadgeSpotlight();
 };
 
+let renderContainerGeneration = 0;
+
 // Render the container with both timer badge and debug panel
 const renderContainer = async (timeSpent?: number, timeLimit?: number, isInactive = false) => {
+  const generation = ++renderContainerGeneration;
   // Check if container already exists
   let container = document.getElementById('timer-debug-container');
 
@@ -855,6 +843,8 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number, isInactiv
         }
       }
     }
+
+    if (generation !== renderContainerGeneration) return;
 
     // Add styles to wrapper (flush to edges, padding creates the 20px spacing)
     wrapper.style.cssText = `
@@ -983,6 +973,8 @@ const renderContainer = async (timeSpent?: number, timeLimit?: number, isInactiv
   const relevantLimit = debugInfo.applicableLimits[0];
 
   const reminderStorage = await safeStorageGet(['upcomingLimitReminderSeconds']);
+  // A newer storage event may have rendered while these reads were pending.
+  if (generation !== renderContainerGeneration) return;
   const reminderSeconds = clampReminderSeconds(reminderStorage?.upcomingLimitReminderSeconds);
 
   const durationLimit = debugInfo.applicableLimits.find((limit) => limit.ruleType !== 'time');

@@ -1,6 +1,6 @@
 import "./firebase-config";
 import { format } from 'date-fns';
-import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import { ALLOW_CUSTOM_RESET_TIME, DEFAULT_DAILY_RESET_TIME, TUTORIAL_INSTAGRAM_BADGE_STEP_KEY } from '../constants';
 import { db } from '../utils/firebase';
 import { getApplicableTimeRuleIdsForSite, getMostRestrictiveRuleIdForSite } from '../utils/ruleSelection';
@@ -10,6 +10,9 @@ import { formatDateWithTimezone, getTimezoneAbbreviation } from '../utils/timezo
 import { getHomeUrlForMessages, getMessagesRedirect, isDirectMessageUrl } from '../site-experiences';
 import { normalizeHostname } from '../utils/urlNormalization';
 import type { RuleType, TimeLimitSchedule } from '../types/Rule';
+import { shouldResetUsageDay } from '../utils/usageDayReset';
+import { acknowledgeUsage, maxSiteTotals, type UsageJournal, type UsageJournalEntry } from '../utils/usageJournal';
+import { loadUsage, uploadUsage } from '../utils/usageSync';
 
 // Test imports
 const testDate = new Date();
@@ -71,46 +74,6 @@ interface TutorialInstagramBadgeStepState {
   tabId?: number;
 }
 
-interface DailyUsageHistoryEntry {
-  totalTimeSpent: number;
-  trackedSiteCount: number;
-  siteTotals: Record<string, number>;
-  periodStart: number;
-  periodEnd: number;
-  capturedAt: number;
-}
-
-function normalizeSiteTotals(siteTotals: Record<string, number>): Record<string, number> {
-  const normalized: Record<string, number> = {};
-
-  for (const [siteKey, rawSeconds] of Object.entries(siteTotals)) {
-    const seconds = Math.max(0, Math.floor(Number(rawSeconds) || 0));
-    if (seconds <= 0) continue;
-    normalized[siteKey] = seconds;
-  }
-
-  return normalized;
-}
-
-function createDailyUsageHistoryEntry(
-  siteTotals: Record<string, number>,
-  periodStart: number,
-  periodEnd: number,
-  capturedAt: number
-): DailyUsageHistoryEntry {
-  const normalizedSiteTotals = normalizeSiteTotals(siteTotals);
-  const totalTimeSpent = Object.values(normalizedSiteTotals).reduce((sum, value) => sum + value, 0);
-
-  return {
-    totalTimeSpent,
-    trackedSiteCount: Object.keys(normalizedSiteTotals).length,
-    siteTotals: normalizedSiteTotals,
-    periodStart,
-    periodEnd,
-    capturedAt
-  };
-}
-
 interface ExceededRuleInfo {
   ruleId: string;
   rule: {
@@ -133,9 +96,6 @@ interface ExceededRuleInfo {
 
 let activeTimer: ActiveTimerState | null = null;
 let syncIntervalId: NodeJS.Timeout | null = null;
-let secondsCounter = 0;
-let lastTickTimestamp: number | null = null; // Track last tick time for reset boundary detection
-let isDailyResetInProgress = false;
 
 const TIMER_TICK_INTERVAL = 1000;  // 1 second
 const FIRESTORE_SYNC_INTERVAL = 5000;  // 5 seconds
@@ -147,6 +107,7 @@ const DM_HOME_BYPASSES_KEY = 'dmHomeBypasses';
 const DM_HOME_TOKENS_KEY = 'dmHomeTokens';
 const USAGE_INSTALLATION_ID_KEY = 'usageInstallationId';
 const USAGE_CONTRIBUTION_STATE_KEY = 'usageContributionState';
+const USAGE_JOURNAL_KEY = 'usageJournal';
 const LOCAL_DEV_ACTION_TITLE = `${DEFAULT_ACTION_TITLE} (local dev)`;
 const PRODUCTION_ACTION_ICONS: { [index: number]: string } = {
   16: 'icons/32.png',
@@ -166,6 +127,14 @@ const LOCAL_DEV_ACTION_ICONS: { [index: number]: string } = {
 let lastUsageResetCheckAt = 0;
 let usageHydrationPromise: Promise<void> | null = null;
 let usageSyncPromise: Promise<void> | null = null;
+let usageStorageQueue: Promise<unknown> = Promise.resolve();
+let timerStartGeneration = 0;
+
+function withUsageStorageLock<T>(operation: () => Promise<T>): Promise<T> {
+  const result = usageStorageQueue.then(operation);
+  usageStorageQueue = result.catch(() => {});
+  return result;
+}
 const socialRedirectsInFlight = new Map<number, string>();
 const pendingSocialRootRedirects = new Map<number, { messagesUrl: string; previousUrl?: string }>();
 const SOCIAL_ROOT_REDIRECT_GRACE_MS = 400;
@@ -175,43 +144,6 @@ type UsageContributionState = {
   dayKey: string;
   siteTotals: Record<string, number>;
   seeded?: boolean;
-};
-
-type SharedUsageHistoryEntry = DailyUsageHistoryEntry & {
-  /**
-   * Version 2 stores each installed copy's absolute contribution separately.
-   * That makes concurrent local and Web Store installs additive instead of
-   * allowing whichever one syncs last to replace the day's total.
-   */
-  usageFormatVersion?: number;
-  legacySiteTotals?: Record<string, number>;
-  installationUsage?: Record<string, { siteTotals: Record<string, number>; updatedAt: number }>;
-};
-
-const getInstallationUsageTotals = (
-  installationUsage: SharedUsageHistoryEntry['installationUsage'],
-  excludedInstallationId?: string
-): Record<string, number> => {
-  const totals: Record<string, number> = {};
-
-  for (const [installationId, usage] of Object.entries(installationUsage || {})) {
-    if (installationId === excludedInstallationId) continue;
-    for (const [siteKey, seconds] of Object.entries(usage.siteTotals || {})) {
-      totals[siteKey] = (totals[siteKey] || 0) + Math.max(0, Math.floor(Number(seconds) || 0));
-    }
-  }
-
-  return normalizeSiteTotals(totals);
-};
-
-const addSiteTotals = (...groups: Record<string, number>[]): Record<string, number> => {
-  const totals: Record<string, number> = {};
-  for (const group of groups) {
-    for (const [siteKey, seconds] of Object.entries(group)) {
-      totals[siteKey] = (totals[siteKey] || 0) + Math.max(0, Math.floor(Number(seconds) || 0));
-    }
-  }
-  return normalizeSiteTotals(totals);
 };
 
 async function getUsageInstallationId(): Promise<string> {
@@ -225,29 +157,28 @@ async function getUsageInstallationId(): Promise<string> {
 async function hydrateSharedUsageForCurrentDay(): Promise<void> {
   if (usageHydrationPromise) return usageHydrationPromise;
   usageHydrationPromise = (async () => {
-    const storage = await chrome.storage.local.get(['user', 'siteTimeData']);
+    const storage = await chrome.storage.local.get(['user', CURRENT_USAGE_DAY_KEY_STORAGE_KEY, 'usageResetAppliedAt']);
     if (!storage.user?.uid) return;
-    const resetSchedule = await getResetSchedule();
-    const dayKey = getCurrentUsageDayKey(Date.now(), resetSchedule.resetHour, resetSchedule.resetMinute);
-    const snapshot = await getDoc(doc(db, 'users', storage.user.uid));
-    const entry = snapshot.data()?.dailyUsageHistory?.[dayKey] as DailyUsageHistoryEntry | undefined;
+    const dayKey = storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY];
+    const entry = await loadUsage(storage.user.uid, dayKey);
     if (!entry?.siteTotals) return;
-    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-    for (const [siteKey, total] of Object.entries(entry.siteTotals)) {
-      siteTimeData[siteKey] = {
-        ...(siteTimeData[siteKey] || { timeLimit: 0 }),
-        // Do not discard locally accumulated, not-yet-synced time while an
-        // install is coming online. The next contribution transaction seeds
-        // only the delta beyond the shared aggregate.
-        timeSpent: Math.max(
-          Math.max(0, Math.floor(siteTimeData[siteKey]?.timeSpent || 0)),
-          Math.max(0, Math.floor(total || 0))
-        ),
-        lastUpdated: Date.now()
-      };
-    }
-    await chrome.storage.local.set({ siteTimeData });
-  })().finally(() => { usageHydrationPromise = null; });
+    await withUsageStorageLock(async () => {
+      const latest = await chrome.storage.local.get(['user', 'siteTimeData', CURRENT_USAGE_DAY_KEY_STORAGE_KEY, 'usageResetAppliedAt']);
+      if (latest.user?.uid !== storage.user.uid || latest[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] !== dayKey
+        || latest.usageResetAppliedAt !== storage.usageResetAppliedAt) return;
+      const siteTimeData: Record<string, SiteTimeData> = latest.siteTimeData || {};
+      for (const [siteKey, total] of Object.entries(entry.siteTotals)) {
+        siteTimeData[siteKey] = {
+          ...(siteTimeData[siteKey] || { timeLimit: 0 }),
+          timeSpent: Math.max(siteTimeData[siteKey]?.timeSpent || 0, total),
+          lastUpdated: Date.now()
+        };
+      }
+      await chrome.storage.local.set({ siteTimeData });
+    });
+  })().catch((error) => {
+    console.error('[Timer] Shared usage refresh failed; local tracking continues:', error);
+  }).finally(() => { usageHydrationPromise = null; });
   return usageHydrationPromise;
 }
 
@@ -393,6 +324,8 @@ async function clearAllUsageFromLocalStorage(appliedAt: number): Promise<void> {
     siteTimeData: {},
     ruleUsageData: {},
     dailyUsageHistory: {},
+    [USAGE_JOURNAL_KEY]: {},
+    [USAGE_CONTRIBUTION_STATE_KEY]: null,
     lastResetTimestamp: now,
     usageResetAppliedAt: appliedAt,
     [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey
@@ -427,11 +360,13 @@ async function checkAndApplyRemoteUsageReset(force: boolean = false): Promise<vo
       return;
     }
 
-    console.log(`[UsageReset] Applying remote clear request ${requestedAt} for users/${userId}`);
-    stopCurrentTimer();
-    await clearAllUsageFromLocalStorage(requestedAt);
-    await setDoc(userDocRef, { usageResetAppliedAt: requestedAt }, { merge: true });
-    console.log('[UsageReset] ✓ Local usage storage cleared from remote request');
+    await withUsageStorageLock(async () => {
+      const latest = await chrome.storage.local.get(['user', 'usageResetAppliedAt']);
+      if (latest.user?.uid !== userId || requestedAt <= Number(latest.usageResetAppliedAt || 0)) return;
+      stopCurrentTimer();
+      await clearAllUsageFromLocalStorage(requestedAt);
+      console.log('[UsageReset] Local usage storage cleared from remote request');
+    });
   } catch (error) {
     console.error('[UsageReset] Failed to apply remote clear request:', error);
   }
@@ -452,10 +387,6 @@ async function hydrateCompiledRuleIndexes(): Promise<void> {
   } catch (error) {
     console.error('[Timer] Failed to hydrate rule indexes:', error);
   }
-}
-
-function getHistoryDateKey(periodEnd: number): string {
-  return format(new Date(periodEnd - 1), 'yyyy-MM-dd');
 }
 
 function getCurrentUsageDayKey(
@@ -507,108 +438,35 @@ async function getResetSchedule(): Promise<{ resetHour: number; resetMinute: num
   return parseResetTime(storage.dailyResetTime);
 }
 
-function collectTrackedSiteTotals(
-  siteTimeData: Record<string, SiteTimeData>,
-  compiledRules: CompiledRules
-): Record<string, number> {
-  const trackedSiteKeys = new Set<string>();
-
-  Object.values(compiledRules).forEach((rule) => {
-    rule.siteKeys.forEach((siteKey) => trackedSiteKeys.add(siteKey));
-  });
-
-  if (trackedSiteKeys.size === 0) {
-    Object.keys(siteTimeData).forEach((siteKey) => trackedSiteKeys.add(siteKey));
-  }
-
-  const siteTotals: Record<string, number> = {};
-  trackedSiteKeys.forEach((siteKey) => {
-    const seconds = Math.max(0, Math.floor(siteTimeData[siteKey]?.timeSpent || 0));
-    if (seconds > 0) {
-      siteTotals[siteKey] = seconds;
-    }
-  });
-
-  return siteTotals;
-}
-
-function hasLocalUsageCounters(
-  siteTimeData: Record<string, SiteTimeData>,
-  ruleUsageData: RuleUsageData
-): boolean {
-  const hasSiteUsage = Object.values(siteTimeData).some((siteData) => {
-    const timeSpent = Math.max(0, Math.floor(Number(siteData?.timeSpent || 0)));
-    return timeSpent > 0;
-  });
-
-  if (hasSiteUsage) {
-    return true;
-  }
-
-  return Object.values(ruleUsageData).some((usageData) => {
-    const timeSpent = Math.max(0, Math.floor(Number(usageData?.timeSpent || 0)));
-    return timeSpent > 0;
-  });
-}
-
 function getPreviousBoundary(currentBoundary: number): number {
   const previousBoundary = new Date(currentBoundary);
   previousBoundary.setDate(previousBoundary.getDate() - 1);
   return previousBoundary.getTime();
 }
 
-async function ensureCurrentUsageDayState(source: string, timestamp: number = Date.now()): Promise<void> {
+function ensureCurrentUsageDayState(source: string, timestamp: number = Date.now()): Promise<void> {
+  return withUsageStorageLock(() => ensureCurrentUsageDayStateInternal(source, timestamp));
+}
+
+async function ensureCurrentUsageDayStateInternal(source: string, timestamp: number = Date.now()): Promise<void> {
   const resetSchedule = await getResetSchedule();
-  const expectedUsageDayKey = getCurrentUsageDayKey(
-    timestamp,
-    resetSchedule.resetHour,
-    resetSchedule.resetMinute
-  );
+  const expectedUsageDayKey = getCurrentUsageDayKey(timestamp, resetSchedule.resetHour, resetSchedule.resetMinute);
+  const currentBoundary = getMostRecentResetBoundary(timestamp, resetSchedule.resetHour, resetSchedule.resetMinute);
   const storage = await chrome.storage.local.get([
-    CURRENT_USAGE_DAY_KEY_STORAGE_KEY,
-    'user',
-    'siteTimeData',
-    'ruleUsageData'
+    CURRENT_USAGE_DAY_KEY_STORAGE_KEY, 'user', 'siteTimeData', 'ruleUsageData', 'lastResetTimestamp'
   ]);
-  const storedUsageDayKey = typeof storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] === 'string'
-    ? storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] as string
-    : '';
-
-  if (!storedUsageDayKey) {
-    await chrome.storage.local.set({
-      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: expectedUsageDayKey
-    });
-    return;
-  }
-
-  if (storedUsageDayKey === expectedUsageDayKey) {
-    return;
-  }
-
-  console.log(
-    `[DailyReset] Usage day guard triggered via ${source}: ${storedUsageDayKey} -> ${expectedUsageDayKey}`
-  );
-
+  const storedUsageDayKey = storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY];
   const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-  const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
-  const hasUsage = hasLocalUsageCounters(siteTimeData, ruleUsageData);
-
-  if (hasUsage) {
-    const userId = storage.user?.uid || null;
-    const currentBoundary = getMostRecentResetBoundary(
-      timestamp,
-      resetSchedule.resetHour,
-      resetSchedule.resetMinute
-    );
-    await resetAllSiteTime(userId, currentBoundary, getPreviousBoundary(currentBoundary));
-    return;
+  const latestSiteUpdate = Math.max(0, ...Object.values(siteTimeData).map((site) => Number(site.lastUpdated) || 0));
+  if (shouldResetUsageDay({
+    storedUsageDayKey, expectedUsageDayKey, currentBoundary,
+    lastResetTimestamp: storage.lastResetTimestamp, latestSiteUpdate,
+  })) {
+    console.log(`[DailyReset] Advancing usage day via ${source}`);
+    await resetAllSiteTime(storage.user?.uid || null, currentBoundary, getPreviousBoundary(currentBoundary));
+  } else if (typeof storedUsageDayKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(storedUsageDayKey)) {
+    await chrome.storage.local.set({ [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: expectedUsageDayKey });
   }
-
-  await chrome.storage.local.set({
-    [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: expectedUsageDayKey,
-    lastResetTimestamp: timestamp
-  });
-  console.log(`[DailyReset] Advanced usage day key without reset via ${source}`);
 }
 
 async function redirectTabToRandomUrl(tabId: number): Promise<boolean> {
@@ -764,164 +622,63 @@ function getMostRecentResetBoundary(timestamp: number, resetHour: number, resetM
   return todayReset.getTime();
 }
 
-async function maybeRunDailyReset(
-  userId: string | null,
-  previousBoundary: number,
-  currentBoundary: number,
-  source: string
-): Promise<void> {
-  if (previousBoundary >= currentBoundary) {
-    return;
-  }
-
-  if (isDailyResetInProgress) {
-    return;
-  }
-
-  isDailyResetInProgress = true;
-  try {
-    console.log(`[DailyReset] Boundary crossed via ${source}`);
-    console.log('[DailyReset] Previous boundary:', formatDateWithTimezone(new Date(previousBoundary)));
-    console.log('[DailyReset] Current boundary:', formatDateWithTimezone(new Date(currentBoundary)));
-    await resetAllSiteTime(userId, currentBoundary, previousBoundary);
-  } finally {
-    isDailyResetInProgress = false;
-  }
-}
-
 async function checkAndApplyScheduledDailyReset(source: string): Promise<void> {
   try {
-    const resetSchedule = await getResetSchedule();
-    const storage = await chrome.storage.local.get(['user', 'lastResetTimestamp', 'siteTimeData']);
-    const userId = storage.user?.uid || null;
-    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-    const now = Date.now();
-    const currentBoundary = getMostRecentResetBoundary(
-      now,
-      resetSchedule.resetHour,
-      resetSchedule.resetMinute
-    );
-
-    const rawLastResetTimestamp = Number(storage.lastResetTimestamp);
-    const latestSiteUpdate = Object.values(siteTimeData).reduce((latest, siteData) => {
-      const lastUpdated = Number(siteData?.lastUpdated);
-      if (Number.isFinite(lastUpdated) && lastUpdated > latest) {
-        return lastUpdated;
-      }
-      return latest;
-    }, 0);
-
-    const boundaryReferenceTimestamp =
-      Number.isFinite(rawLastResetTimestamp) && rawLastResetTimestamp > 0
-        ? rawLastResetTimestamp
-        : (latestSiteUpdate || now);
-    const previousBoundary = getMostRecentResetBoundary(
-      boundaryReferenceTimestamp,
-      resetSchedule.resetHour,
-      resetSchedule.resetMinute
-    );
-
-    await maybeRunDailyReset(userId, previousBoundary, currentBoundary, source);
+    await ensureCurrentUsageDayState(source);
+    void syncToFirestore();
   } catch (error) {
     console.error('[DailyReset] Scheduled reset check failed:', error);
   }
 }
 
-/**
- * Resets all site time tracking to 0.
- * Called when we cross a daily reset boundary.
- */
+function getJournalEntry(
+  storage: {
+    siteTimeData?: Record<string, SiteTimeData>;
+    usageJournal?: UsageJournal;
+    usageContributionState?: UsageContributionState | null;
+  }, dayKey: string, periodStart: number
+): UsageJournalEntry {
+  const existing = (storage[USAGE_JOURNAL_KEY] as UsageJournal | undefined)?.[dayKey];
+  if (existing) return existing;
+  const previous = storage[USAGE_CONTRIBUTION_STATE_KEY] as UsageContributionState | undefined;
+  const siteTotals = previous?.dayKey === dayKey ? maxSiteTotals(previous.siteTotals || {}) : {};
+  const baselineSiteTotals = Object.fromEntries(
+    Object.entries(storage.siteTimeData || {}).map(([site, data]) => [site, data.timeSpent || 0])
+  );
+  return { siteTotals, baselineSiteTotals, periodStart, pending: true };
+}
+
+// Called only while holding the usage storage lock. Previous days remain in
+// the journal until their final absolute contributions have been acknowledged.
 async function resetAllSiteTime(
-  userId: string | null,
+  _userId: string | null,
   periodEndBoundary?: number,
-  periodStartBoundary?: number
+  _periodStartBoundary?: number
 ): Promise<void> {
-  console.log('[DailyReset] ✓✓✓ CROSSING RESET BOUNDARY - Resetting all site time to 0 ✓✓✓');
-
-  try {
-    const storage = await chrome.storage.local.get(['siteTimeData', 'ruleUsageData', 'compiledRules']);
-    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-    const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
-    const compiledRules: CompiledRules = storage.compiledRules || {};
-    const now = Date.now();
-    const resetSchedule = await getResetSchedule();
-    const currentUsageDayKey = getCurrentUsageDayKey(
-      now,
-      resetSchedule.resetHour,
-      resetSchedule.resetMinute
-    );
-    const periodEnd = periodEndBoundary ?? now;
-    const periodStart = periodStartBoundary ?? Math.max(periodEnd - (24 * 60 * 60 * 1000), 0);
-    const historyKey = getHistoryDateKey(periodEnd);
-    const rawSiteTotals = collectTrackedSiteTotals(siteTimeData, compiledRules);
-    const historyEntry = createDailyUsageHistoryEntry(rawSiteTotals, periodStart, periodEnd, now);
-    const currentDayZeroEntry = createDailyUsageHistoryEntry({}, periodEnd, periodEnd, now);
-
-    // Reset all time spent values to 0
-    const resetSiteTimeData: Record<string, SiteTimeData> = {};
-    for (const siteKey in siteTimeData) {
-      resetSiteTimeData[siteKey] = {
-        ...siteTimeData[siteKey],
-        timeSpent: 0,
-        lastUpdated: now
-      };
-    }
-
-    const resetRuleUsageData: RuleUsageData = {};
-    for (const ruleId in ruleUsageData) {
-      resetRuleUsageData[ruleId] = {
-        ...ruleUsageData[ruleId],
-        timeSpent: 0,
-        lastUpdated: now
-      };
-    }
-
-    // Save to chrome storage
-    await chrome.storage.local.set({
-      siteTimeData: resetSiteTimeData,
-      ruleUsageData: resetRuleUsageData,
-      lastResetTimestamp: now,
-      [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: currentUsageDayKey,
-      [USAGE_CONTRIBUTION_STATE_KEY]: {
-        dayKey: currentUsageDayKey,
-        siteTotals: {},
-        seeded: true
-      }
-    });
-    secondsCounter = 0;
-
-    console.log('[DailyReset] ✓ All site times reset to 0 in local storage');
-    console.log(`[DailyReset] Stored snapshot ${historyKey}: ${historyEntry.totalTimeSpent}s across ${historyEntry.trackedSiteCount} sites`);
-
-    // Also sync to Firestore if user is logged in
-    if (userId) {
-      const storageForProfile = await chrome.storage.local.get(['user']);
-      const storedUser = storageForProfile.user as { uid?: string; email?: string } | undefined;
-      const safeEmail = storedUser?.uid === userId ? (storedUser.email || '') : '';
-      const userDocRef = doc(db, 'users', userId);
-      await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(userDocRef);
-        const history = snapshot.data()?.dailyUsageHistory as Record<string, DailyUsageHistoryEntry> | undefined;
-
-        // More than one installed copy can cross midnight at once. Keep an
-        // existing shared entry rather than replacing it with a potentially
-        // stale local snapshot from the other install.
-        const dailyUsageHistory: Record<string, DailyUsageHistoryEntry> = {};
-        if (!history?.[historyKey]) dailyUsageHistory[historyKey] = historyEntry;
-        if (!history?.[currentUsageDayKey]) dailyUsageHistory[currentUsageDayKey] = currentDayZeroEntry;
-
-        transaction.set(userDocRef, {
-          lastDailyResetTimestamp: now,
-          email: safeEmail,
-          ...(Object.keys(dailyUsageHistory).length > 0 ? { dailyUsageHistory } : {})
-        }, { merge: true });
-      });
-
-      console.log('[DailyReset] ✓ Reset synced to Firestore');
-    }
-  } catch (error) {
-    console.error('[DailyReset] Error resetting site time:', error);
-  }
+  const storage = await chrome.storage.local.get([
+    'siteTimeData', 'ruleUsageData', USAGE_JOURNAL_KEY, USAGE_CONTRIBUTION_STATE_KEY, CURRENT_USAGE_DAY_KEY_STORAGE_KEY
+  ]);
+  const now = Date.now();
+  const resetSchedule = await getResetSchedule();
+  const dayKey = getCurrentUsageDayKey(now, resetSchedule.resetHour, resetSchedule.resetMinute);
+  // Another reset request may have waited behind the one that already applied.
+  if (storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] >= dayKey) return;
+  const journal: UsageJournal = storage[USAGE_JOURNAL_KEY] || {};
+  const previousDay = storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY]
+    || getCurrentUsageDayKey((periodEndBoundary || now) - 1, resetSchedule.resetHour, resetSchedule.resetMinute);
+  const previousStart = new Date(`${previousDay}T00:00:00`);
+  previousStart.setHours(resetSchedule.resetHour, resetSchedule.resetMinute, 0, 0);
+  journal[previousDay] = getJournalEntry(storage, previousDay, previousStart.getTime());
+  const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+  const ruleUsageData: RuleUsageData = storage.ruleUsageData || {};
+  for (const site of Object.values(siteTimeData)) { site.timeSpent = 0; site.lastUpdated = now; }
+  for (const rule of Object.values(ruleUsageData)) { rule.timeSpent = 0; rule.lastUpdated = now; }
+  await chrome.storage.local.set({
+    siteTimeData, ruleUsageData, lastResetTimestamp: now,
+    [CURRENT_USAGE_DAY_KEY_STORAGE_KEY]: dayKey,
+    [USAGE_JOURNAL_KEY]: journal,
+    [USAGE_CONTRIBUTION_STATE_KEY]: null,
+  });
 }
 
 // ============================================================================
@@ -944,121 +701,54 @@ function syncToFirestore(): Promise<void> {
 }
 
 async function syncToFirestoreInternal(): Promise<void> {
-  if (!activeTimer || secondsCounter === 0) {
-    return;
-  }
-
-  const { siteKey } = activeTimer;
-  const secondsToSync = secondsCounter;
-
-  console.log(`[Timer] Syncing ${secondsToSync}s to Firestore for ${siteKey}`);
-
   try {
     await ensureCurrentUsageDayState('sync-to-firestore');
-
-    if (secondsToSync <= 0) {
-      return;
-    }
-
-    // Get user and time data
-    const storage = await chrome.storage.local.get(['user', 'siteTimeData']);
-    const user = storage.user;
-    const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
-
-    if (!user?.uid || !siteTimeData[siteKey]) {
-      console.log('[Timer] Cannot sync - no user or site data');
-      return;
-    }
-
-    const now = Date.now();
-    const resetSchedule = await getResetSchedule();
-    const currentBoundary = getMostRecentResetBoundary(
-      now,
-      resetSchedule.resetHour,
-      resetSchedule.resetMinute
-    );
-    const historyKey = getCurrentUsageDayKey(now, resetSchedule.resetHour, resetSchedule.resetMinute);
+    const batch = await withUsageStorageLock(async () => {
+      const storage = await chrome.storage.local.get([
+        'user', 'siteTimeData', USAGE_JOURNAL_KEY, USAGE_CONTRIBUTION_STATE_KEY, CURRENT_USAGE_DAY_KEY_STORAGE_KEY, 'usageResetAppliedAt'
+      ]);
+      if (!storage.user?.uid) return null;
+      const dayKey = storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] as string;
+      const schedule = await getResetSchedule();
+      const journal: UsageJournal = storage[USAGE_JOURNAL_KEY] || {};
+      journal[dayKey] = getJournalEntry(storage, dayKey,
+        getMostRecentResetBoundary(Date.now(), schedule.resetHour, schedule.resetMinute));
+      await chrome.storage.local.set({ [USAGE_JOURNAL_KEY]: journal });
+      return { userId: storage.user.uid as string, journal, resetAppliedAt: storage.usageResetAppliedAt };
+    });
+    if (!batch) return;
     const installationId = await getUsageInstallationId();
-    const contributionStorage = await chrome.storage.local.get(USAGE_CONTRIBUTION_STATE_KEY);
-    const previousContribution = contributionStorage[USAGE_CONTRIBUTION_STATE_KEY] as UsageContributionState | undefined;
-    const localBaselineTotals: Record<string, number> = {};
-    for (const [key, value] of Object.entries(siteTimeData)) {
-      const seconds = Math.max(0, Math.floor(value.timeSpent || 0));
-      if (seconds > 0) localBaselineTotals[key] = seconds;
+    for (const [dayKey, sent] of Object.entries(batch.journal)) {
+      if (!sent.pending) continue;
+      const result = await uploadUsage(batch.userId, installationId, dayKey, sent);
+      await withUsageStorageLock(async () => {
+        const storage = await chrome.storage.local.get([
+          'user', 'siteTimeData', USAGE_JOURNAL_KEY, CURRENT_USAGE_DAY_KEY_STORAGE_KEY, 'usageResetAppliedAt'
+        ]);
+        if (storage.user?.uid !== batch.userId || storage.usageResetAppliedAt !== batch.resetAppliedAt) return;
+        const journal: UsageJournal = storage[USAGE_JOURNAL_KEY] || {};
+        if (!journal[dayKey]) return;
+        const { journalEntry, visibleTotals } = acknowledgeUsage(journal[dayKey], sent, result.contributionTotals, result.entry.siteTotals);
+        journal[dayKey] = journalEntry;
+        const values: Record<string, unknown> = { [USAGE_JOURNAL_KEY]: journal };
+        if (storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] === dayKey) {
+          const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
+          for (const [site, seconds] of Object.entries(visibleTotals)) {
+            siteTimeData[site] = {
+              ...(siteTimeData[site] || { timeLimit: 0 }),
+              timeSpent: Math.max(siteTimeData[site]?.timeSpent || 0, seconds),
+              lastUpdated: Date.now()
+            };
+          }
+          values.siteTimeData = siteTimeData;
+        } else if (!journalEntry.pending) {
+          delete journal[dayKey];
+        }
+        await chrome.storage.local.set(values);
+      });
     }
-
-    const userDocRef = doc(db, 'users', user.uid);
-    const syncResult = await runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(userDocRef);
-      const existing = snapshot.data()?.dailyUsageHistory?.[historyKey] as SharedUsageHistoryEntry | undefined;
-      const installationUsage = { ...(existing?.installationUsage || {}) };
-      const hasInstallationUsage = Object.keys(installationUsage).length > 0;
-      // Before this format existed, siteTotals was the complete shared value.
-      // Preserve it once as a legacy baseline. Once installationUsage exists,
-      // siteTotals is already derived and must never become another baseline.
-      const legacySiteTotals = existing?.usageFormatVersion === 2
-        ? normalizeSiteTotals(existing.legacySiteTotals || {})
-        : hasInstallationUsage
-          ? {}
-          : normalizeSiteTotals(existing?.siteTotals || {});
-      const remoteTotalsWithoutThisInstall = addSiteTotals(
-        legacySiteTotals,
-        getInstallationUsageTotals(installationUsage, installationId)
-      );
-
-      const hasSeededContribution = previousContribution?.dayKey === historyKey && previousContribution.seeded === true;
-      const contributionTotals = hasSeededContribution
-        ? normalizeSiteTotals(previousContribution.siteTotals || {})
-        : Object.fromEntries(
-          Object.keys(localBaselineTotals).map((key): [string, number] => [
-            key,
-            Math.max(
-              0,
-              (localBaselineTotals[key] || 0)
-                - (remoteTotalsWithoutThisInstall[key] || 0)
-                - (key === siteKey ? secondsToSync : 0)
-            )
-          ])
-        );
-      contributionTotals[siteKey] = Math.max(0, Math.floor(contributionTotals[siteKey] || 0)) + secondsToSync;
-      installationUsage[installationId] = { siteTotals: contributionTotals, updatedAt: now };
-      const mergedSiteTotals = addSiteTotals(legacySiteTotals, getInstallationUsageTotals(installationUsage));
-      const nextEntry: SharedUsageHistoryEntry = {
-        ...createDailyUsageHistoryEntry(mergedSiteTotals, currentBoundary, now, now),
-        usageFormatVersion: 2,
-        legacySiteTotals,
-        installationUsage,
-      };
-      transaction.set(userDocRef, {
-        email: user.email || '',
-        dailyUsageHistory: { [historyKey]: nextEntry }
-      }, { merge: true });
-      return { entry: nextEntry, contributionTotals };
-    });
-
-    for (const [key, total] of Object.entries(syncResult.entry.siteTotals)) {
-      siteTimeData[key] = {
-        ...(siteTimeData[key] || { timeLimit: 0 }),
-        timeSpent: total,
-        lastUpdated: now
-      };
-    }
-    await chrome.storage.local.set({
-      siteTimeData,
-      [USAGE_CONTRIBUTION_STATE_KEY]: {
-        dayKey: historyKey,
-        siteTotals: syncResult.contributionTotals,
-        seeded: true
-      }
-    });
-
-    // Keep ticks that happened while the transaction was in flight for the
-    // next sync instead of erasing them with the acknowledged batch.
-    secondsCounter = Math.max(0, secondsCounter - secondsToSync);
-    console.log('[Timer] ✓ Firestore contribution sync complete');
   } catch (error) {
-    console.error('[Timer] Firestore sync failed (will retry):', error);
-    // Don't reset counter - will retry on next interval
+    console.error('[Timer] Usage sync failed; the journal is saved for retry:', error);
   }
 }
 
@@ -1067,14 +757,14 @@ async function syncToFirestoreInternal(): Promise<void> {
  * This is the ONLY place where time is incremented.
  * Also checks for daily reset boundary crossing on each tick.
  */
-async function timerTick(): Promise<void> {
-  // Capture current timer state at start of tick to avoid race conditions
+function timerTick(): Promise<void> {
   const currentTimer = activeTimer;
+  return withUsageStorageLock(() => timerTickInternal(currentTimer));
+}
 
-  if (!currentTimer) {
-    console.error('[Timer] timerTick called but no active timer!');
-    return;
-  }
+async function timerTickInternal(currentTimer: ActiveTimerState | null): Promise<void> {
+  // Capture current timer state at start of tick to avoid race conditions
+  if (!currentTimer || activeTimer !== currentTimer || !currentTimer.intervalId) return;
 
   const tickStartTime = Date.now();
   const currentTickTimestamp = Date.now();
@@ -1087,12 +777,12 @@ async function timerTick(): Promise<void> {
     // Stop timer if tab is no longer active
     if (!tab.active) {
       console.log(`[Timer] Tab ${currentTimer.tabId} no longer active, stopping timer`);
-      stopCurrentTimer();
+      if (activeTimer === currentTimer) stopCurrentTimer();
       return;
     }
   } catch {
     console.log(`[Timer] Tab ${currentTimer.tabId} no longer exists, stopping timer`);
-    stopCurrentTimer();
+    if (activeTimer === currentTimer) stopCurrentTimer();
     return;
   }
 
@@ -1104,39 +794,14 @@ async function timerTick(): Promise<void> {
 
   const { siteKey } = currentTimer;
 
-  // ============================================================================
-  // CHECK FOR DAILY RESET BOUNDARY CROSSING
-  // ============================================================================
-  if (lastTickTimestamp !== null) {
-    try {
-      const resetSchedule = await getResetSchedule();
-      const storage = await chrome.storage.local.get(['user']);
-      const userId = storage.user?.uid || null;
-
-      // Calculate the most recent reset boundary for both timestamps
-      const previousBoundary = getMostRecentResetBoundary(
-        lastTickTimestamp,
-        resetSchedule.resetHour,
-        resetSchedule.resetMinute
-      );
-      const currentBoundary = getMostRecentResetBoundary(
-        currentTickTimestamp,
-        resetSchedule.resetHour,
-        resetSchedule.resetMinute
-      );
-      await maybeRunDailyReset(userId, previousBoundary, currentBoundary, 'timer-tick');
-    } catch (error) {
-      console.error('[Timer] Error checking reset boundary:', error);
-    }
-  }
-
-  // Update last tick timestamp
-  lastTickTimestamp = currentTickTimestamp;
+  await ensureCurrentUsageDayStateInternal('timer-tick', currentTickTimestamp);
+  if (activeTimer !== currentTimer || !currentTimer.intervalId) return;
 
   // ============================================================================
   // INCREMENT TIME
   // ============================================================================
-  const storage = await chrome.storage.local.get(['siteTimeData', 'siteRuleIds', 'compiledRules', 'ruleUsageData']);
+  const storage = await chrome.storage.local.get(['siteTimeData', 'siteRuleIds', 'compiledRules', 'ruleUsageData', USAGE_JOURNAL_KEY, USAGE_CONTRIBUTION_STATE_KEY, CURRENT_USAGE_DAY_KEY_STORAGE_KEY]);
+  if (activeTimer !== currentTimer || !currentTimer.intervalId) return;
   const siteTimeData: Record<string, SiteTimeData> = storage.siteTimeData || {};
   const siteRuleIds: SiteRuleIds = storage.siteRuleIds || {};
   const compiledRules: CompiledRules = storage.compiledRules || {};
@@ -1255,13 +920,22 @@ async function timerTick(): Promise<void> {
       }
     }
 
-    await chrome.storage.local.set({ siteTimeData, ruleUsageData });
+    const dayKey = storage[CURRENT_USAGE_DAY_KEY_STORAGE_KEY] as string;
+    const schedule = await getResetSchedule();
+    if (activeTimer !== currentTimer || !currentTimer.intervalId) return;
+    const journal: UsageJournal = storage[USAGE_JOURNAL_KEY] || {};
+    // Persist the increment and its absolute upload record in the same write,
+    // before any network request.
+    const entry = getJournalEntry(storage, dayKey,
+      getMostRecentResetBoundary(currentTickTimestamp, schedule.resetHour, schedule.resetMinute));
+    entry.siteTotals[siteKey] = (entry.siteTotals[siteKey] || 0) + 1;
+    entry.baselineSiteTotals = maxSiteTotals(entry.baselineSiteTotals, { [siteKey]: siteTimeData[siteKey].timeSpent });
+    entry.pending = true;
+    journal[dayKey] = entry;
+    await chrome.storage.local.set({ siteTimeData, ruleUsageData, [USAGE_JOURNAL_KEY]: journal });
 
     const tickDuration = Date.now() - tickStartTime;
     console.log(`[Timer] ✓ Incremented ${siteKey}: ${oldTime} → ${siteTimeData[siteKey].timeSpent}s (tick took ${tickDuration}ms)`);
-
-    // Increment Firestore sync counter
-    secondsCounter += 1;
 
     // ============================================================================
     // CHECK TIME LIMIT AND REDIRECT IF EXCEEDED
@@ -1308,7 +982,8 @@ async function timerTick(): Promise<void> {
  * Stops the current timer and clears state.
  * Safe to call even if no timer is running.
  */
-function stopCurrentTimer(): void {
+function stopCurrentTimer(cancelPendingStart = true): void {
+  if (cancelPendingStart) timerStartGeneration += 1;
   if (!activeTimer) {
     return;
   }
@@ -1321,12 +996,9 @@ function stopCurrentTimer(): void {
   }
 
   // Sync remaining seconds to Firestore immediately
-  if (secondsCounter > 0) {
-    syncToFirestore();  // Don't await - fire and forget
-  }
+  void syncToFirestore();
 
   activeTimer = null;
-  lastTickTimestamp = null; // Reset tick timestamp
 
   // Clear sync interval (no timers running)
   if (syncIntervalId) {
@@ -1340,29 +1012,16 @@ function stopCurrentTimer(): void {
 /**
  * Starts timer for a specific tab.
  * This is the ONLY function that creates timer intervals.
- * Race-condition safety: Immediately clears any existing interval BEFORE async operations.
+ * A generation check cancels stale requests after asynchronous work.
  */
 async function startTimerForTab(
   tabId: number,
   siteKey: string,
   options: { skipImmediateSoftBoundaryCheck?: boolean; url?: string } = {}
 ): Promise<void> {
-  await checkAndApplyRemoteUsageReset();
+  const startGeneration = ++timerStartGeneration;
+  void checkAndApplyRemoteUsageReset();
   console.log(`[Timer] Request to start timer - tabId: ${tabId}, site: ${siteKey}`);
-
-  // CRITICAL: IMMEDIATELY clear any existing interval SYNCHRONOUSLY before ANY async operations
-  // This prevents race conditions where multiple calls create multiple intervals
-  if (activeTimer?.intervalId) {
-    console.log(`[Timer] IMMEDIATELY clearing existing interval ID: ${activeTimer.intervalId}`);
-    clearInterval(activeTimer.intervalId);
-    activeTimer.intervalId = null;
-  }
-
-  // Now properly stop and clean up the rest
-  if (activeTimer) {
-    console.log(`[Timer] Stopping existing timer - tabId: ${activeTimer.tabId}, site: ${activeTimer.siteKey}`);
-    stopCurrentTimer();
-  }
 
   // Verify tab still exists and is active, and route social homepages before
   // any limit enforcement has a chance to redirect the user elsewhere.
@@ -1381,27 +1040,52 @@ async function startTimerForTab(
 
   const messagesRedirect = currentUrl ? getMessagesRedirect(currentUrl) : null;
   if (messagesRedirect && !(await hasDmHomeBypass(tabId, currentUrl))) {
-    stopCurrentTimer();
+    if (startGeneration === timerStartGeneration) stopCurrentTimer();
     return;
   }
 
   const dmSettings = await chrome.storage.local.get(['restrictDmTime']);
+  if (startGeneration !== timerStartGeneration) return;
   if (dmSettings.restrictDmTime !== true && isDirectMessageUrl(currentUrl)) {
     stopCurrentTimer();
     return;
   }
 
+  if (activeTimer?.tabId === tabId && activeTimer.siteKey === siteKey && activeTimer.intervalId) return;
+
+  // Retire the old interval before preparing its replacement.
+  if (activeTimer?.intervalId) {
+    console.log(`[Timer] IMMEDIATELY clearing existing interval ID: ${activeTimer.intervalId}`);
+    clearInterval(activeTimer.intervalId);
+    activeTimer.intervalId = null;
+  }
+
+  // Now properly stop and clean up the rest
+  if (activeTimer) {
+    console.log(`[Timer] Stopping existing timer - tabId: ${activeTimer.tabId}, site: ${activeTimer.siteKey}`);
+    stopCurrentTimer(false);
+  }
+
   await ensureCurrentUsageDayState('start-timer');
-  await hydrateSharedUsageForCurrentDay();
+  void hydrateSharedUsageForCurrentDay();
 
   // Check if site has a rule
-  const storage = await chrome.storage.local.get([
-    'siteRules',
-    'siteTimeData',
-    'siteRuleIds',
-    'compiledRules',
-    'ruleUsageData'
-  ]);
+  const storage = await withUsageStorageLock(async () => {
+    const latest = await chrome.storage.local.get([
+      'siteRules', 'siteTimeData', 'siteRuleIds', 'compiledRules', 'ruleUsageData'
+    ]);
+    if (startGeneration !== timerStartGeneration) return latest;
+    const rule = latest.siteRules?.[siteKey];
+    if (!rule) return latest;
+    latest.siteTimeData ||= {};
+    latest.siteTimeData[siteKey] = {
+      ...(latest.siteTimeData[siteKey] || { timeSpent: 0 }),
+      timeLimit: rule.timeLimit, lastUpdated: Date.now()
+    };
+    await chrome.storage.local.set({ siteTimeData: latest.siteTimeData });
+    return latest;
+  });
+  if (startGeneration !== timerStartGeneration) return;
   const siteRules: SiteRules = storage.siteRules || {};
   const siteRuleIds: SiteRuleIds = storage.siteRuleIds || {};
   const compiledRules: CompiledRules = storage.compiledRules || {};
@@ -1432,7 +1116,7 @@ async function startTimerForTab(
   const blockingTimeRuleId = getBlockingTimeRuleId(siteKey, siteRuleIds, compiledRules, new Date(now));
   if (blockingTimeRuleId) {
     console.log(`[Timer] Time limit window is closed for ${siteKey}: ${blockingTimeRuleId}`);
-    await chrome.storage.local.set({ siteTimeData, ruleUsageData });
+    await chrome.storage.local.set({ ruleUsageData });
     await redirectTabToRandomUrl(tabId);
     return;
   }
@@ -1514,7 +1198,7 @@ async function startTimerForTab(
     }
   }
 
-  await chrome.storage.local.set({ siteTimeData, ruleUsageData });
+  await chrome.storage.local.set({ ruleUsageData });
 
   if (shouldRedirectImmediately) {
     console.log(`[Timer] Immediate limit enforcement for ${siteKey} on tab focus`);
@@ -1533,15 +1217,14 @@ async function startTimerForTab(
     return;
   }
 
+  if (startGeneration !== timerStartGeneration) return;
+
   // Double-check: One more defensive clear before creating new interval
   // In case another call came in during our async operations
   if (activeTimer?.intervalId) {
     console.log(`[Timer] Defensive clear before creating new interval`);
     clearInterval(activeTimer.intervalId);
   }
-
-  // Initialize last tick timestamp for reset boundary detection
-  lastTickTimestamp = Date.now();
 
   // Create timer state with NEW interval
   activeTimer = {
@@ -1552,6 +1235,8 @@ async function startTimerForTab(
   };
 
   console.log(`[Timer] ✓ Created new interval ID: ${activeTimer.intervalId} for tab ${tabId}, site ${siteKey}`);
+
+  void syncToFirestore();
 
   // Start Firestore sync interval (only ONE for entire extension)
   if (!syncIntervalId) {
@@ -1587,7 +1272,10 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(USAGE_RESET_ALARM_NAME, { periodInMinutes: 1 });
   syncStoredUserEmailToFirestore();
   checkAndApplyRemoteUsageReset(true);
-  checkAndApplyScheduledDailyReset('onInstalled');
+  void checkAndApplyScheduledDailyReset('onInstalled').then(() => {
+    void hydrateSharedUsageForCurrentDay();
+    return recoverActiveTimer();
+  });
   hydrateCompiledRuleIndexes();
 });
 
@@ -2011,29 +1699,42 @@ chrome.runtime.onStartup.addListener(async () => {
   await syncStoredUserEmailToFirestore();
   await checkAndApplyRemoteUsageReset(true);
   await checkAndApplyScheduledDailyReset('onStartup');
+  void hydrateSharedUsageForCurrentDay();
   await hydrateCompiledRuleIndexes();
 
-  // Find active tab and restart timer if applicable
+  await recoverActiveTimer();
+});
+
+async function recoverActiveTimer(): Promise<void> {
+  if (activeTimer) return;
+  const focusedWindow = await chrome.windows.getLastFocused();
+  if (!focusedWindow.focused) return;
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tabs.length > 0 && tabs[0].id) {
     try {
       const response = await chrome.tabs.sendMessage(tabs[0].id, {
         action: 'get-current-site'
-      });
+      }).catch(() => null);
 
       if (response?.siteKey && response?.hasSiteRule) {
-        startTimerForTab(tabs[0].id, response.siteKey, { url: response.url });
+        await startTimerForTab(tabs[0].id, response.siteKey, { url: response.url });
+      } else if (!response && tabs[0].url?.startsWith('http')) {
+        // Existing tabs may have an invalidated content script after an
+        // extension reload. The worker can recover tracking from the tab URL.
+        await startTimerForTab(tabs[0].id, normalizeHostname(new URL(tabs[0].url).hostname), { url: tabs[0].url });
       }
     } catch {
       // Content script may not be injected yet - this is normal on startup
       console.log('[Timer] Content script not ready (startup)');
     }
   }
-});
+}
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === USAGE_RESET_ALARM_NAME) {
     checkAndApplyRemoteUsageReset(true);
     checkAndApplyScheduledDailyReset('alarm');
+    void syncToFirestore();
+    void recoverActiveTimer();
   }
 });
