@@ -80,6 +80,9 @@ export const RuleForm: React.FC<RuleFormProps> = ({
   const [plusOneMinutes, setPlusOneMinutes] = useState(Math.floor(initialPlusOneDuration / 60).toString());
   const [plusOneSeconds, setPlusOneSeconds] = useState((initialPlusOneDuration % 60).toString());
   const [formError, setFormError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const saveInFlight = useRef(false);
   const [typosquattingWarning, setTyposquattingWarning] = useState<{
     url: string;
     suggestion: string;
@@ -268,6 +271,9 @@ export const RuleForm: React.FC<RuleFormProps> = ({
 
   // Handle form submission
   const handleSubmit = async () => {
+    if (saveInFlight.current) return;
+    setFormError('');
+    setSaveError('');
     if (targetItems.length === 0) {
       setFormError('Please add at least one URL or group');
       return;
@@ -323,10 +329,19 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       }
     }
 
-    await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, schedule, plusOnesNum, plusOneDurationSeconds);
-
-    if (isEditMode && ruleType === 'soft') {
-      onTutorialRuleSaved?.();
+    saveInFlight.current = true;
+    setIsSaving(true);
+    try {
+      await onSave(ruleName.trim(), targetItems, ruleType, timeLimitNum, schedule, plusOnesNum, plusOneDurationSeconds);
+      if (isEditMode && ruleType === 'soft') {
+        onTutorialRuleSaved?.();
+      }
+    } catch (error) {
+      console.error('Error saving rule:', error);
+      setSaveError('Could not save the rule. Check your connection and try again.');
+    } finally {
+      saveInFlight.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -757,19 +772,22 @@ export const RuleForm: React.FC<RuleFormProps> = ({
       )}
 
       {/* Actions */}
+      {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
       <div className="flex gap-2">
         <button
           onClick={onCancel}
+          disabled={isSaving}
           className="flex-1 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
+          disabled={isSaving}
           data-tutorial-target="save-rule-button"
           className="flex-1 rounded-lg border border-emerald-500/60 bg-emerald-500/12 px-4 py-2 text-sm text-emerald-200 hover:bg-emerald-500/18"
         >
-          {isEditMode ? 'Save Changes' : 'Create Rule'}
+          {isSaving ? 'Saving...' : isEditMode ? 'Save Changes' : 'Create Rule'}
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, MoreVertical, Edit2, Trash2, ArrowLeft } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc } from 'firebase/firestore/lite';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner';
 import { GroupForm } from '../components/GroupForm';
 import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { saveUserSettings } from '../utils/saveUserSettings';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState('');
 
   // Fetch groups from Firestore
   const fetchGroups = useCallback(async () => {
@@ -90,16 +92,9 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
 
   // Save groups to Firestore
   const saveGroupsToFirestore = async (newGroups: Group[]) => {
-    if (!user?.uid) return;
-
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, { groups: newGroups }, { merge: true });
-      // Sync to chrome.storage for content script access
-      await syncRulesToStorage(user.uid);
-    } catch (error) {
-      console.error('Error saving groups:', error);
-    }
+    if (!user?.uid) throw new Error('Sign in to save groups.');
+    await saveUserSettings(user.uid, { groups: newGroups });
+    await syncRulesToStorage(user.uid);
   };
 
   // Create new group
@@ -112,16 +107,23 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
     };
 
     const updatedGroups = [...groups, newGroup];
-    setGroups(updatedGroups);
-    await saveGroupsToFirestore(updatedGroups);
-    setShowCreateForm(false);
+    setSaveError('');
+    try {
+      await saveGroupsToFirestore(updatedGroups);
+      setGroups(updatedGroups);
+      setShowCreateForm(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save the group.');
+    }
   };
 
   // Delete group
   const handleDeleteGroup = async () => {
-    if (!groupToDelete || !user?.uid) return;
+    if (!groupToDelete) return;
 
+    setSaveError('');
     try {
+      if (!user?.uid) throw new Error('Sign in to save groups.');
       // Update groups
       const updatedGroups = groups.filter(g => g.id !== groupToDelete);
 
@@ -156,10 +158,10 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
           .filter((rule): rule is Rule => rule !== null);
 
         // Save both groups and rules
-        await setDoc(userDocRef, {
+        await saveUserSettings(user.uid, {
           groups: updatedGroups,
           rules: updatedRules
-        }, { merge: true });
+        });
         // Sync to chrome.storage for content script access
         await syncRulesToStorage(user.uid);
       } else {
@@ -172,9 +174,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
       setGroupToDelete(null);
     } catch (error) {
       console.error('Error deleting group:', error);
-      // Still close the dialog even if there's an error
-      setDeleteDialogOpen(false);
-      setGroupToDelete(null);
+      setSaveError(error instanceof Error ? error.message : 'Could not delete the group.');
     }
   };
 
@@ -209,6 +209,8 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
           <Plus size={20} />
         </button>
       </div>
+
+      {saveError && !deleteDialogOpen && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
 
       {/* Create Group Form */}
       {showCreateForm && (
@@ -296,6 +298,7 @@ const Groups: React.FC<GroupsProps> = ({ user, onEditGroup, onBack }) => {
               Are you sure you want to delete this group? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
           <DialogFooter>
             <button
               onClick={(e) => {

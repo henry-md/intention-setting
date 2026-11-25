@@ -54,6 +54,7 @@ async function createUser() {
 }
 
 function encodeValue(value) {
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(encodeValue) } };
   if (typeof value === 'string') return { stringValue: value };
   if (typeof value === 'number') return Number.isInteger(value)
     ? { integerValue: String(value) } : { doubleValue: value };
@@ -77,6 +78,16 @@ async function rawWrite(documentPath, value, token) {
 
 async function rawDelete(documentPath, token) {
   return request(firestoreOrigin, `${databasePath}/documents/${documentPath}`, { method: 'DELETE', token });
+}
+
+async function mergeFields(documentPath, fields, token) {
+  return request(firestoreOrigin, `${databasePath}/documents:commit`, {
+    method: 'POST', token,
+    body: { writes: [{
+      update: { name: `projects/${projectId}/databases/(default)/documents/${documentPath}`, fields: encodeFields(fields) },
+      updateMask: { fieldPaths: Object.keys(fields) },
+    }] },
+  });
 }
 
 async function loadRules(content) {
@@ -221,6 +232,64 @@ async function variant(filename, strict) {
     denied(await rawDelete(rootPath, owner.token));
     const profile = await rawWrite(rootPath, { ...current, email: 'counter-test@example.invalid' }, owner.token);
     assert.equal(profile.status, 200, 'Normal owner profile updates must remain available');
+  });
+
+  await check(`${label}: lower configured limits and rule edits preserve all recorded usage`, async () => {
+    const rootPath = `users/${owner.uid}`;
+    const userRef = db.doc(rootPath);
+    const syncDay = '2026-11-20';
+    const before = (await userRef.get()).data();
+    const savedCounters = await readUsageCounters(db, owner.uid, syncDay);
+    const createdAt = '2026-11-25T12:00:00.000Z';
+    const groups = [{ id: 'group:focus', name: 'Focus', items: ['chess.com', 'youtube.com'], createdAt }];
+    const rule = (type, timeLimit, extra = {}) => ({
+      id: `rule:${type}`, name: `${type} limit`, type, timeLimit, createdAt,
+      targets: [{ type: 'group', id: 'group:focus' }], ...extra,
+    });
+    let rules = [
+      rule('hard', 60), rule('soft', 30, { plusOnes: 5, plusOneDuration: 60 }),
+      rule('session', 20), rule('time', 0, {
+        schedule: { days: ['mon', 'tue', 'wed', 'thu', 'fri'], startTime: '09:00', endTime: '21:00' },
+      }),
+    ];
+    const assertUsageUnchanged = async () => {
+      const current = (await userRef.get()).data();
+      assert.deepEqual(current.dailyUsageHistory, before.dailyUsageHistory);
+      assert.equal(current.usageCountersVersion, 1);
+      assert.deepEqual(await readUsageCounters(db, owner.uid, syncDay), savedCounters);
+    };
+    // Match saveUserSettings: Firestore arrays with a settings-only write mask.
+    assert.equal((await mergeFields(rootPath, { rules, groups }, owner.token)).status, 200);
+    assert.deepEqual((await userRef.get()).data().rules, rules);
+    await assertUsageUnchanged();
+    rules = rules.map((current) => ({
+      ...current,
+      timeLimit: { hard: 5, soft: 3, session: 2, time: 0 }[current.type],
+      ...(current.type === 'soft' ? { plusOnes: 1, plusOneDuration: 30 } : {}),
+      ...(current.type === 'time' ? { schedule: { days: ['mon'], startTime: '10:00', endTime: '18:00' } } : {}),
+    }));
+    assert.equal((await mergeFields(rootPath, { rules }, owner.token)).status, 200);
+    assert.deepEqual((await userRef.get()).data().rules, rules);
+    await assertUsageUnchanged();
+    // Configuration has no monotonic direction: raising a configured limit
+    // again is allowed too, independently of accumulated seconds.
+    rules = rules.map((current) => current.type === 'hard' ? { ...current, timeLimit: 10 } : current);
+    groups[0] = { ...groups[0], items: ['chess.com'] };
+    assert.equal((await mergeFields(rootPath, { rules, groups }, owner.token)).status, 200);
+    assert.deepEqual((await userRef.get()).data().groups, groups);
+    await assertUsageUnchanged();
+    for (const type of ['hard', 'soft', 'session', 'time']) {
+      rules = rules.filter((current) => current.type !== type);
+      assert.equal((await mergeFields(rootPath, { rules }, owner.token)).status, 200);
+      assert.deepEqual((await userRef.get()).data().rules, rules);
+      await assertUsageUnchanged();
+    }
+    assert.equal((await mergeFields(rootPath, { groups: [] }, owner.token)).status, 200);
+    denied(await mergeFields(rootPath, { rules }, undefined));
+    denied(await mergeFields(rootPath, { rules }, stranger.token));
+    denied(await mergeFields(rootPath, { rules, dailyUsageHistory: {} }, owner.token));
+    denied(await rawWrite(counterPath(owner.uid, syncDay), { ...identity, seconds: 0 }, owner.token));
+    await assertUsageUnchanged();
   });
 
   await check(`${label}: permanent counters restore a damaged mirror through the real sync function`, async () => {

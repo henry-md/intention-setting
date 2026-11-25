@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc } from 'firebase/firestore/lite';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Group } from '../types/Group';
 import { GroupForm } from '../components/GroupForm';
 import Spinner from '../components/Spinner';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { saveUserSettings } from '../utils/saveUserSettings';
 
 interface GroupEditProps {
   user: User | null;
@@ -24,6 +25,7 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
   const [group, setGroup] = useState<Group | null>(null);
   const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState('');
 
   // Fetch group and all groups
   useEffect(() => {
@@ -60,16 +62,9 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
 
   // Save groups to Firestore
   const saveGroupsToFirestore = async (updatedGroups: Group[]) => {
-    if (!user?.uid) return;
-
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
-      // Sync to chrome.storage for content script access
-      await syncRulesToStorage(user.uid);
-    } catch (error) {
-      console.error('Error saving groups:', error);
-    }
+    if (!user?.uid) throw new Error('Sign in to save groups.');
+    await saveUserSettings(user.uid, { groups: updatedGroups });
+    await syncRulesToStorage(user.uid);
   };
 
   // Save group with updated name and items
@@ -79,9 +74,14 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     const updatedGroup = { ...group, name, items };
     const updatedGroups = allGroups.map(g => g.id === groupId ? updatedGroup : g);
 
-    setGroup(updatedGroup);
-    setAllGroups(updatedGroups);
-    await saveGroupsToFirestore(updatedGroups);
+    setSaveError('');
+    try {
+      await saveGroupsToFirestore(updatedGroups);
+      setGroup(updatedGroup);
+      setAllGroups(updatedGroups);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save the group.');
+    }
   };
 
   // Handle reordering items
@@ -91,9 +91,14 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
     const updatedGroup = { ...group, items: reorderedItems };
     const updatedGroups = allGroups.map(g => g.id === groupId ? updatedGroup : g);
 
-    setGroup(updatedGroup);
-    setAllGroups(updatedGroups);
-    await saveGroupsToFirestore(updatedGroups);
+    setSaveError('');
+    try {
+      await saveGroupsToFirestore(updatedGroups);
+      setGroup(updatedGroup);
+      setAllGroups(updatedGroups);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save the group.');
+    }
   };
 
   if (loading || !group) {
@@ -112,6 +117,8 @@ const GroupEdit: React.FC<GroupEditProps> = ({ user, groupId, onBack }) => {
           <ArrowLeft size={20} />
         </button>
       </div>
+
+      {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
 
       {/* Group Form */}
       <GroupForm

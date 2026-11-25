@@ -2,6 +2,8 @@
 
 The invariant applies to each fixed user, usage day, site, and installation. Once a permanent counter contains `seconds = N`, an application write cannot replace it with a value below N or delete the record. Starting a new usage day creates a different record; it does not clear yesterday's counter.
 
+Configured limits are editable settings. Owners must be able to lower `rules[].timeLimit`, reduce soft extensions, tighten schedules, and edit or remove rules and groups without reducing recorded usage. Settings saves authenticate with `getFirebaseIdToken` and patch only the supplied settings fields through `saveUserSettings`; they never include usage fields. The extension can have a valid user in Chrome storage while the Firebase SDK has no current user, so SDK authentication alone is insufficient for these writes.
+
 Firestore's atomic `maximum` transform enforces the numeric floor when each write commits. Rules independently reject lower assignments, empty replacement, identity changes, and deletion. The backend uses the verified caller token for permanent counter writes so those rules apply to it. Statistics in `users.dailyUsageHistory` remain recoverable from the permanent counters.
 
 ## Run the checks
@@ -46,6 +48,9 @@ The `Timekeeping` GitHub Actions workflow runs the full suite, extension lint, a
 | Empty replacement, delete, identity change, or another user | Firestore denies the write and preserves the existing counter | `web/scripts/test-counter-emulator.cjs` |
 | Damaged or deleted statistics mirror | The protected counters recover the saved usage | `web/functions/test-usage.cjs` and `web/scripts/test-counter-emulator.cjs` |
 | Incorrect migration permissions or overlapping broad allow rules | Protected accounts reject raw usage writes; the compatible rules retain unmigrated behavior | `web/scripts/test-counter-emulator.cjs` |
+| Lower limits, fewer soft extensions, tighter schedules, or deleted rules/groups | Owner settings edits succeed while both the usage mirror and permanent counters retain their values; anonymous or wrong-user writes fail | `web/scripts/test-counter-emulator.cjs` and `test-counter-rules.cjs` |
+| Stored sign-in with no SDK user, unnamed rule, or failed settings save | Explicit owner authentication, narrow settings masks, preserved optional fields, and rejected failures | `extension/scripts/test-limit-settings.mjs` |
+| Pending or failed form submission, duplicate click, zero soft extensions, or failed local refresh | Wait for database persistence, permit retry after rejection, send one pending write, retain zero extensions, and preserve counters and the prior local indexes if refresh fails | `extension/scripts/test-rule-form.mjs` |
 
 ## Why these checks can catch regressions
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Trash2, Clock, Folder } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc } from 'firebase/firestore/lite';
 import { db } from '../utils/firebase';
 import type { User } from '../types/User';
 import type { Rule, RuleTarget, RuleType, TimeLimitSchedule } from '../types/Rule';
@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner';
 import { RuleForm } from '../components/RuleForm';
 import { GroupIcons } from '../components/GroupIcons';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { saveUserSettings } from '../utils/saveUserSettings';
 import { getFaviconUrl, FAVICON_FALLBACK } from '../utils/urlDisplay';
 import { DEFAULT_PLUS_ONE_DURATION_SECONDS, DEFAULT_SOFT_RULE_PLUS_ONES, TUTORIAL_RULE_NAME } from '../constants';
 import { DEFAULT_TIME_LIMIT_SCHEDULE, formatTimeLimitSchedule, normalizeTimeLimitSchedule } from '../utils/timeLimitSchedule';
@@ -58,6 +59,7 @@ const Rules: React.FC<RulesProps> = ({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
   const [ruleProgressById, setRuleProgressById] = useState<Record<string, { usedSeconds: number; maxSeconds: number }>>({});
+  const [deleteError, setDeleteError] = useState('');
   const isInitialLoad = useRef(true);
 
   // Fetch rules, groups, and URLs from Firestore
@@ -196,11 +198,10 @@ const Rules: React.FC<RulesProps> = ({
 
   // Save rules to Firestore
   const saveRulesToFirestore = async (newRules: Rule[]) => {
-    if (!user?.uid) return;
+    if (!user?.uid) throw new Error('Sign in to save rules.');
 
     try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, { rules: newRules }, { merge: true });
+      await saveUserSettings(user.uid, { rules: newRules });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
     } catch (error) {
@@ -225,11 +226,13 @@ const Rules: React.FC<RulesProps> = ({
         if (rule.id === editingRuleId) {
           const updatedRule: Rule = {
             ...rule,
-            name: name || undefined,
             type: ruleType,
             targets: targetItems,
             timeLimit,
           };
+
+          if (name) updatedRule.name = name;
+          else delete updatedRule.name;
 
           if (ruleType === 'time') {
             updatedRule.schedule = normalizeTimeLimitSchedule(schedule);
@@ -250,8 +253,8 @@ const Rules: React.FC<RulesProps> = ({
         return rule;
       });
 
-      setRules(updatedRules);
       await saveRulesToFirestore(updatedRules);
+      setRules(updatedRules);
     } else {
       // Create new rule
       const newRule: Rule = {
@@ -276,8 +279,8 @@ const Rules: React.FC<RulesProps> = ({
       }
 
       const updatedRules = [...rules, newRule];
-      setRules(updatedRules);
       await saveRulesToFirestore(updatedRules);
+      setRules(updatedRules);
     }
 
     // Reset form
@@ -289,11 +292,17 @@ const Rules: React.FC<RulesProps> = ({
   const handleDeleteRule = async () => {
     if (!ruleToDelete) return;
 
-    const updatedRules = rules.filter(r => r.id !== ruleToDelete);
-    setRules(updatedRules);
-    await saveRulesToFirestore(updatedRules);
-    setDeleteDialogOpen(false);
-    setRuleToDelete(null);
+    setDeleteError('');
+    try {
+      const updatedRules = rules.filter(r => r.id !== ruleToDelete);
+      await saveRulesToFirestore(updatedRules);
+      setRules(updatedRules);
+      setDeleteDialogOpen(false);
+      setRuleToDelete(null);
+    } catch (error) {
+      console.error('Error deleting rule:', error);
+      setDeleteError('Could not delete the rule. Please try again.');
+    }
   };
 
   // Format plus-one duration from seconds to human-readable string
@@ -354,10 +363,10 @@ const Rules: React.FC<RulesProps> = ({
           initialName={editingRule?.name || ''}
           initialTargetItems={editingRule?.targets || []}
           initialRuleType={editingRule?.type || 'hard'}
-          initialTimeLimit={editingRule?.timeLimit || 60}
+          initialTimeLimit={editingRule?.timeLimit ?? 60}
           initialSchedule={editingRule?.schedule || DEFAULT_TIME_LIMIT_SCHEDULE}
-          initialPlusOnes={editingRule?.plusOnes || DEFAULT_SOFT_RULE_PLUS_ONES}
-          initialPlusOneDuration={editingRule?.plusOneDuration || DEFAULT_PLUS_ONE_DURATION_SECONDS}
+          initialPlusOnes={editingRule?.plusOnes ?? DEFAULT_SOFT_RULE_PLUS_ONES}
+          initialPlusOneDuration={editingRule?.plusOneDuration ?? DEFAULT_PLUS_ONE_DURATION_SECONDS}
           groups={groups}
           onSave={handleSaveRule}
           onCancel={() => {
@@ -544,6 +553,7 @@ const Rules: React.FC<RulesProps> = ({
               Are you sure you want to delete this rule? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {deleteError && <p role="alert" className="text-sm text-red-400">{deleteError}</p>}
           <DialogFooter>
             <button
               onClick={(e) => {

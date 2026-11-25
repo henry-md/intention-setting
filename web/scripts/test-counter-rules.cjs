@@ -91,6 +91,53 @@ function testCases(strict) {
     const installationId = kind === 'installation' ? 'test-installation' : '';
     cases.push(makeCase(`owner can create the ${kind} kind`, 'ALLOW', { method: 'create', before: null, next: { ...counter, kind, siteKey, installationId } }));
   }
+  const rootPath = `/databases/(default)/documents/users/${owner}`;
+  const createdAt = '2026-11-25T12:00:00.000Z';
+  const groups = [{ id: 'group:focus', name: 'Focus', items: ['chess.com', 'youtube.com'], createdAt }];
+  const protectedRoot = {
+    usageCountersVersion: 1, dailyUsageHistory: { '2026-11-25': { siteTotals: { 'chess.com': 150 }, totalTimeSpent: 150 } },
+    rules: [], groups,
+  };
+  for (const type of ['hard', 'soft', 'session', 'time']) {
+    const rule = {
+      id: `rule:${type}`, name: `${type} limit`, type, timeLimit: type === 'time' ? 0 : 60, createdAt,
+      targets: [{ type: 'group', id: 'group:focus' }],
+      ...(type === 'soft' ? { plusOnes: 5, plusOneDuration: 60 } : {}),
+      ...(type === 'time' ? { schedule: { days: ['mon', 'tue'], startTime: '09:00', endTime: '21:00' } } : {}),
+    };
+    const before = { ...protectedRoot, rules: [rule] };
+    const tightened = {
+      ...rule, timeLimit: type === 'time' ? 0 : 5,
+      ...(type === 'soft' ? { plusOnes: 1, plusOneDuration: 30 } : {}),
+      ...(type === 'time' ? { schedule: { days: ['mon'], startTime: '10:00', endTime: '18:00' } } : {}),
+    };
+    cases.push(makeCase(`migrated owner can create a ${type} rule`, 'ALLOW', {
+      documentPath: rootPath, before: protectedRoot, next: before,
+    }));
+    cases.push(makeCase(`migrated owner can tighten a ${type} limit without reducing usage`, 'ALLOW', {
+      documentPath: rootPath, before, next: { ...protectedRoot, rules: [tightened] },
+    }));
+    cases.push(makeCase(`migrated owner can delete a ${type} rule without deleting usage`, 'ALLOW', {
+      documentPath: rootPath, before, next: protectedRoot,
+    }));
+  }
+  const configured = { ...protectedRoot, rules: [{
+    id: 'rule:hard', type: 'hard', targets: [{ type: 'group', id: 'group:focus' }], timeLimit: 5, createdAt,
+  }] };
+  cases.push(makeCase('migrated owner can edit groups and rule targets together', 'ALLOW', {
+    documentPath: rootPath, before: configured,
+    next: { ...configured, groups: [{ ...groups[0], items: ['chess.com'] }] },
+  }));
+  cases.push(makeCase('anonymous configuration saves remain denied after migration', 'DENY', {
+    uid: null, documentPath: rootPath, before: protectedRoot, next: configured,
+  }));
+  cases.push(makeCase('another user cannot save limits for a migrated account', 'DENY', {
+    uid: 'other-user', documentPath: rootPath, before: protectedRoot, next: configured,
+  }));
+  cases.push(makeCase('a configuration save cannot bundle a lower recorded usage value', 'DENY', {
+    documentPath: rootPath, before: protectedRoot,
+    next: { ...configured, dailyUsageHistory: {} },
+  }));
   return cases;
 }
 

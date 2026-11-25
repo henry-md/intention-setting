@@ -12,11 +12,12 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
 } from '../types/openaiChat';
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc } from 'firebase/firestore/lite';
 import { db } from '../utils/firebase';
 import { createOpenAIChatCompletion } from '../utils/openaiProxy';
 import { normalizeUrl } from '../utils/urlNormalization';
 import { syncRulesToStorage } from '../utils/syncRulesToStorage';
+import { saveUserSettings } from '../utils/saveUserSettings';
 import { formatUrlForDisplay } from '../utils/urlDisplay';
 import { DEFAULT_TIME_LIMIT_SCHEDULE, formatTimeLimitSchedule, normalizeTimeLimitSchedule } from '../utils/timeLimitSchedule';
 import {
@@ -459,8 +460,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
           return cleaned;
         });
 
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { conversationHistory: cleanedMessages }, { merge: true });
+        await saveUserSettings(user.uid, { conversationHistory: cleanedMessages });
       } catch (error) {
         console.error('Error saving conversation history:', error);
       }
@@ -621,7 +621,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Save to Firestore
       const updatedGroups = [...existingGroups, newGroup];
-      await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      await saveUserSettings(user.uid, { groups: updatedGroups });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -703,7 +703,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Save to Firestore
       const updatedGroups = existingGroups.map(g => g.id === updatedGroup.id ? updatedGroup : g);
-      await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      await saveUserSettings(user.uid, { groups: updatedGroups });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -868,7 +868,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Save to Firestore
       const updatedRules = existingRules.map(l => l.id === updatedRule.id ? updatedRule : l);
-      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
+      await saveUserSettings(user.uid, { rules: updatedRules });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -928,7 +928,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Remove the group
       const updatedGroups = existingGroups.filter(g => g.id !== groupToDelete.id);
-      await setDoc(userDocRef, { groups: updatedGroups }, { merge: true });
+      await saveUserSettings(user.uid, { groups: updatedGroups });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -989,7 +989,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Remove the rule
       const updatedRules = existingRules.filter(l => l.id !== ruleToDelete.id);
-      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
+      await saveUserSettings(user.uid, { rules: updatedRules });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -1091,7 +1091,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
 
       // Save to Firestore
       const updatedRules = [...existingRules, newRule];
-      await setDoc(userDocRef, { rules: updatedRules }, { merge: true });
+      await saveUserSettings(user.uid, { rules: updatedRules });
       // Sync to chrome.storage for content script access
       await syncRulesToStorage(user.uid);
 
@@ -1169,7 +1169,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
       ? existingRules.map((rule, index) => index === tutorialRuleIndex ? tutorialRule : rule)
       : [...existingRules, tutorialRule];
 
-    await setDoc(userDocRef, { groups, rules }, { merge: true });
+    await saveUserSettings(user.uid, { groups, rules });
     await syncRulesToStorage(user.uid);
     window.dispatchEvent(new CustomEvent('groupsOrRulesUpdated'));
 
@@ -1502,8 +1502,7 @@ const LLMPanel: React.FC<LLMPanelProps> = ({
     // Clear from database
     if (user?.uid) {
       try {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { conversationHistory: [] }, { merge: true });
+        await saveUserSettings(user.uid, { conversationHistory: [] });
       } catch (error) {
         console.error('Error clearing conversation history:', error);
       }
